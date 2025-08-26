@@ -1,0 +1,61 @@
+name: Build Wheels
+
+on:
+  push:
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build-wheels:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install build deps
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install cibuildwheel==2.20.0
+      - name: Build wheels
+        env:
+          CIBW_BUILD: cp38-* cp39-* cp310-* cp311-* cp312-*
+          CIBW_SKIP: pp* *musllinux*
+          CIBW_ARCHS_MACOS: x86_64 arm64
+          CIBW_TEST_REQUIRES: pytest
+          CIBW_TEST_COMMAND: "pytest -q {project}/tests"
+        run: |
+          python -m cibuildwheel --output-dir dist
+      - name: Build sdist
+        if: runner.os == 'Linux'
+        run: |
+          python -m pip install build
+          python -m build --sdist -o dist .
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheels-${{ matrix.os }}
+          path: dist/*
+
+  publish:
+    needs: build-wheels
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+      - name: Flatten artifacts
+        run: |
+          mkdir final
+          find dist -type f -exec cp {} final/ \;
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          skip-existing: true
+          password: ${{ secrets.PYPI_API_TOKEN }}

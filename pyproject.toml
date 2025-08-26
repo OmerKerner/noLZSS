@@ -1,0 +1,34 @@
+[build-system]
+requires = ["scikit-build-core>=0.9", "pybind11>=2.12", "setuptools>=68", "wheel"]
+build-backend = "scikit_build_core.build"
+
+[project]
+name = "noLZSS"
+version = "0.1.0"
+description = "Non-overlapping Lempel–Ziv–Storer–Szymanski factorization (high-performance C++ core with Python bindings)"
+authors = [ { name = "Omer Kerner" } ]
+readme = "README.md"
+license = { text = "GPL-3.0-or-later" }
+requires-python = ">=3.8"
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Programming Language :: C++",
+  "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
+  "Operating System :: OS Independent",
+  "Topic :: Software Development :: Libraries :: Python Modules",
+  "Intended Audience :: Science/Research"
+]
+
+[project.urls]
+Homepage = "https://github.com/OmerKerner/noLZSS"
+
+[tool.scikit-build]
+wheel.expand-macos-universal-tags = true
+build-dir = "_skbuild"
+cmake.minimum-version = "3.20"
+
+[tool.scikit-build.cmake.define]
+CMAKE_CXX_STANDARD = "17"
+CMAKE_POSITION_INDEPENDENT_CODE = "ON"
+BUILD_SHARED_LIBS = "OFF"
+
