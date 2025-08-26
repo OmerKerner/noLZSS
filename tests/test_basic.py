@@ -27,3 +27,5 @@ def test_short():
 
 def test_version():
     assert hasattr(noLZSS, "factorize")
+    assert hasattr(noLZSS, "__version__")
+    assert isinstance(noLZSS.__version__, str)

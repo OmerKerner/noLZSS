@@ -36,12 +36,12 @@ static std::vector<Factor> lzss(cst_t& cst) {
             if (v_min_leaf_sufnum + l - 1 < lambda_sufnum) { u_min_leaf_sufnum = v_min_leaf_sufnum; d++; continue; }
             auto u = cst.parent(v); auto u_depth = cst.depth(u);
             if (v_min_leaf_sufnum == lambda_sufnum) {
-                if (u == cst.root()) { l = 1; factors.push_back({(unsigned)lambda_sufnum,(unsigned)l}); break; }
-                else { l = u_depth; factors.push_back({(unsigned)lambda_sufnum,(unsigned)l}); break; }
+                if (u == cst.root()) { l = 1; factors.push_back({lambda_sufnum, l}); break; }
+                else { l = u_depth; factors.push_back({lambda_sufnum, l}); break; }
             }
             l = std::min(lcp(cst, lambda_sufnum, v_min_leaf_sufnum), (lambda_sufnum - v_min_leaf_sufnum));
-            if (l <= u_depth) { l = u_depth; factors.push_back({(unsigned)lambda_sufnum,(unsigned)l}); break; }
-            else { factors.push_back({(unsigned)lambda_sufnum,(unsigned)l}); break; }
+            if (l <= u_depth) { l = u_depth; factors.push_back({lambda_sufnum, l}); break; }
+            else { factors.push_back({lambda_sufnum, l}); break; }
         }
         lambda = next_leaf(cst, lambda, factors.back().length);
         lambda_node_depth = cst.node_depth(lambda);

@@ -25,4 +25,4 @@ pip install . --config-settings=cmake.args="-DNOLZSS_FORCE_VENDOR_SDSL=ON"
 
 ## License
 
-GPL-3.0-or-later (includes sdsl-lite notice). See LICENSE and LICENSE-GPL-3.0.
+GPL-3.0-or-later (includes sdsl-lite notice). See `LICENCE` and `LICENSE-GPL-3.0`.

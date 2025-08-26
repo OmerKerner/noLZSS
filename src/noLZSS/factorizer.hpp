@@ -5,7 +5,8 @@
 
 namespace noLZSS {
 
-struct Factor { unsigned int start; unsigned int length; };
+// Factor: start offset and length (use size_t for portability on large inputs)
+struct Factor { size_t start; size_t length; };
 std::vector<Factor> factorize(std::string_view text);
 
 }

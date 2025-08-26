@@ -27,8 +27,14 @@ if (NOT _sdsl_found)
     message(FATAL_ERROR "NOLZSS_FORCE_SYSTEM_SDSL=ON but system sdsl-lite not found. Provide SDSL_ROOT or install the package.")
   endif()
   include(FetchContent)
-  set(SDSL_LITE_GIT_TAG 8a3f8df9d8b7a2f51d7a2f8b1b0e7d5f3c2b1a90) # TODO: verify/update
-  message(STATUS "Fetching vendored sdsl-lite commit ${SDSL_LITE_GIT_TAG}")
+  # By default fetch the main branch of sdsl-lite. For reproducible builds you
+  # can set SDSL_LITE_GIT_TAG to a specific commit hash or tag (for example
+  # via -DSDSL_LITE_GIT_TAG=<commit> when configuring). The previous hard-
+  # coded commit used here was not available and caused fetch failures.
+  # Pin to a recent stable tag to ensure reproducible and reliable fetches.
+  # Update this value when you intentionally upgrade sdsl-lite.
+  set(SDSL_LITE_GIT_TAG "v2.1.1")
+  message(STATUS "Fetching vendored sdsl-lite tag ${SDSL_LITE_GIT_TAG}")
   FetchContent_Declare(sdsl-lite
     GIT_REPOSITORY https://github.com/simongog/sdsl-lite.git
     GIT_TAG        ${SDSL_LITE_GIT_TAG}

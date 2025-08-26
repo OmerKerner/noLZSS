@@ -1,0 +1,93 @@
+# Global ignores for this repository (Python, C/C++, CMake, pybind11 extension builds, IDEs, OS files)
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.python-version
+.env
+.env.*
+.venv/
+venv/
+venv*/
+build/
+dist/
+*.egg-info/
+pip-wheel-metadata/
+.eggs/
+*.egg
+.Python
+
+# pyproject / build artifacts
+/.mypy_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+coverage.xml
+
+# CMake, build system, and binary artifacts
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+CMakeLists.txt.user
+Makefile
+build/
+_install/
+*/build/
+*/bin/
+*/lib/
+*.o
+*.obj
+*.so
+*.a
+*.lib
+*.dll
+*.dylib
+*.exe
+*.pdb
+*.ilk
+*.idb
+*.exp
+
+# scikit-build / setuptools build folder
+_skbuild/
+_deps/
+
+# pybind11 / extension modules
+*.pyd
+*.so
+*.dll
+
+# Visual Studio / Windows
+.vs/
+*.vcxproj*
+*.user
+*.suo
+*.sln
+*.VC.db
+
+# VS Code / JetBrains
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# Mac / Windows OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+ehthumbs.db
+
+# Logs, temporary files
+*.log
+*.tmp
+*.swp
+
+# Sensitive / environment
+*.env
+.env.local
+
+# Ignore OneDrive temporary files and office locks
+~$*
+
+# End of file
