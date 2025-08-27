@@ -1,6 +1,7 @@
 #include "factorizer.hpp"
 #include <sdsl/suffix_trees.hpp>
 #include <sdsl/rmq_support.hpp>
+#include <sdsl/rmq_succinct_sct.hpp>
 #include <sdsl/bit_vectors.hpp>
 #include <cassert>
 #include <string>

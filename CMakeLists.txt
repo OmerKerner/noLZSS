@@ -5,67 +5,60 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
-option(NOLZSS_FORCE_VENDOR_SDSL "Always fetch (vendor) sdsl-lite even if system copy exists" OFF)
-option(NOLZSS_FORCE_SYSTEM_SDSL "Require system sdsl-lite (do not fetch)" OFF)
-set(SDSL_ROOT "" CACHE PATH "Prefix of a pre-installed sdsl-lite (optional)")
+# This CMake configuration only supports vendoring the SDSL v3 (xxsds fork).
+# It does not attempt to detect or use a system-installed sdsl.
 
-set(_sdsl_found FALSE)
-if (NOT NOLZSS_FORCE_VENDOR_SDSL)
-  if (SDSL_ROOT)
-    list(APPEND CMAKE_PREFIX_PATH "${SDSL_ROOT}")
-  endif()
-  find_path(SDSL_INCLUDE_DIR NAMES sdsl/suffix_trees.hpp)
-  find_library(SDSL_LIBRARY NAMES sdsl)
-  if (SDSL_INCLUDE_DIR AND SDSL_LIBRARY)
-    set(_sdsl_found TRUE)
-    message(STATUS "Using system sdsl-lite: inc=${SDSL_INCLUDE_DIR} lib=${SDSL_LIBRARY}")
-  endif()
+include(FetchContent)
+
+# Allow overriding the sdsl tag for advanced users, but default to a stable release.
+set(SDSL_LITE_GIT_TAG "v3.0.3" CACHE STRING "Tag/branch to fetch for sdsl-lite (xxsds fork)")
+message(STATUS "Vendoring sdsl-lite (xxsds) tag ${SDSL_LITE_GIT_TAG}")
+FetchContent_Declare(sdsl-lite
+  GIT_REPOSITORY https://github.com/xxsds/sdsl-lite.git
+  GIT_TAG        ${SDSL_LITE_GIT_TAG}
+)
+FetchContent_Populate(sdsl-lite)
+# Do NOT execute the sdsl-lite subproject CMake. Treat SDSL v3 (xxsds fork)
+# as header-only for downstream users by exposing an INTERFACE target that
+# points at the fetched headers. This avoids running third-party CMake during
+# pip/PEP builds and avoids CMake policy/version incompatibilities.
+if (NOT DEFINED sdsl-lite_SOURCE_DIR)
+  message(FATAL_ERROR "sdsl-lite source directory not available after FetchContent")
 endif()
 
-if (NOT _sdsl_found)
-  if (NOLZSS_FORCE_SYSTEM_SDSL)
-    message(FATAL_ERROR "NOLZSS_FORCE_SYSTEM_SDSL=ON but system sdsl-lite not found. Provide SDSL_ROOT or install the package.")
-  endif()
-  include(FetchContent)
-  # By default fetch the main branch of sdsl-lite. For reproducible builds you
-  # can set SDSL_LITE_GIT_TAG to a specific commit hash or tag (for example
-  # via -DSDSL_LITE_GIT_TAG=<commit> when configuring). The previous hard-
-  # coded commit used here was not available and caused fetch failures.
-  # Pin to a recent stable tag to ensure reproducible and reliable fetches.
-  # Update this value when you intentionally upgrade sdsl-lite.
-  set(SDSL_LITE_GIT_TAG "v2.1.1")
-  message(STATUS "Fetching vendored sdsl-lite tag ${SDSL_LITE_GIT_TAG}")
-  FetchContent_Declare(sdsl-lite
-    GIT_REPOSITORY https://github.com/simongog/sdsl-lite.git
-    GIT_TAG        ${SDSL_LITE_GIT_TAG}
+# Create an INTERFACE target that exposes the sdsl include dirs from the
+# fetched source tree. Also include the bundled libdivsufsort headers if
+# present; this matches how consumers expect to include SDSL v3 headers.
+add_library(sdsl_vendor INTERFACE)
+target_include_directories(
+  sdsl_vendor
+  INTERFACE
+    $<BUILD_INTERFACE:${sdsl-lite_SOURCE_DIR}/include>
+    $<BUILD_INTERFACE:${sdsl-lite_SOURCE_DIR}/external/libdivsufsort/include>
+)
+set(SDSL_TARGET sdsl_vendor)
+message(STATUS "Created sdsl_vendor INTERFACE target exposing sdsl-lite headers from ${sdsl-lite_SOURCE_DIR}/include")
+
+# Vendoring pybind11 if not available
+find_package(pybind11 CONFIG QUIET)
+if (NOT pybind11_FOUND)
+  message(STATUS "Vendoring pybind11 via FetchContent")
+  FetchContent_Declare(pybind11
+    GIT_REPOSITORY https://github.com/pybind/pybind11.git
+    GIT_TAG        v2.10.4
   )
-  set(BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
-  set(BUILD_TESTING OFF CACHE BOOL "" FORCE)
-  FetchContent_MakeAvailable(sdsl-lite)
-  if (NOT TARGET sdsl)
-    find_library(SDSL_LIBRARY_FALLBACK NAMES sdsl PATHS ${sdsl-lite_SOURCE_DIR}/lib ${sdsl-lite_BINARY_DIR}/lib)
-    add_library(sdsl STATIC IMPORTED)
-    set_target_properties(sdsl PROPERTIES
-      IMPORTED_LOCATION "${SDSL_LIBRARY_FALLBACK}"
-      INTERFACE_INCLUDE_DIRECTORIES "${sdsl-lite_SOURCE_DIR}/include")
-  endif()
+  FetchContent_MakeAvailable(pybind11)
 endif()
-
-find_package(pybind11 CONFIG REQUIRED)
 
 add_library(noLZSS_core STATIC src/noLZSS/factorizer.cpp)
-
-if (TARGET sdsl)
-  target_link_libraries(noLZSS_core PUBLIC sdsl)
-elseif(_sdsl_found)
-  target_include_directories(noLZSS_core PUBLIC ${SDSL_INCLUDE_DIR})
-  target_link_libraries(noLZSS_core PUBLIC ${SDSL_LIBRARY})
-else()
-  message(FATAL_ERROR "sdsl target not found and system library missing")
-endif()
+target_link_libraries(noLZSS_core PUBLIC ${SDSL_TARGET})
 
 pybind11_add_module(_noLZSS src/noLZSS/bindings.cpp)
 add_dependencies(_noLZSS noLZSS_core)
 target_link_libraries(_noLZSS PRIVATE noLZSS_core)
 
-install(TARGETS _noLZSS DESTINATION .)
+install(TARGETS _noLZSS
+  LIBRARY DESTINATION noLZSS
+  RUNTIME DESTINATION noLZSS
+  ARCHIVE DESTINATION noLZSS
+)

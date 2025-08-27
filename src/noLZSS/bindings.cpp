@@ -10,7 +10,7 @@
 namespace py = pybind11;
 
 PYBIND11_MODULE(_noLZSS, m) {
-    m.doc() = "Non-overlapping Lempel–Ziv–Storer–Szymanski factorization";
+    m.doc() = "Non-overlapping Lempel-Ziv-Storer-Szymanski factorization";
 
     py::class_<noLZSS::Factor>(m, "Factor")
         .def_readonly("start", &noLZSS::Factor::start)
