@@ -8,12 +8,12 @@ version = "0.1.0"
 description = "Non-overlapping Lempel–Ziv–Storer–Szymanski factorization (high-performance C++ core with Python bindings)"
 authors = [ { name = "Omer Kerner" } ]
 readme = "README.md"
-license = { text = "GPL-3.0-or-later" }
+license = { text = "BSD-3-Clause" }
 requires-python = ">=3.8"
 classifiers = [
   "Programming Language :: Python :: 3",
   "Programming Language :: C++",
-  "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
+  "License :: OSI Approved :: BSD License",
   "Operating System :: OS Independent",
   "Topic :: Software Development :: Libraries :: Python Modules",
   "Intended Audience :: Science/Research"
