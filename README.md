@@ -1,10 +1,9 @@
 # noLZSS
 
 [![Build Wheels](https://github.com/OmerKerner/noLZSS/actions/workflows/wheels.yml/badge.svg)](https://github.com/OmerKerner/noLZSS/actions/workflows/wheels.yml)
+<img align="right" src="assets/logo.png" alt="noLZSS Logo" width=200px/>
 
 **Non-overlapping Lempel–Ziv–Storer–Szymanski factorization**
-
-<img alighn="right" src="assets/logo.png" alt="noLZSS Logo" width="200" height="200"/>
 
 High-performance Python library for text factorization using compressed suffix trees. The library provides efficient algorithms for finding non-overlapping factors in text data, with both in-memory and file-based processing capabilities.
 
