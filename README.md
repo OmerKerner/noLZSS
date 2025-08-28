@@ -5,7 +5,7 @@
 
 **Non-overlapping Lempel–Ziv–Storer–Szymanski factorization**
 
-High-performance Python library for text factorization using compressed suffix trees. The library provides efficient algorithms for finding non-overlapping factors in text data, with both in-memory and file-based processing capabilities.
+High-performance Python library for text factorization using compressed suffix trees. The library provides efficient algorithms for finding non-overlapping factors in text data, with both in-memory and file-based processing capabilities. Based on a paper by Dominik Köppl - [Non-Overlapping LZ77 Factorization and LZ78 Substring Compression Queries with Suffix Trees](https://doi.org/10.3390/a14020044)
 
 ## Features
 
@@ -177,30 +177,6 @@ pip install -e .
 # Run tests
 python -m pytest tests/
 ```
-
-### Project Structure
-
-```
-src/noLZSS/
-├── factorizer.hpp      # C++ header with function declarations
-├── factorizer.cpp      # C++ implementation
-├── bindings.cpp        # Python bindings
-├── version.hpp         # Version information
-└── __init__.py         # Python package initialization
-
-tests/
-└── test_basic.py       # Unit tests
-```
-
-## Contributing
-
-Contributions are welcome! Please:
-
-1. Fork the repository
-2. Create a feature branch
-3. Add tests for new functionality
-4. Ensure all tests pass
-5. Submit a pull request
 
 ## License
 
