@@ -1,5 +1,7 @@
 # noLZSS
+
 <img src="assets/logo.png" alt="noLZSS Logo" width="200" height="200" style="float:right; margin:0 20px 20px 0;" />
+
 [![Build Wheels](https://github.com/OmerKerner/noLZSS/actions/workflows/wheels.yml/badge.svg)](https://github.com/OmerKerner/noLZSS/actions/workflows/wheels.yml)
 
 **Non-overlapping Lempel–Ziv–Storer–Szymanski factorization**
