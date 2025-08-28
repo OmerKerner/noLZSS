@@ -1,6 +1,11 @@
 cmake_minimum_required(VERSION 3.20)
 project(noLZSS LANGUAGES CXX)
 
+# Prefer modern FindPython/pybind11 behavior and avoid warnings about
+# deprecated FindPythonInterp/FindPythonLibs usage in older modules.
+cmake_policy(SET CMP0148 NEW)
+set(PYBIND11_FINDPYTHON ON)
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
@@ -17,7 +22,8 @@ FetchContent_Declare(sdsl-lite
   GIT_REPOSITORY https://github.com/xxsds/sdsl-lite.git
   GIT_TAG        ${SDSL_LITE_GIT_TAG}
 )
-FetchContent_Populate(sdsl-lite)
+# Use modern FetchContent workflow to make the declared content available.
+FetchContent_MakeAvailable(sdsl-lite)
 # Do NOT execute the sdsl-lite subproject CMake. Treat SDSL v3 (xxsds fork)
 # as header-only for downstream users by exposing an INTERFACE target that
 # points at the fetched headers. This avoids running third-party CMake during
@@ -40,6 +46,16 @@ set(SDSL_TARGET sdsl_vendor)
 message(STATUS "Created sdsl_vendor INTERFACE target exposing sdsl-lite headers from ${sdsl-lite_SOURCE_DIR}/include")
 
 # Vendoring pybind11 if not available
+find_package(Python COMPONENTS Interpreter Development QUIET)
+# Vendoring pybind11 if not available; ensure Python is discovered first so
+# pybind11 uses the modern FindPython implementation.
+if(NOT Python_FOUND)
+  # If Python wasn't found, require it explicitly (most environments will
+  # have Python available via pybind11's own discovery but setting this
+  # ensures the policy CMP0148 doesn't trigger warnings).
+  find_package(Python COMPONENTS Interpreter Development REQUIRED)
+endif()
+
 find_package(pybind11 CONFIG QUIET)
 if (NOT pybind11_FOUND)
   message(STATUS "Vendoring pybind11 via FetchContent")
