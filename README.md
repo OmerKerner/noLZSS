@@ -41,7 +41,7 @@ import noLZSS
 # Factorize a text string (must end with '$' sentinel)
 text = b"abracadabra$"
 factors = noLZSS.factorize(text)
-print(factors)  # [(0, 1), (1, 1), (2, 1), (3, 1), (4, 1), (5, 1), (6, 1), (7, 1), (8, 1), (9, 1), (10, 1)]
+print(factors)  # [(0, 1), (1, 1), (2, 1), (3, 1), (4, 1), (5, 1), (6, 1), (7, 4)]
 ```
 
 ### Working with Files
@@ -62,7 +62,7 @@ noLZSS.write_factors_binary_file("input.txt", "factors.bin")
 ### Advanced Usage
 
 ```python
-# Use reserve hint for better performance
+# Use reserve hint for better performance - An estimate of the number of compressed factors
 factors = noLZSS.factorize_file("data.txt", reserve_hint=1000)
 
 # Process factors efficiently
@@ -150,16 +150,11 @@ The library implements the **Non-overlapping Lempel-Ziv-Storer-Szymanski (LZSS)*
 - **Range Minimum Queries**: For efficient lowest common ancestor computations
 - **Sink-based Processing**: Memory-efficient processing using callback functions
 
-### Factor Properties
-
-- **Non-overlapping**: Factors don't overlap in the original text
-- **Complete Coverage**: Factors cover the entire input text (excluding sentinel)
-- **Greedy**: Each factor is the longest possible match at its position
 
 ## Performance
 
-- **Time Complexity**: O(n) for factorization, where n is input length
-- **Space Complexity**: O(n) for suffix tree construction
+- **Time Complexity**: 𝒪(𝑛 lg<sup>ϵ</sup> 𝑛) for factorization, where n is input length, and 𝜖 ∈ (0,1]
+- **Space Complexity**: 𝒪(𝑛lg𝜎) for suffix tree construction, where 𝜎 is the alphabet size
 - **Memory Usage**: File-based processing uses minimal memory for large files
 
 ## Development
