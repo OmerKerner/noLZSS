@@ -9,6 +9,13 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 # It does not attempt to detect or use a system-installed sdsl.
 
 include(FetchContent)
+# Force FetchContent to use the build directory for downloaded/populated subprojects.
+# When building in an out-of-source or copied source tree (for example conda-build),
+# existing _skbuild/_deps present in the original source can cause FetchContent to
+# reuse CMakeCache files from the wrong directory and fail with a CMakeCache.txt
+# mismatch. Pointing FETCHCONTENT_BASE_DIR to the current CMake binary dir ensures
+# subbuilds are created inside the active build tree and avoids the mismatch.
+set(FETCHCONTENT_BASE_DIR "${CMAKE_BINARY_DIR}/_deps")
 
 # Allow overriding the sdsl tag for advanced users, but default to a stable release.
 set(SDSL_LITE_GIT_TAG "v3.0.3" CACHE STRING "Tag/branch to fetch for sdsl-lite (xxsds fork)")
@@ -17,13 +24,20 @@ FetchContent_Declare(sdsl-lite
   GIT_REPOSITORY https://github.com/xxsds/sdsl-lite.git
   GIT_TAG        ${SDSL_LITE_GIT_TAG}
 )
-FetchContent_Populate(sdsl-lite)
-# Do NOT execute the sdsl-lite subproject CMake. Treat SDSL v3 (xxsds fork)
-# as header-only for downstream users by exposing an INTERFACE target that
-# points at the fetched headers. This avoids running third-party CMake during
-# pip/PEP builds and avoids CMake policy/version incompatibilities.
+## Populate sdsl-lite source only (do not run its CMake). The upstream sdsl
+## CMake enforces older policies/versions and may fail when configured inside
+## containerized build environments (conda-build, scikit-build). We only need
+## the headers for this project, so avoid invoking sdsl-lite's CMake.
+FetchContent_GetProperties(sdsl-lite)
+if (NOT sdsl-lite_POPULATED)
+  message(STATUS "Populating sdsl-lite source (no configure)")
+  FetchContent_Populate(sdsl-lite)
+endif()
+
+# Expose sdsl-lite's headers via sdsl-lite_SOURCE_DIR (FetchContent_Populate
+# sets this variable when the content is downloaded).
 if (NOT DEFINED sdsl-lite_SOURCE_DIR)
-  message(FATAL_ERROR "sdsl-lite source directory not available after FetchContent")
+  message(FATAL_ERROR "sdsl-lite source directory not available after FetchContent_Populate")
 endif()
 
 # Create an INTERFACE target that exposes the sdsl include dirs from the

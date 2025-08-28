@@ -1,0 +1,38 @@
+package:
+  name: nolzss
+  version: "0.1.0"
+
+source:
+  path: ..  # build from the local repo when using conda-build locally; update to git_url/git_tag for staged-recipes
+
+build:
+  number: 0
+  skip: True  # [win]
+
+requirements:
+  host:
+    - python >=3.8,<4.0
+    - cmake >=3.20
+    - pybind11 >=2.10
+    - scikit-build-core
+    - {{ compiler('c') }}
+    - {{ compiler('cxx') }}
+    - make
+  run:
+    - python >=3.8
+
+test:
+  requires: []
+  commands:
+    - python -c "import noLZSS"
+
+about:
+  home: https://github.com/OmerKerner/noLZSS
+  license: BSD-3-Clause
+  license_file: LICENSE
+  summary: "Non-overlapping Lempel-Ziv-Storer-Szymanski factorization (C++ core with Python bindings)"
+
+extra:
+  recipe-maintainers:
+    - omerkerner
+  copy_test_source_files: true
