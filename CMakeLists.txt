@@ -76,3 +76,8 @@ install(TARGETS _noLZSS
   RUNTIME DESTINATION noLZSS
   ARCHIVE DESTINATION noLZSS
 )
+
+# Install Python source files
+install(FILES src/noLZSS/__init__.py
+  DESTINATION noLZSS
+)

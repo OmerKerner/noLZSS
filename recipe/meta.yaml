@@ -1,20 +1,28 @@
+{% set name = "noLZSS" %}
+{% set version = "0.1.0" %}
+
 package:
-  name: nolzss
-  version: "0.1.0"
+  name: {{ name|lower }}
+  version: {{ version }}
 
 source:
-  path: ..  # build from the local repo when using conda-build locally; update to git_url/git_tag for staged-recipes
+  url: https://pypi.org/packages/source/{{ name[0] }}/{{ name }}/nolzss-{{ version }}.tar.gz
+  sha256: c6d1deee8d18906fd1ef8f2bb87f7f5f0b5caddb83f4941429e112f598872b13
 
 build:
+  script: {{ PYTHON }} -m pip install . -vv --no-deps --no-build-isolation
   number: 0
   skip: True  # [win]
 
 requirements:
   host:
-    - python >=3.8,<4.0
+    - python >=3.8
     - cmake >=3.20
-    - pybind11 >=2.10
-    - scikit-build-core
+    - scikit-build-core >=0.9
+    - pybind11 >=2.12
+    - setuptools >=68
+    - wheel
+    - pip
     - {{ compiler('c') }}
     - {{ compiler('cxx') }}
     - make
@@ -22,17 +30,18 @@ requirements:
     - python >=3.8
 
 test:
-  requires: []
+  imports:
+    - noLZSS
   commands:
-    - python -c "import noLZSS"
+    - pip check
+  requires:
+    - pip
 
 about:
-  home: https://github.com/OmerKerner/noLZSS
+  summary: Non-overlapping Lempel-Ziv-Storer-Szymanski factorization (high-performance C++ core with Python bindings)
   license: BSD-3-Clause
   license_file: LICENSE
-  summary: "Non-overlapping Lempel-Ziv-Storer-Szymanski factorization (C++ core with Python bindings)"
 
 extra:
   recipe-maintainers:
-    - omerkerner
-  copy_test_source_files: true
+    - OmerKerner
