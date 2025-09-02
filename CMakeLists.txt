@@ -64,10 +64,12 @@ if (NOT pybind11_FOUND)
   FetchContent_MakeAvailable(pybind11)
 endif()
 
-add_library(noLZSS_core STATIC src/noLZSS/factorizer.cpp)
+add_library(noLZSS_core STATIC src/cpp/factorizer.cpp)
+target_include_directories(noLZSS_core PUBLIC src/cpp)
 target_link_libraries(noLZSS_core PUBLIC ${SDSL_TARGET})
 
-pybind11_add_module(_noLZSS src/noLZSS/bindings.cpp)
+pybind11_add_module(_noLZSS src/cpp/bindings.cpp)
+target_include_directories(_noLZSS PRIVATE src/cpp)
 add_dependencies(_noLZSS noLZSS_core)
 target_link_libraries(_noLZSS PRIVATE noLZSS_core)
 
