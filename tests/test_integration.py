@@ -270,7 +270,7 @@ if __name__ == "__main__":
                 if success is not False:  # None or True counts as success
                     passed_tests += 1
             except Exception as e:
-                print(f"✗ {method_name}: {e}")
+                print(f"Warning: {method_name}: {e}")
     
     print(f"\n=== Integration Test Summary ===")
     print(f"Tests passed: {passed_tests}/{total_tests}")

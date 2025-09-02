@@ -55,14 +55,16 @@ def main():
         if test_path.exists():
             try:
                 # Run the test file by executing it as a script
-                result = os.system(f"cd {test_dir.parent} && python {test_path}")
+                # Use proper path escaping for the complex path
+                escaped_path = str(test_path).replace(' ', r'\ ')
+                result = os.system(f'cd "{test_dir.parent}" && python "{test_path}"')
                 if result == 0:
                     passed_files += 1
-                    print(f"✓ {test_file} completed successfully")
+                    print(f"{test_file} completed successfully")
                 else:
-                    print(f"✗ {test_file} had issues (exit code: {result})")
+                    print(f"Warning: {test_file} had issues (exit code: {result})")
             except Exception as e:
-                print(f"✗ {test_file} failed with exception: {e}")
+                print(f"Warning: {test_file} failed with exception: {e}")
         else:
             print(f"Warning: {test_file} not found, skipping")
     

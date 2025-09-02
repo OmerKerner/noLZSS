@@ -190,6 +190,7 @@ def detect_sequence_type(data: Union[str, bytes]) -> str:
             return 'binary'
         data = text_data
     
+    # Check DNA first (more restrictive)
     if is_dna_sequence(data):
         return 'dna'
     elif is_protein_sequence(data):
