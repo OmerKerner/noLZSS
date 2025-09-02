@@ -83,6 +83,11 @@ ehthumbs.db
 *.tmp
 *.swp
 
+# Generated benchmark plots and results
+benchmarks/plots/
+*.png
+*.pdf
+
 # Sensitive / environment
 *.env
 .env.local

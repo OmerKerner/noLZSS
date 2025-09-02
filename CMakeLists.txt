@@ -78,6 +78,17 @@ install(TARGETS _noLZSS
 )
 
 # Install Python source files
-install(FILES src/noLZSS/__init__.py
+install(FILES 
+  src/noLZSS/__init__.py
+  src/noLZSS/core.py
+  src/noLZSS/utils.py
   DESTINATION noLZSS
+)
+
+# Install genomics subpackage
+install(FILES 
+  src/noLZSS/genomics/__init__.py
+  src/noLZSS/genomics/fasta.py
+  src/noLZSS/genomics/sequences.py
+  DESTINATION noLZSS/genomics
 )
