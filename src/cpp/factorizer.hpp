@@ -8,15 +8,17 @@
 namespace noLZSS {
 
 /**
- * @brief Represents a factorization factor with start position and length.
+ * @brief Represents a factorization factor with start position, length, and reference position.
  *
  * A factor represents a substring in the original text that was identified
  * during LZSS factorization. The factor covers text from position 'start'
- * with the specified 'length'.
+ * with the specified 'length', and 'ref' indicates the position of the
+ * previous occurrence (reference) for compression purposes.
  */
 struct Factor {
     uint64_t start;   /**< Starting position of the factor in the original text */
     uint64_t length;  /**< Length of the factor substring */
+    uint64_t ref;     /**< Reference position of the previous occurrence */
 };
 
 // Core factorization functions

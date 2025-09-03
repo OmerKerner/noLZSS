@@ -19,7 +19,7 @@ from ._noLZSS import (
 from .utils import validate_input, analyze_alphabet
 
 
-def factorize(data: Union[str, bytes], validate: bool = True) -> List[Tuple[int, int]]:
+def factorize(data: Union[str, bytes], validate: bool = True) -> List[Tuple[int, int, int]]:
     """
     Factorize a string or bytes object into LZ factors.
     
@@ -28,7 +28,7 @@ def factorize(data: Union[str, bytes], validate: bool = True) -> List[Tuple[int,
         validate: Whether to perform input validation (default: True)
     
     Returns:
-        List of (position, length) tuples representing the factorization
+        List of (position, length, ref) tuples representing the factorization
         
     Raises:
         ValueError: If input is invalid (empty, etc.)
@@ -41,7 +41,7 @@ def factorize(data: Union[str, bytes], validate: bool = True) -> List[Tuple[int,
     return _factorize(data)
 
 
-def factorize_file(filepath: Union[str, Path], validate: bool = True) -> List[Tuple[int, int]]:
+def factorize_file(filepath: Union[str, Path], validate: bool = True) -> List[Tuple[int, int, int]]:
     """
     Factorize the contents of a file into LZ factors.
     
@@ -50,7 +50,7 @@ def factorize_file(filepath: Union[str, Path], validate: bool = True) -> List[Tu
         validate: Whether to perform input validation (default: True)
         
     Returns:
-        List of (position, length) tuples representing the factorization
+        List of (position, length, ref) tuples representing the factorization
         
     Raises:
         FileNotFoundError: If the file doesn't exist
@@ -149,7 +149,7 @@ def factorize_with_info(data: Union[str, bytes], validate: bool = True) -> dict:
         
     Returns:
         Dictionary containing:
-        - 'factors': List of (position, length) tuples
+        - 'factors': List of (position, length, ref) tuples
         - 'alphabet_info': Alphabet analysis results
         - 'input_size': Size of input data
         - 'num_factors': Number of factors

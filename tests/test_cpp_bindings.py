@@ -10,7 +10,7 @@ def check_invariants(text: bytes):
     n = len(text) - 1
     covered = 0
     prev_end = 0
-    for start, length in factors:
+    for start, length, ref in factors:
         assert 0 <= start < n
         assert length > 0
         assert start >= prev_end
@@ -125,14 +125,14 @@ def test_write_factors_binary_file():
         with open(out_path, 'rb') as f:
             binary_data = f.read()
         
-        # Each factor is 16 bytes (2 uint64_t)
-        assert len(binary_data) == count * 16
+        # Each factor is 24 bytes (3 uint64_t)
+        assert len(binary_data) == count * 24
         
         # Parse binary data
         binary_factors = []
         for i in range(count):
-            start, length = struct.unpack('<QQ', binary_data[i*16:(i+1)*16])
-            binary_factors.append((start, length))
+            start, length, ref = struct.unpack('<QQQ', binary_data[i*24:(i+1)*24])
+            binary_factors.append((start, length, ref))
         
         assert binary_factors == factors_memory
         

@@ -30,9 +30,10 @@ PYBIND11_MODULE(_noLZSS, m) {
               "This module provides efficient text factorization using compressed suffix trees.";
 
     // Factor class documentation
-    py::class_<noLZSS::Factor>(m, "Factor", "Represents a single factorization factor with start position and length")
+    py::class_<noLZSS::Factor>(m, "Factor", "Represents a single factorization factor with start position, length, and reference position")
         .def_readonly("start", &noLZSS::Factor::start, "Starting position of the factor in the original text")
-        .def_readonly("length", &noLZSS::Factor::length, "Length of the factor substring");
+        .def_readonly("length", &noLZSS::Factor::length, "Length of the factor substring")
+        .def_readonly("ref", &noLZSS::Factor::ref, "Reference position of the previous occurrence");
 
     // factorize function documentation
     m.def("factorize", [](py::buffer b) {
@@ -54,7 +55,7 @@ PYBIND11_MODULE(_noLZSS, m) {
         py::gil_scoped_acquire acquire;
 
         py::list out;
-        for (auto &f : factors) out.append(py::make_tuple(f.start, f.length));
+        for (auto &f : factors) out.append(py::make_tuple(f.start, f.length, f.ref));
         return out;
     }, py::arg("data"), R"doc(Factorize a text string into LZSS factors.
 
@@ -65,7 +66,7 @@ Args:
     data: Python bytes-like object containing text
 
 Returns:
-    List of (start, length) tuples representing the factorization
+    List of (start, length, ref) tuples representing the factorization
 
 Raises:
     ValueError: if data is not a valid bytes-like object
@@ -82,7 +83,7 @@ Note:
         py::gil_scoped_acquire acquire;
 
         py::list out;
-        for (auto &f : factors) out.append(py::make_tuple(f.start, f.length));
+        for (auto &f : factors) out.append(py::make_tuple(f.start, f.length, f.ref));
         return out;
     }, py::arg("path"), py::arg("reserve_hint") = 0, R"doc(Factorize text from file into LZSS factors.
 
@@ -94,7 +95,7 @@ Args:
     reserve_hint: Optional hint for reserving space in output vector (0 = no hint)
 
 Returns:
-    List of (start, length) tuples representing the factorization
+    List of (start, length, ref) tuples representing the factorization
 
 Note:
     Use reserve_hint for better performance when you know approximate factor count.
@@ -179,7 +180,7 @@ Returns:
     Number of factors written to the output file
 
 Note:
-    Binary format: each factor is 16 bytes (2 × uint64_t: start, length).
+    Binary format: each factor is 24 bytes (3 × uint64_t: start, length, ref).
     This function overwrites the output file if it exists.
 )doc");
 

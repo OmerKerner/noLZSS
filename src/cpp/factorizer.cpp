@@ -96,20 +96,35 @@ static size_t lzss(cst_t& cst, Sink&& sink) {
             auto u_depth = cst.depth(u);
 
             if (v_min_leaf_sufnum == lambda_sufnum) {
-                if (u == cst.root()) { l = 1; break; }
-                else { l = u_depth; break; }
+                if (u == cst.root()) {
+                    l = 1;
+                    Factor factor{static_cast<uint64_t>(lambda_sufnum), static_cast<uint64_t>(l), static_cast<uint64_t>(lambda_sufnum)};
+                    sink(factor);
+                    break;
+                }
+                else {
+                    l = u_depth;
+                    Factor factor{static_cast<uint64_t>(lambda_sufnum), static_cast<uint64_t>(l), static_cast<uint64_t>(u_min_leaf_sufnum)};
+                    sink(factor);
+                    break;
+                }
             }
             l = std::min(lcp(cst, lambda_sufnum, v_min_leaf_sufnum),
                          (lambda_sufnum - v_min_leaf_sufnum));
-            if (l <= u_depth) { l = u_depth; break; }
-            else { break; }
+            if (l <= u_depth) {
+                l = u_depth;
+                Factor factor{static_cast<uint64_t>(lambda_sufnum), static_cast<uint64_t>(l), static_cast<uint64_t>(u_min_leaf_sufnum)};
+                sink(factor);
+                break;
+            }
+            else {
+                Factor factor{static_cast<uint64_t>(lambda_sufnum), static_cast<uint64_t>(l), static_cast<uint64_t>(v_min_leaf_sufnum)};
+                sink(factor);
+                break;
+            }
         }
 
-        // Emit factor immediately
-        Factor factor{static_cast<uint64_t>(lambda_sufnum), static_cast<uint64_t>(l)};
-        sink(factor);
         ++count;
-
         // Advance to next position
         lambda = next_leaf(cst, lambda, l);
         lambda_node_depth = cst.node_depth(lambda);
@@ -258,7 +273,7 @@ std::vector<Factor> factorize_file(const std::string& path, size_t reserve_hint)
  * @param out_path Path to output file where binary factors will be written
  * @return Number of factors written to the output file
  *
- * @note Binary format: each factor is 16 bytes (2 × uint64_t)
+ * @note Binary format: each factor is 24 bytes (3 × uint64_t: start, length, ref)
  * @note This function overwrites the output file if it exists
  * @warning Ensure sufficient disk space for the output file
  */
