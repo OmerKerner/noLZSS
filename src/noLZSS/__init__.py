@@ -27,7 +27,9 @@ from .core import (
 
 # Import utilities
 from .utils import (
-    analyze_alphabet
+    analyze_alphabet,
+    read_factors_binary_file,
+    plot_factor_lengths
 )
 from .genomics import (
     detect_sequence_type,
@@ -46,6 +48,8 @@ __all__ = [
     
     # Utility functions
     "analyze_alphabet",
+    "read_factors_binary_file",
+    "plot_factor_lengths",
     "detect_sequence_type", 
     "is_dna_sequence",
     "is_protein_sequence",

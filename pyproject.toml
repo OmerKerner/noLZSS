@@ -26,6 +26,9 @@ Homepage = "https://github.com/OmerKerner/noLZSS"
 benchmark = [
     "matplotlib>=3.5.0",
 ]
+plotting = [
+    "matplotlib>=3.5.0",
+]
 
 [tool.scikit-build]
 wheel.expand-macos-universal-tags = true

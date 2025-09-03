@@ -6,6 +6,7 @@ import pytest
 import sys
 import os
 import tempfile
+import struct
 from pathlib import Path
 
 # Add the src directory to the path for testing
@@ -13,7 +14,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 from noLZSS.utils import (
     validate_input, analyze_alphabet, 
-    safe_file_reader, InvalidInputError, NoLZSSError
+    safe_file_reader, read_factors_binary_file, plot_factor_lengths,
+    InvalidInputError, NoLZSSError
 )
 from noLZSS.genomics import (
     is_dna_sequence, is_protein_sequence, detect_sequence_type
@@ -219,6 +221,73 @@ class TestSafeFileReader:
             assert chunks == []
         finally:
             os.unlink(temp_path)
+
+
+class TestBinaryFileIO:
+    """Test binary file reading functions."""
+    
+    def test_read_factors_binary_file_valid(self):
+        """Test reading a valid binary factors file."""
+        # Create mock binary data: 2 factors
+        # Factor 1: pos=0, len=3, ref=1
+        # Factor 2: pos=3, len=2, ref=2
+        binary_data = struct.pack('<QQQ', 0, 3, 1) + struct.pack('<QQQ', 3, 2, 2)
+        
+        with tempfile.NamedTemporaryFile(delete=False) as f:
+            f.write(binary_data)
+            temp_path = f.name
+        
+        try:
+            factors = read_factors_binary_file(temp_path)
+            expected = [(0, 3, 1), (3, 2, 2)]
+            assert factors == expected
+        finally:
+            os.unlink(temp_path)
+    
+    def test_read_factors_binary_file_invalid_size(self):
+        """Test reading binary file with invalid size."""
+        # Create invalid binary data (not multiple of 24)
+        binary_data = b'12345678901234567890123'  # 23 bytes
+        
+        with tempfile.NamedTemporaryFile(delete=False) as f:
+            f.write(binary_data)
+            temp_path = f.name
+        
+        try:
+            with pytest.raises(NoLZSSError):
+                read_factors_binary_file(temp_path)
+        finally:
+            os.unlink(temp_path)
+    
+    def test_read_factors_binary_file_nonexistent(self):
+        """Test reading non-existent binary file."""
+        with pytest.raises(NoLZSSError):
+            read_factors_binary_file("nonexistent.bin")
+
+
+class TestPlotting:
+    """Test plotting functions."""
+    
+    def test_plot_factor_lengths_with_list(self):
+        """Test plotting with factor list."""
+        factors = [(0, 3, 1), (3, 2, 2), (5, 4, 3)]
+        
+        # This would normally show a plot, but we'll just test it doesn't crash
+        # Since matplotlib might not be available in test environment
+        try:
+            plot_factor_lengths(factors, show_plot=False)
+        except ImportError:
+            pytest.skip("matplotlib not available")
+    
+    def test_plot_factor_lengths_empty_list(self):
+        """Test plotting with empty factor list."""
+        with pytest.raises(ValueError):
+            plot_factor_lengths([])
+    
+    def test_plot_factor_lengths_invalid_type(self):
+        """Test plotting with invalid input type."""
+        with pytest.raises(TypeError):
+            plot_factor_lengths(123)
 
 
 class TestEdgeCases:

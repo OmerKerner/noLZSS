@@ -140,7 +140,47 @@ import noLZSS
 result = noLZSS.factorize_with_info("hello world")
 print(f"Found {result['num_factors']} factors")
 print(f"Text entropy: {result['alphabet_info']['entropy']:.2f} bits")
+
+# Read factors from binary file
+factors = noLZSS.read_factors_binary_file("factors.bin")
+
+# Plot factor length accumulation
+noLZSS.plot_factor_lengths(factors, save_path="plot.png")
 ```
+
+### Utility Functions
+
+#### `analyze_alphabet(data)`
+Analyze the alphabet and entropy of input text.
+
+**Parameters:**
+- `data` (str or bytes): Input text to analyze
+
+**Returns:**
+- `dict`: Dictionary with alphabet statistics including size, entropy, and character frequencies
+
+#### `read_factors_binary_file(path)`
+Read LZSS factors from a binary file created by `write_factors_binary_file`.
+
+**Parameters:**
+- `path` (str): Path to binary factors file
+
+**Returns:**
+- `List[Tuple[int, int, int]]`: List of (start, length, reference) tuples
+
+#### `plot_factor_lengths(factors_or_file, save_path=None, show_plot=True)`
+Plot the cumulative factor lengths vs factor index.
+
+Creates a scatter plot showing how factor lengths accumulate:
+- X-axis: Cumulative sum of factor lengths
+- Y-axis: Factor index (0-based)
+
+**Parameters:**
+- `factors_or_file`: Either a list of factors or path to binary factors file
+- `save_path` (str, optional): Path to save the plot image
+- `show_plot` (bool): Whether to display the plot (default: True)
+
+**Requires:** `pip install matplotlib` or `pip install noLZSS[plotting]`
 
 ## Algorithm Details
 
