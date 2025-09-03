@@ -36,7 +36,6 @@ def factorize(data: Union[str, bytes], validate: bool = True) -> List[Tuple[int,
     """
     if validate:
         data = validate_input(data)
-        # Sentinel is now handled internally by sdsl-lite
     
     return _factorize(data)
 
@@ -65,7 +64,6 @@ def factorize_file(filepath: Union[str, Path], validate: bool = True) -> List[Tu
             data = f.read()
         # Validate input data
         data = validate_input(data)
-        # Sentinel is now handled internally by sdsl-lite
     
     return _factorize_file(str(filepath))
 
@@ -87,7 +85,6 @@ def count_factors(data: Union[str, bytes], validate: bool = True) -> int:
     """
     if validate:
         data = validate_input(data)
-        # Sentinel is now handled internally by sdsl-lite
     
     return _count_factors(data)
 
@@ -156,7 +153,6 @@ def factorize_with_info(data: Union[str, bytes], validate: bool = True) -> dict:
     """
     if validate:
         data = validate_input(data)
-        # Sentinel is now handled internally by sdsl-lite
     
     factors = _factorize(data)
     alphabet_info = analyze_alphabet(data)

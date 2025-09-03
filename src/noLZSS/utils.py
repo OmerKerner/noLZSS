@@ -37,11 +37,11 @@ def validate_input(data: Union[str, bytes]) -> bytes:
         TypeError: If input type is not supported
     """
     if isinstance(data, str):
-        # Convert string to bytes using UTF-8 encoding
+        # Convert string to bytes using ASCII encoding (1 byte per char)
         try:
-            data = data.encode('utf-8')
+            data = data.encode('ascii')
         except UnicodeEncodeError as e:
-            raise InvalidInputError(f"Unable to encode string to UTF-8: {e}")
+            raise InvalidInputError(f"Input string must contain only ASCII characters (1 byte each): {e}")
     elif isinstance(data, bytes):
         pass  # Already bytes
     else:
