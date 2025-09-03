@@ -34,7 +34,11 @@ from .utils import (
 from .genomics import (
     detect_sequence_type,
     is_dna_sequence,
-    is_protein_sequence
+    is_protein_sequence,
+    read_nucleotide_fasta,
+    read_protein_fasta,
+    read_fasta_auto,
+    process_fasta_with_plots
 )
 
 __all__ = [
@@ -53,6 +57,10 @@ __all__ = [
     "detect_sequence_type", 
     "is_dna_sequence",
     "is_protein_sequence",
+    "read_nucleotide_fasta",
+    "read_protein_fasta",
+    "read_fasta_auto",
+    "process_fasta_with_plots",
     
     # Version info
     "__version__"

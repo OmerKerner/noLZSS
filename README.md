@@ -128,6 +128,95 @@ Write LZSS factors from input file to binary output file.
 **Returns:**
 - `int`: Number of factors written
 
+### Genomics Functions
+
+#### `read_nucleotide_fasta(filepath)`
+Read and factorize nucleotide sequences from a FASTA file.
+
+Only accepts sequences containing A, C, T, G (case insensitive, converted to uppercase).
+Sequences are validated and factorized using LZSS.
+
+**Parameters:**
+- `filepath` (str or Path): Path to FASTA file
+
+**Returns:**
+- `List[Tuple[str, List[Tuple[int, int, int]]]]`: List of (sequence_id, factors) tuples
+
+**Raises:**
+- `FASTAError`: If file format is invalid or contains invalid nucleotides
+
+**Example:**
+```python
+results = noLZSS.read_nucleotide_fasta("sequences.fasta")
+for seq_id, factors in results:
+    print(f"Sequence {seq_id}: {len(factors)} factors")
+```
+
+#### `read_protein_fasta(filepath)`
+Read amino acid sequences from a FASTA file.
+
+Only accepts sequences containing canonical amino acids (case insensitive, converted to uppercase).
+
+**Parameters:**
+- `filepath` (str or Path): Path to FASTA file
+
+**Returns:**
+- `List[Tuple[str, str]]`: List of (sequence_id, sequence) tuples
+
+**Raises:**
+- `FASTAError`: If file format is invalid or contains invalid amino acids
+
+#### `read_fasta_auto(filepath)`
+Automatically detect sequence type and read FASTA file accordingly.
+
+For nucleotide sequences: validates A,C,T,G and returns factorized results
+For amino acid sequences: validates canonical amino acids and returns sequences
+
+**Parameters:**
+- `filepath` (str or Path): Path to FASTA file
+
+**Returns:**
+- For nucleotides: `List[Tuple[str, List[Tuple[int, int, int]]]]`
+- For proteins: `List[Tuple[str, str]]`
+
+**Raises:**
+- `FASTAError`: If file format is invalid or sequence type cannot be determined
+
+**Example:**
+```python
+# Automatically handles both nucleotide and protein FASTA files
+results = noLZSS.read_fasta_auto("mixed_sequences.fasta")
+```
+
+#### `process_fasta_with_plots(filepath, output_dir, max_sequences=None)`
+Process a FASTA file and generate factors and plots for all sequences.
+
+For each sequence, this function:
+- Factorizes the sequence using LZSS
+- Saves factor data as text files
+- Optionally saves factors as binary files
+- Creates and saves plots of factor length accumulation
+
+**Parameters:**
+- `filepath` (str or Path): Path to FASTA file
+- `output_dir` (str or Path): Directory to save all output files
+- `max_sequences` (int, optional): Maximum number of sequences to process
+- `save_factors_text` (bool): Whether to save factors as text files (default: True)
+- `save_factors_binary` (bool): Whether to save factors as binary files (default: False)
+
+**Returns:**
+- `dict`: Processing results for each sequence
+
+**Example:**
+```python
+# Process all sequences in a FASTA file
+results = noLZSS.process_fasta_with_plots(
+    "genome.fasta", 
+    "output_factors/",
+    max_sequences=10  # Process only first 10 sequences
+)
+```
+
 ### Usage Notes
 
 ```python

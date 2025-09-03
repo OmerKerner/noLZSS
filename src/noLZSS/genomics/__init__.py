@@ -9,7 +9,12 @@ from .fasta import *
 from .sequences import *
 
 __all__ = [
-    # From fasta module (will be populated when implemented)
+    # From fasta module
+    "read_nucleotide_fasta",
+    "read_protein_fasta", 
+    "read_fasta_auto",
+    "process_fasta_with_plots",
+    "FASTAError",
     
     # From sequences module
     "is_dna_sequence",

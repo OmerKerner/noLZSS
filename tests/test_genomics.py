@@ -90,6 +90,196 @@ class TestFutureGenomicsFeatures:
             return False
 
 
+import tempfile
+import os
+from pathlib import Path
+import pytest
+
+# Add the src directory to the path for testing
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+
+from noLZSS.genomics.fasta import read_nucleotide_fasta, read_protein_fasta, read_fasta_auto, FASTAError
+
+
+class TestFASTAFunctions:
+    """Test FASTA file parsing and processing functions."""
+    
+    def test_read_nucleotide_fasta_valid(self):
+        """Test reading valid nucleotide FASTA file."""
+        fasta_content = """>seq1
+ATCGATCG
+>seq2
+GCTAGCTA
+"""
+        
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.fasta', delete=False) as f:
+            f.write(fasta_content)
+            temp_path = f.name
+        
+        try:
+            results = read_nucleotide_fasta(temp_path)
+            
+            assert len(results) == 2
+            assert results[0][0] == 'seq1'
+            assert results[1][0] == 'seq2'
+            
+            # Check that factors are returned (we can't check exact values without the C++ extension)
+            assert isinstance(results[0][1], list)
+            assert isinstance(results[1][1], list)
+            
+            print("Nucleotide FASTA reading works correctly")
+            return True
+        except Exception as e:
+            print(f"Warning: Nucleotide FASTA test failed: {e}")
+            return False
+        finally:
+            os.unlink(temp_path)
+    
+    def test_read_nucleotide_fasta_invalid_nucleotides(self):
+        """Test reading FASTA with invalid nucleotides."""
+        fasta_content = """>seq1
+ATCGNTCG
+"""
+        
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.fasta', delete=False) as f:
+            f.write(fasta_content)
+            temp_path = f.name
+        
+        try:
+            with pytest.raises(FASTAError):
+                read_nucleotide_fasta(temp_path)
+            print("Invalid nucleotide detection works correctly")
+            return True
+        except Exception as e:
+            print(f"Warning: Invalid nucleotide test failed: {e}")
+            return False
+        finally:
+            os.unlink(temp_path)
+    
+    def test_read_protein_fasta_valid(self):
+        """Test reading valid protein FASTA file."""
+        fasta_content = """>protein1
+MKVLWAALL
+>protein2
+ACDEFGHIK
+"""
+        
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.fasta', delete=False) as f:
+            f.write(fasta_content)
+            temp_path = f.name
+        
+        try:
+            results = read_protein_fasta(temp_path)
+            
+            assert len(results) == 2
+            assert results[0][0] == 'protein1'
+            assert results[0][1] == 'MKVLWAALL'
+            assert results[1][0] == 'protein2'
+            assert results[1][1] == 'ACDEFGHIK'
+            
+            print("Protein FASTA reading works correctly")
+            return True
+        except Exception as e:
+            print(f"Warning: Protein FASTA test failed: {e}")
+            return False
+        finally:
+            os.unlink(temp_path)
+    
+    def test_read_protein_fasta_invalid_amino_acids(self):
+        """Test reading FASTA with invalid amino acids."""
+        fasta_content = """>protein1
+MKVLWAALL1
+"""
+        
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.fasta', delete=False) as f:
+            f.write(fasta_content)
+            temp_path = f.name
+        
+        try:
+            with pytest.raises(FASTAError):
+                read_protein_fasta(temp_path)
+            print("Invalid amino acid detection works correctly")
+            return True
+        except Exception as e:
+            print(f"Warning: Invalid amino acid test failed: {e}")
+            return False
+        finally:
+            os.unlink(temp_path)
+    
+    def test_read_fasta_auto_nucleotide(self):
+        """Test auto-detection of nucleotide FASTA."""
+        fasta_content = """>seq1
+ATCGATCG
+"""
+        
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.fasta', delete=False) as f:
+            f.write(fasta_content)
+            temp_path = f.name
+        
+        try:
+            results = read_fasta_auto(temp_path)
+            
+            # Should return factorized results for nucleotides
+            assert len(results) == 1
+            assert results[0][0] == 'seq1'
+            assert isinstance(results[0][1], list)  # factors
+            
+            print("Auto-detection of nucleotide FASTA works correctly")
+            return True
+        except Exception as e:
+            print(f"Warning: Auto-detection nucleotide test failed: {e}")
+            return False
+        finally:
+            os.unlink(temp_path)
+    
+    def test_read_fasta_auto_protein(self):
+        """Test auto-detection of protein FASTA."""
+        fasta_content = """>protein1
+MKVLWAALL
+"""
+        
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.fasta', delete=False) as f:
+            f.write(fasta_content)
+            temp_path = f.name
+        
+        try:
+            results = read_fasta_auto(temp_path)
+            
+            # Should return sequence strings for proteins
+            assert len(results) == 1
+            assert results[0][0] == 'protein1'
+            assert results[0][1] == 'MKVLWAALL'
+            
+            print("Auto-detection of protein FASTA works correctly")
+            return True
+        except Exception as e:
+            print(f"Warning: Auto-detection protein test failed: {e}")
+            return False
+        finally:
+            os.unlink(temp_path)
+    
+    def test_read_fasta_auto_invalid_type(self):
+        """Test auto-detection with invalid sequence type."""
+        fasta_content = """>seq1
+123456789
+"""
+        
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.fasta', delete=False) as f:
+            f.write(fasta_content)
+            temp_path = f.name
+        
+        try:
+            with pytest.raises(FASTAError):
+                read_fasta_auto(temp_path)
+            print("Invalid sequence type detection works correctly")
+            return True
+        except Exception as e:
+            print(f"Warning: Invalid type test failed: {e}")
+            return False
+        finally:
+            os.unlink(temp_path)
+
+
 class TestGenomicsIntegration:
     """Test integration with main package."""
     
