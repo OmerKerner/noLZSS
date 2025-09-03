@@ -41,7 +41,7 @@ import noLZSS
 # Factorize a text string
 text = b"abracadabra"
 factors = noLZSS.factorize(text)
-print(factors)  # [(0, 1), (1, 1), (2, 1), (3, 1), (4, 1), (5, 1), (6, 1), (7, 4)]
+print(factors)  # [(0, 1, 0), (1, 1, 1), (2, 1, 2), (3, 1, 0), (4, 1, 4), (5, 1, 0), (6, 1, 6), (7, 4, 0)]
 ```
 
 ### Working with Files
@@ -66,9 +66,9 @@ noLZSS.write_factors_binary_file("input.txt", "factors.bin")
 factors = noLZSS.factorize_file("data.txt", reserve_hint=1000)
 
 # Process factors efficiently
-for start, length in factors:
+for start, length, ref in factors:
     substring = text[start:start+length]
-    print(f"Factor at {start}: '{substring}' (length {length})")
+    print(f"Factor at {start}: '{substring}' (length {length}, ref {ref})")
 ```
 
 ## API Reference
@@ -82,12 +82,12 @@ Factorize in-memory text into LZSS factors.
 - `data` (bytes-like): Input text to factorize
 
 **Returns:**
-- `List[Tuple[int, int]]`: List of (start, length) tuples representing factors
+- `List[Tuple[int, int, int]]`: List of (start, length, reference) tuples representing factors
 
 **Example:**
 ```python
 factors = noLZSS.factorize(b"hello")
-# Returns: [(0, 1), (1, 1), (2, 1), (3, 1), (4, 1)]
+# Returns: [(0, 1, 0), (1, 1, 1), (2, 1, 2), (3, 1, 2), (4, 1, 4)]
 ```
 
 #### `factorize_file(path, reserve_hint=0)`
@@ -98,7 +98,7 @@ Factorize text from a file into LZSS factors.
 - `reserve_hint` (int, optional): Hint for reserving space in output vector
 
 **Returns:**
-- `List[Tuple[int, int]]`: List of (start, length) tuples representing factors
+- `List[Tuple[int, int, int]]`: List of (start, length, reference) tuples representing factors
 
 #### `count_factors(data)`
 Count LZSS factors in text without storing them.
