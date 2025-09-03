@@ -88,13 +88,10 @@ class TestPackageIntegration:
             assert alphabet_info['total_length'] == 12
             
             # Step 2: Validate input (this should work even without C++)
-            from noLZSS.utils import validate_input, ensure_sentinel
+            from noLZSS.utils import validate_input
             
             validated_data = validate_input(dna_sequence)
             assert isinstance(validated_data, bytes)
-            
-            data_with_sentinel = ensure_sentinel(validated_data)
-            assert data_with_sentinel.endswith(b'$')
             
             print("Complete workflow (without C++ factorization) works")
             return True

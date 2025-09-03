@@ -12,8 +12,6 @@
  * - count_factors(): Count factors in text
  * - count_factors_file(): Count factors in file
  * - write_factors_binary_file(): Write factors to binary file
- *
- * All functions require input data to end with '$' sentinel for correct factorization.
  */
 
 #include <pybind11/pybind11.h>
@@ -29,8 +27,7 @@ namespace py = pybind11;
 
 PYBIND11_MODULE(_noLZSS, m) {
     m.doc() = "Non-overlapping Lempel-Ziv-Storer-Szymanski factorization\n\n"
-              "This module provides efficient text factorization using compressed suffix trees.\n"
-              "All input strings and files must end with '$' sentinel for correct results.";
+              "This module provides efficient text factorization using compressed suffix trees.";
 
     // Factor class documentation
     py::class_<noLZSS::Factor>(m, "Factor", "Represents a single factorization factor with start position and length")
@@ -65,7 +62,7 @@ This is the main factorization function for in-memory text processing.
 It accepts any Python bytes-like object and returns a list of (start, length) tuples.
 
 Args:
-    data: Python bytes-like object containing text that must end with '$' sentinel
+    data: Python bytes-like object containing text
 
 Returns:
     List of (start, length) tuples representing the factorization
@@ -74,7 +71,6 @@ Raises:
     ValueError: if data is not a valid bytes-like object
 
 Note:
-    The input data must end with '$' sentinel for correct factorization.
     GIL is released during computation for better performance with large data.
 )doc");
 
@@ -94,14 +90,13 @@ Reads text from a file and performs factorization. This is more memory-efficient
 for large files as it avoids loading the entire file into memory.
 
 Args:
-    path: Path to input file containing text that must end with '$' sentinel
+    path: Path to input file containing text
     reserve_hint: Optional hint for reserving space in output vector (0 = no hint)
 
 Returns:
     List of (start, length) tuples representing the factorization
 
 Note:
-    The file content must end with '$' sentinel for correct factorization.
     Use reserve_hint for better performance when you know approximate factor count.
 )doc");
 
@@ -131,13 +126,12 @@ This is a memory-efficient alternative to factorize() when you only need
 the count of factors rather than the factors themselves.
 
 Args:
-    data: Python bytes-like object containing text that must end with '$' sentinel
+    data: Python bytes-like object containing text
 
 Returns:
     Number of factors in the factorization
 
 Note:
-    The input data must end with '$' sentinel for correct factorization.
     GIL is released during computation for better performance with large data.
 )doc");
 
@@ -155,39 +149,36 @@ Reads text from a file and counts factors without storing them.
 This is the most memory-efficient way to get factor counts for large files.
 
 Args:
-    path: Path to input file containing text that must end with '$' sentinel
+    path: Path to input file containing text
 
 Returns:
     Number of factors in the factorization
 
 Note:
-    The file content must end with '$' sentinel for correct factorization.
     GIL is released during computation for better performance.
 )doc");
 
     // write_factors_binary_file function documentation
-    m.def("write_factors_binary_file", [](const std::string& in_path, const std::string& out_path, bool assume_has_sentinel) {
+    m.def("write_factors_binary_file", [](const std::string& in_path, const std::string& out_path) {
         // Release GIL while doing heavy C++ work
         py::gil_scoped_release release;
-        size_t count = noLZSS::write_factors_binary_file(in_path, out_path, assume_has_sentinel);
+        size_t count = noLZSS::write_factors_binary_file(in_path, out_path);
         py::gil_scoped_acquire acquire;
 
         return count;
-    }, py::arg("in_path"), py::arg("out_path"), py::arg("assume_has_sentinel") = false, R"doc(Write LZSS factors from file to binary output file.
+    }, py::arg("in_path"), py::arg("out_path"), R"doc(Write LZSS factors from file to binary output file.
 
 Reads text from an input file, performs factorization, and writes the factors
 in binary format to an output file. Each factor is written as two uint64_t values.
 
 Args:
-    in_path: Path to input file containing text that must end with '$' sentinel
+    in_path: Path to input file containing text
     out_path: Path to output file where binary factors will be written
-    assume_has_sentinel: Unused parameter (kept for API consistency)
 
 Returns:
     Number of factors written to the output file
 
 Note:
-    The input file content must end with '$' sentinel for correct factorization.
     Binary format: each factor is 16 bytes (2 × uint64_t: start, length).
     This function overwrites the output file if it exists.
 )doc");

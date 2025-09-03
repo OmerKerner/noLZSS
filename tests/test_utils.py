@@ -12,7 +12,7 @@ from pathlib import Path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 from noLZSS.utils import (
-    validate_input, ensure_sentinel, analyze_alphabet, 
+    validate_input, analyze_alphabet, 
     is_dna_sequence, is_protein_sequence, detect_sequence_type,
     safe_file_reader, InvalidInputError, NoLZSSError
 )
@@ -69,28 +69,6 @@ class TestValidateInput:
         """Test that invalid unicode raises error."""
         # This is tricky to test directly, but we can create a mock scenario
         pass  # Most strings are valid UTF-8, so this is hard to trigger
-
-
-class TestEnsureSentinel:
-    """Test sentinel handling functions."""
-    
-    def test_ensure_sentinel_adds_when_missing(self):
-        """Test that sentinel is added when missing."""
-        result = ensure_sentinel(b"hello")
-        assert result == b"hello$"
-    
-    def test_ensure_sentinel_doesnt_duplicate(self):
-        """Test that sentinel is not duplicated when present."""
-        result = ensure_sentinel(b"hello$")
-        assert result == b"hello$"
-    
-    def test_ensure_sentinel_custom_sentinel(self):
-        """Test custom sentinel character."""
-        result = ensure_sentinel(b"hello", b"#")
-        assert result == b"hello#"
-        
-        result2 = ensure_sentinel(b"hello#", b"#")
-        assert result2 == b"hello#"
 
 
 class TestAnalyzeAlphabet:
@@ -284,7 +262,7 @@ if __name__ == "__main__":
     import traceback
     
     test_classes = [
-        TestValidateInput, TestEnsureSentinel, TestAnalyzeAlphabet,
+        TestValidateInput, TestAnalyzeAlphabet,
         TestSequenceDetection, TestSafeFileReader, TestEdgeCases
     ]
     

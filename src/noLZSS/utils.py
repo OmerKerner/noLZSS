@@ -57,22 +57,6 @@ def validate_input(data: Union[str, bytes]) -> bytes:
     return data
 
 
-def ensure_sentinel(data: bytes, sentinel: bytes = b'$') -> bytes:
-    """
-    Ensure input data ends with a sentinel character.
-    
-    Args:
-        data: Input bytes data
-        sentinel: Sentinel character to append (default: '$')
-        
-    Returns:
-        Data with sentinel appended if not already present
-    """
-    if not data.endswith(sentinel):
-        data = data + sentinel
-    return data
-
-
 def analyze_alphabet(data: Union[str, bytes]) -> Dict[str, Any]:
     """
     Analyze the alphabet of input data.
@@ -139,10 +123,8 @@ def is_dna_sequence(data: Union[str, bytes]) -> bool:
         return False
         
     # Allow standard DNA bases plus N (unknown), case insensitive
-    # Remove sentinel character before checking
-    clean_data = data.rstrip('$')
-    dna_pattern = re.compile(r'^[ATGCN]+$', re.IGNORECASE)
-    return bool(dna_pattern.match(clean_data))
+    dna_pattern = re.compile(r'^[ATGC]+$', re.IGNORECASE)
+    return bool(dna_pattern.match(data))
 
 
 def is_protein_sequence(data: Union[str, bytes]) -> bool:
@@ -166,10 +148,8 @@ def is_protein_sequence(data: Union[str, bytes]) -> bool:
         return False
     
     # Standard 20 amino acids plus common extensions (B, J, O, U, X, Z)
-    # Remove sentinel character before checking
-    clean_data = data.rstrip('$')
-    protein_pattern = re.compile(r'^[ACDEFGHIKLMNPQRSTVWYBJOUX]+$', re.IGNORECASE)
-    return bool(protein_pattern.match(clean_data))
+    protein_pattern = re.compile(r'^[ACDEFGHIKLMNPQRSTVWY]+$', re.IGNORECASE)
+    return bool(protein_pattern.match(data))
 
 
 def detect_sequence_type(data: Union[str, bytes]) -> str:

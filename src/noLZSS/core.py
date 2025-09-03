@@ -16,7 +16,7 @@ from ._noLZSS import (
     count_factors_file as _count_factors_file,
     write_factors_binary_file as _write_factors_binary_file,
 )
-from .utils import validate_input, ensure_sentinel, analyze_alphabet
+from .utils import validate_input, analyze_alphabet
 
 
 def factorize(data: Union[str, bytes], validate: bool = True) -> List[Tuple[int, int]]:
@@ -31,12 +31,12 @@ def factorize(data: Union[str, bytes], validate: bool = True) -> List[Tuple[int,
         List of (position, length) tuples representing the factorization
         
     Raises:
-        ValueError: If input is invalid (empty, missing sentinel, etc.)
+        ValueError: If input is invalid (empty, etc.)
         TypeError: If input type is not supported
     """
     if validate:
         data = validate_input(data)
-        data = ensure_sentinel(data)
+        # Sentinel is now handled internally by sdsl-lite
     
     return _factorize(data)
 
@@ -63,13 +63,9 @@ def factorize_file(filepath: Union[str, Path], validate: bool = True) -> List[Tu
     if validate:
         with open(filepath, 'rb') as f:
             data = f.read()
-        # Validate and ensure sentinel
+        # Validate input data
         data = validate_input(data)
-        data = ensure_sentinel(data)
-        
-        # Write back the validated data to a temporary file if needed
-        # For now, we'll assume the original file is valid
-        pass
+        # Sentinel is now handled internally by sdsl-lite
     
     return _factorize_file(str(filepath))
 
@@ -91,7 +87,7 @@ def count_factors(data: Union[str, bytes], validate: bool = True) -> int:
     """
     if validate:
         data = validate_input(data)
-        data = ensure_sentinel(data)
+        # Sentinel is now handled internally by sdsl-lite
     
     return _count_factors(data)
 
@@ -120,8 +116,7 @@ def count_factors_file(filepath: Union[str, Path], validate: bool = True) -> int
 
 def write_factors_binary_file(
     data: Union[str, bytes], 
-    output_filepath: Union[str, Path], 
-    validate: bool = True
+    output_filepath: Union[str, Path]
 ) -> None:
     """
     Factorize input and write the factors to a binary file.
@@ -129,16 +124,13 @@ def write_factors_binary_file(
     Args:
         data: Input string or bytes to factorize
         output_filepath: Path where to write the binary factors
-        validate: Whether to perform input validation (default: True)
         
     Raises:
         ValueError: If input is invalid
         TypeError: If input type is not supported
         OSError: If unable to write to output file
     """
-    if validate:
-        data = validate_input(data)
-        data = ensure_sentinel(data)
+    data = validate_input(data)
     
     output_filepath = Path(output_filepath)
     # Ensure output directory exists
@@ -164,17 +156,14 @@ def factorize_with_info(data: Union[str, bytes], validate: bool = True) -> dict:
     """
     if validate:
         data = validate_input(data)
-        original_data = data
-        data = ensure_sentinel(data)
-    else:
-        original_data = data
+        # Sentinel is now handled internally by sdsl-lite
     
     factors = _factorize(data)
-    alphabet_info = analyze_alphabet(original_data)
+    alphabet_info = analyze_alphabet(data)
     
     return {
         'factors': factors,
         'alphabet_info': alphabet_info,
-        'input_size': len(original_data),
+        'input_size': len(data),
         'num_factors': len(factors)
     }

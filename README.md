@@ -38,8 +38,8 @@ pip install -e .
 ```python
 import noLZSS
 
-# Factorize a text string (must end with '$' sentinel)
-text = b"abracadabra$"
+# Factorize a text string
+text = b"abracadabra"
 factors = noLZSS.factorize(text)
 print(factors)  # [(0, 1), (1, 1), (2, 1), (3, 1), (4, 1), (5, 1), (6, 1), (7, 4)]
 ```
@@ -79,14 +79,14 @@ for start, length in factors:
 Factorize in-memory text into LZSS factors.
 
 **Parameters:**
-- `data` (bytes-like): Input text that must end with '$' sentinel character
+- `data` (bytes-like): Input text to factorize
 
 **Returns:**
 - `List[Tuple[int, int]]`: List of (start, length) tuples representing factors
 
 **Example:**
 ```python
-factors = noLZSS.factorize(b"hello$")
+factors = noLZSS.factorize(b"hello")
 # Returns: [(0, 1), (1, 1), (2, 1), (3, 1), (4, 1)]
 ```
 
@@ -94,7 +94,7 @@ factors = noLZSS.factorize(b"hello$")
 Factorize text from a file into LZSS factors.
 
 **Parameters:**
-- `path` (str): Path to input file containing text that must end with '$' sentinel
+- `path` (str): Path to input file containing text
 - `reserve_hint` (int, optional): Hint for reserving space in output vector
 
 **Returns:**
@@ -104,7 +104,7 @@ Factorize text from a file into LZSS factors.
 Count LZSS factors in text without storing them.
 
 **Parameters:**
-- `data` (bytes-like): Input text that must end with '$' sentinel character
+- `data` (bytes-like): Input text to analyze
 
 **Returns:**
 - `int`: Number of factors in the factorization
@@ -113,33 +113,33 @@ Count LZSS factors in text without storing them.
 Count LZSS factors in a file without storing them.
 
 **Parameters:**
-- `path` (str): Path to input file containing text that must end with '$' sentinel
+- `path` (str): Path to input file containing text
 
 **Returns:**
 - `int`: Number of factors in the factorization
 
-#### `write_factors_binary_file(in_path, out_path, assume_has_sentinel=False)`
+#### `write_factors_binary_file(in_path, out_path)`
 Write LZSS factors from input file to binary output file.
 
 **Parameters:**
-- `in_path` (str): Path to input file containing text that must end with '$' sentinel
+- `in_path` (str): Path to input file containing text
 - `out_path` (str): Path to output file for binary factors
-- `assume_has_sentinel` (bool, optional): Unused parameter for API consistency
 
 **Returns:**
 - `int`: Number of factors written
 
-### Important Notes
-
-⚠️ **Sentinel Requirement**: All input strings and files **must** end with the '$' character. This is essential for correct factorization results.
+### Usage Notes
 
 ```python
-# Correct usage
-text = b"hello$"
+# Simple usage
+text = b"hello"
 factors = noLZSS.factorize(text)
 
-# Incorrect usage (will produce wrong results)
-text = b"hello"  # Missing '$' sentinel
+# With validation and analysis
+import noLZSS
+result = noLZSS.factorize_with_info("hello world")
+print(f"Found {result['num_factors']} factors")
+print(f"Text entropy: {result['alphabet_info']['entropy']:.2f} bits")
 ```
 
 ## Algorithm Details

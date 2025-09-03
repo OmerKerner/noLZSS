@@ -57,16 +57,16 @@ static cst_t::node_type next_leaf(cst_t& cst, cst_t::node_type lambda, size_t it
  * @tparam Sink Callable type that accepts Factor objects (e.g., lambda, function)
  * @param cst The compressed suffix tree built from the input text
  * @param sink Callable that receives each computed factor
- * @return Number of factors emitted (excluding the sentinel factor)
+ * @return Number of factors emitted
  *
  * @note This is the core algorithm that all public functions use
  * @note The sink pattern allows for memory-efficient processing
- * @note The final sentinel factor is not emitted to match expected behavior
+ * @note All factors are emitted, including the last one
  */
 template<class Sink>
 static size_t lzss(cst_t& cst, Sink&& sink) {
     sdsl::rmq_succinct_sct<> rmq(&cst.csa);
-    const size_t str_len = cst.size() - 1; // exclude '$'
+    const size_t str_len = cst.size(); // Use the full string length including sentinel
 
     auto lambda = cst.select_leaf(cst.csa.isa[0] + 1);
     size_t lambda_node_depth = cst.node_depth(lambda);
@@ -77,9 +77,9 @@ static size_t lzss(cst_t& cst, Sink&& sink) {
     size_t u_min_leaf_sufnum = 0;
 
     size_t count = 0;
-    std::optional<Factor> pending; // to drop the last (sentinel) factor
 
     while (lambda_sufnum < str_len) {
+        // Compute current factor
         size_t d = 1;
         size_t l = 1;
         while (true) {
@@ -104,17 +104,17 @@ static size_t lzss(cst_t& cst, Sink&& sink) {
             else { break; }
         }
 
-        // Emit previous factor now; keep the one we just computed pending.
-        if (pending) { sink(*pending); ++count; }
-        pending = Factor{ static_cast<uint64_t>(lambda_sufnum),
-                          static_cast<uint64_t>(l) };
+        // Emit factor immediately
+        Factor factor{static_cast<uint64_t>(lambda_sufnum), static_cast<uint64_t>(l)};
+        sink(factor);
+        ++count;
 
+        // Advance to next position
         lambda = next_leaf(cst, lambda, l);
         lambda_node_depth = cst.node_depth(lambda);
         lambda_sufnum = cst.sn(lambda);
     }
 
-    // Do NOT emit the final pending factor: mirrors old "count-1" and new "pop_back()".
     return count;
 }
 
@@ -128,19 +128,17 @@ static size_t lzss(cst_t& cst, Sink&& sink) {
  * algorithm to find all factors.
  *
  * @tparam Sink Callable type that accepts Factor objects
- * @param text Input text string that must end with '$' sentinel character
+ * @param text Input text string
  * @param sink Callable that receives each computed factor
  * @return Number of factors emitted
  *
- * @note The input text must end with '$' sentinel for correct factorization
  * @note This function copies the input string for suffix tree construction
  * @note For large inputs, consider using factorize_file_stream() instead
  * @see factorize() for the non-template version that returns a vector
  */
 template<class Sink>
 size_t factorize_stream(std::string_view text, Sink&& sink) {
-    // NOTE: Assumes text ends with '$' sentinel; no addition performed.
-    // For huge inputs prefer the *_file_stream() overloads.
+    // sdsl-lite will automatically add the sentinel when needed
     std::string tmp(text);
     cst_t cst; construct_im(cst, tmp, 1);
     return lzss(cst, std::forward<Sink>(sink));
@@ -154,20 +152,16 @@ size_t factorize_stream(std::string_view text, Sink&& sink) {
  * large files.
  *
  * @tparam Sink Callable type that accepts Factor objects
- * @param path Path to input file containing text that must end with '$' sentinel
+ * @param path Path to input file containing text
  * @param sink Callable that receives each computed factor
- * @param assume_has_sentinel Unused parameter (kept for API consistency)
  * @return Number of factors emitted
  *
- * @note The file content must end with '$' sentinel for correct factorization
  * @note This function builds the suffix tree directly from the file
- * @note The assume_has_sentinel parameter is currently unused but retained for API compatibility
  * @see factorize_file() for the non-template version that returns a vector
  */
 template<class Sink>
-size_t factorize_file_stream(const std::string& path, Sink&& sink, bool assume_has_sentinel) {
-    // Assumes file content ends with '$' sentinel; no addition performed.
-    // The assume_has_sentinel parameter is unused for now but retained for API consistency.
+size_t factorize_file_stream(const std::string& path, Sink&& sink) {
+    // sdsl-lite will automatically add the sentinel when needed
     cst_t cst; construct(cst, path, 1);
     return lzss(cst, std::forward<Sink>(sink));
 }
@@ -178,10 +172,9 @@ size_t factorize_file_stream(const std::string& path, Sink&& sink, bool assume_h
  * This function provides a convenient way to count factors without storing them.
  * It uses the sink-based factorization internally with a counting lambda.
  *
- * @param text Input text string that must end with '$' sentinel character
+ * @param text Input text string
  * @return Number of factors in the factorization
  *
- * @note The input text must end with '$' sentinel for correct factorization
  * @note This is more memory-efficient than factorize() when you only need the count
  * @see factorize() for getting the actual factors
  * @see count_factors_file() for file-based counting
@@ -199,17 +192,16 @@ size_t count_factors(std::string_view text) {
  * or loading the entire file into memory. It's the most memory-efficient way
  * to get factor counts for large files.
  *
- * @param path Path to input file containing text that must end with '$' sentinel
+ * @param path Path to input file containing text
  * @return Number of factors in the factorization
  *
- * @note The file content must end with '$' sentinel for correct factorization
  * @note This function builds the suffix tree directly from the file
  * @see count_factors() for in-memory counting
  * @see factorize_file() for getting the actual factors from a file
  */
 size_t count_factors_file(const std::string& path) {
     size_t n = 0;
-    factorize_file_stream(path, [&](const Factor&){ ++n; }, false);
+    factorize_file_stream(path, [&](const Factor&){ ++n; });
     return n;
 }
 
@@ -219,12 +211,11 @@ size_t count_factors_file(const std::string& path) {
  * This is the main user-facing function for in-memory factorization.
  * It performs LZSS factorization and returns all factors in a vector.
  *
- * @param text Input text string that must end with '$' sentinel character
+ * @param text Input text string
  * @return Vector containing all factors from the factorization
  *
- * @note The input text must end with '$' sentinel for correct factorization
  * @note Factors are returned in order of appearance in the text
- * @note The returned factors are non-overlapping and cover the entire input (excluding sentinel)
+ * @note The returned factors are non-overlapping and cover the entire input
  * @see factorize_file() for file-based factorization
  */
 std::vector<Factor> factorize(std::string_view text) {
@@ -240,11 +231,10 @@ std::vector<Factor> factorize(std::string_view text) {
  * all factors in a vector. The reserve_hint parameter can improve performance
  * when you have an estimate of the number of factors.
  *
- * @param path Path to input file containing text that must end with '$' sentinel
+ * @param path Path to input file containing text
  * @param reserve_hint Optional hint for reserving space in output vector (0 = no hint)
  * @return Vector containing all factors from the factorization
  *
- * @note The file content must end with '$' sentinel for correct factorization
  * @note Use reserve_hint for better performance when you know approximate factor count
  * @note This is more memory-efficient than factorize() for large files
  * @see factorize() for in-memory factorization
@@ -252,7 +242,7 @@ std::vector<Factor> factorize(std::string_view text) {
 std::vector<Factor> factorize_file(const std::string& path, size_t reserve_hint) {
     std::vector<Factor> out;
     if (reserve_hint) out.reserve(reserve_hint);
-    factorize_file_stream(path, [&](const Factor& f){ out.push_back(f); }, false);
+    factorize_file_stream(path, [&](const Factor& f){ out.push_back(f); });
     return out;
 }
 
@@ -263,23 +253,21 @@ std::vector<Factor> factorize_file(const std::string& path, size_t reserve_hint)
  * writes the resulting factors in binary format to an output file. Each factor
  * is written as two uint64_t values (start position, length).
  *
- * @param in_path Path to input file containing text that must end with '$' sentinel
+ * @param in_path Path to input file containing text
  * @param out_path Path to output file where binary factors will be written
- * @param assume_has_sentinel Unused parameter (kept for API consistency)
  * @return Number of factors written to the output file
  *
- * @note The input file content must end with '$' sentinel for correct factorization
  * @note Binary format: each factor is 16 bytes (2 × uint64_t)
  * @note This function overwrites the output file if it exists
  * @warning Ensure sufficient disk space for the output file
  */
-size_t write_factors_binary_file(const std::string& in_path, const std::string& out_path, bool assume_has_sentinel) {
+size_t write_factors_binary_file(const std::string& in_path, const std::string& out_path) {
     std::ofstream os(out_path, std::ios::binary);
     std::vector<char> buf(1<<20);
     os.rdbuf()->pubsetbuf(buf.data(), static_cast<std::streamsize>(buf.size()));
     size_t n = factorize_file_stream(in_path, [&](const Factor& f){
         os.write(reinterpret_cast<const char*>(&f), sizeof(Factor));
-    }, assume_has_sentinel);
+    });
     return n;
 }
 

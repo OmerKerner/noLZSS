@@ -115,7 +115,7 @@ def test_write_factors_binary_file():
     
     try:
         # Write binary factors
-        count = noLZSS.write_factors_binary_file(in_path, out_path, False)
+        count = noLZSS.write_factors_binary_file(in_path, out_path)
         
         # Read factors from memory for comparison
         factors_memory = noLZSS.factorize(b"aaaaa$")
@@ -136,8 +136,8 @@ def test_write_factors_binary_file():
         
         assert binary_factors == factors_memory
         
-        # Test with assume_has_sentinel=True
-        count2 = noLZSS.write_factors_binary_file(in_path, out_path, True)
+        # Test a second call to ensure consistent behavior
+        count2 = noLZSS.write_factors_binary_file(in_path, out_path)
         assert count2 == count
         
     finally:
@@ -182,7 +182,7 @@ def test_consistency_across_functions():
                 bin_path = f.name
             
             try:
-                bin_count = noLZSS.write_factors_binary_file(temp_path, bin_path, False)
+                bin_count = noLZSS.write_factors_binary_file(temp_path, bin_path)
                 assert bin_count == count
             finally:
                 os.unlink(bin_path)

@@ -120,14 +120,11 @@ class TestIntegrationWithUtils:
     def test_core_uses_utils_functions(self):
         """Test that core module properly uses utils functions."""
         try:
-            from noLZSS.utils import validate_input, ensure_sentinel, analyze_alphabet
+            from noLZSS.utils import validate_input, analyze_alphabet
             
             # Test that utils functions work independently
             data = validate_input("ATCG")
             assert data == b"ATCG"
-            
-            data_with_sentinel = ensure_sentinel(data)
-            assert data_with_sentinel == b"ATCG$"
             
             alphabet_info = analyze_alphabet("ATCG")
             assert alphabet_info['size'] == 4
