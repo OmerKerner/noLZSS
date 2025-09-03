@@ -3,6 +3,7 @@
 #include <sdsl/rmq_succinct_sct.hpp>
 #include <cassert>
 #include <fstream>
+#include <iostream>
 #include <optional>
 
 namespace noLZSS {
@@ -66,7 +67,7 @@ static cst_t::node_type next_leaf(cst_t& cst, cst_t::node_type lambda, size_t it
 template<class Sink>
 static size_t lzss(cst_t& cst, Sink&& sink) {
     sdsl::rmq_succinct_sct<> rmq(&cst.csa);
-    const size_t str_len = cst.size(); // Use the full string length including sentinel
+    const size_t str_len = cst.size() - 1; // the length of the string is the size of the CST minus the sentinel
 
     auto lambda = cst.select_leaf(cst.csa.isa[0] + 1);
     size_t lambda_node_depth = cst.node_depth(lambda);
