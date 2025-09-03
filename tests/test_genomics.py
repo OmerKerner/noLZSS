@@ -111,7 +111,7 @@ class TestGenomicsIntegration:
     def test_genomics_utils_integration(self):
         """Test that genomics can use utils functions."""
         try:
-            from noLZSS.utils import is_dna_sequence, is_protein_sequence
+            from noLZSS.genomics import is_dna_sequence, is_protein_sequence
             
             # Test that genomics-related functions work
             assert is_dna_sequence("ATCG")

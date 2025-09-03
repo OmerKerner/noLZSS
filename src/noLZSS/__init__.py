@@ -27,7 +27,9 @@ from .core import (
 
 # Import utilities
 from .utils import (
-    analyze_alphabet,
+    analyze_alphabet
+)
+from .genomics import (
     detect_sequence_type,
     is_dna_sequence,
     is_protein_sequence

@@ -11,7 +11,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 def test_utils_import():
     """Test that utils module can be imported and basic functions work."""
-    from noLZSS.utils import validate_input, analyze_alphabet, detect_sequence_type
+    from noLZSS.utils import validate_input, analyze_alphabet
+    from noLZSS.genomics import detect_sequence_type
     
     # Test validate_input
     data = validate_input("ATCG")

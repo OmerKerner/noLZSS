@@ -11,5 +11,8 @@ from .sequences import *
 __all__ = [
     # From fasta module (will be populated when implemented)
     
-    # From sequences module (will be populated when implemented)
+    # From sequences module
+    "is_dna_sequence",
+    "is_protein_sequence", 
+    "detect_sequence_type"
 ]

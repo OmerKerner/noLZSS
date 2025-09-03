@@ -13,8 +13,10 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 from noLZSS.utils import (
     validate_input, analyze_alphabet, 
-    is_dna_sequence, is_protein_sequence, detect_sequence_type,
     safe_file_reader, InvalidInputError, NoLZSSError
+)
+from noLZSS.genomics import (
+    is_dna_sequence, is_protein_sequence, detect_sequence_type
 )
 
 
@@ -131,8 +133,7 @@ class TestSequenceDetection:
         """Test DNA sequence detection."""
         assert is_dna_sequence("ATCGATCG")
         assert is_dna_sequence("atcgatcg")  # Case insensitive
-        assert is_dna_sequence("ATCGATCGN")  # With N
-        assert is_dna_sequence("ATCG$")  # With sentinel
+        assert not is_dna_sequence("ATCGATCGN")  # With N (no longer allowed)
         assert is_dna_sequence(b"ATCG")  # Bytes input
         
         assert not is_dna_sequence("ATCGX")  # Invalid character
@@ -144,7 +145,6 @@ class TestSequenceDetection:
         assert is_protein_sequence("ACDEFGHIKLMNPQRSTVWY")  # Standard amino acids
         assert is_protein_sequence("acdefg")  # Case insensitive
         assert is_protein_sequence("ACDEFGX")  # With X (unknown)
-        assert is_protein_sequence("PROTEIN$")  # With sentinel
         assert is_protein_sequence(b"PROTEIN")  # Bytes input
         
         # Note: "ATCG" is actually valid for both DNA and protein sequences
@@ -161,7 +161,6 @@ class TestSequenceDetection:
         assert detect_sequence_type(b"\x80\x81\x82") == 'binary'
         
         # Edge cases
-        assert detect_sequence_type("ATCG$") == 'dna'
         assert detect_sequence_type("") == 'text'  # Empty string is text
     
     def test_sequence_detection_with_invalid_bytes(self):

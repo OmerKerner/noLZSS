@@ -4,10 +4,8 @@ import os
 import struct
 
 def check_invariants(text: bytes):
-    if not text.endswith(b"$"):
-        text += b"$"
     factors = noLZSS.factorize(text)
-    n = len(text) - 1
+    n = len(text)
     covered = 0
     prev_end = 0
     for start, length, ref in factors:
@@ -20,13 +18,13 @@ def check_invariants(text: bytes):
     return factors
 
 def test_repeated():
-    check_invariants(b"aaaaa$")
+    check_invariants(b"aaaaa")
 
 def test_mixed():
-    check_invariants(b"abracadabra$")
+    check_invariants(b"abracadabra")
 
 def test_short():
-    check_invariants(b"a$")
+    check_invariants(b"a")
 
 def test_version():
     assert hasattr(noLZSS, "factorize")
@@ -35,18 +33,18 @@ def test_version():
 
 def test_count_factors():
     """Test count_factors function"""
-    text = b"aaaaa$"
+    text = b"aaaaa"
     factors = noLZSS.factorize(text)
     count = noLZSS.count_factors(text)
     assert count == len(factors)
     
-    text2 = b"abracadabra$"
+    text2 = b"abracadabra"
     factors2 = noLZSS.factorize(text2)
     count2 = noLZSS.count_factors(text2)
     assert count2 == len(factors2)
     
-    # Test with text without sentinel - now requires sentinel
-    text3 = b"hello$"
+    # Test with different text
+    text3 = b"hello"
     count3 = noLZSS.count_factors(text3)
     factors3 = noLZSS.factorize(text3)
     assert count3 == len(factors3)
@@ -55,7 +53,7 @@ def test_count_factors_file():
     """Test count_factors_file function"""
     # Create temporary file
     with tempfile.NamedTemporaryFile(mode='wb', delete=False) as f:
-        f.write(b"aaaaa$")
+        f.write(b"aaaaa")
         temp_path = f.name
     
     try:
@@ -65,7 +63,7 @@ def test_count_factors_file():
         
         # Test with different content
         with open(temp_path, 'wb') as f:
-            f.write(b"abracadabra$")
+            f.write(b"abracadabra")
         
         count2 = noLZSS.count_factors_file(temp_path)
         factors2 = noLZSS.factorize_file(temp_path, 0)
@@ -78,13 +76,13 @@ def test_factorize_file():
     """Test factorize_file function"""
     # Create temporary file
     with tempfile.NamedTemporaryFile(mode='wb', delete=False) as f:
-        f.write(b"aaaaa$")
+        f.write(b"aaaaa")
         temp_path = f.name
     
     try:
         # Test factorize_file
         factors_file = noLZSS.factorize_file(temp_path, 0)
-        factors_memory = noLZSS.factorize(b"aaaaa$")
+        factors_memory = noLZSS.factorize(b"aaaaa")
         assert factors_file == factors_memory
         
         # Test with reserve_hint
@@ -93,10 +91,10 @@ def test_factorize_file():
         
         # Test with different content
         with open(temp_path, 'wb') as f:
-            f.write(b"abracadabra$")
+            f.write(b"abracadabra")
         
         factors_file2 = noLZSS.factorize_file(temp_path, 0)
-        factors_memory2 = noLZSS.factorize(b"abracadabra$")
+        factors_memory2 = noLZSS.factorize(b"abracadabra")
         assert factors_file2 == factors_memory2
         
     finally:
@@ -106,7 +104,7 @@ def test_write_factors_binary_file():
     """Test write_factors_binary_file function"""
     # Create input file
     with tempfile.NamedTemporaryFile(mode='wb', delete=False) as f:
-        f.write(b"aaaaa$")
+        f.write(b"aaaaa")
         in_path = f.name
     
     # Create output file
@@ -115,30 +113,34 @@ def test_write_factors_binary_file():
     
     try:
         # Write binary factors
-        count = noLZSS.write_factors_binary_file(in_path, out_path)
+        noLZSS.write_factors_binary_file(in_path, out_path)
         
-        # Read factors from memory for comparison
-        factors_memory = noLZSS.factorize(b"aaaaa$")
-        assert count == len(factors_memory)
+        # Get count from memory factorization for comparison
+        factors_memory = noLZSS.factorize(b"aaaaa")
+        expected_count = len(factors_memory)
         
         # Read binary file and verify
         with open(out_path, 'rb') as f:
             binary_data = f.read()
         
         # Each factor is 24 bytes (3 uint64_t)
-        assert len(binary_data) == count * 24
+        actual_count = len(binary_data) // 24
+        assert actual_count == expected_count
         
         # Parse binary data
         binary_factors = []
-        for i in range(count):
+        for i in range(actual_count):
             start, length, ref = struct.unpack('<QQQ', binary_data[i*24:(i+1)*24])
             binary_factors.append((start, length, ref))
         
         assert binary_factors == factors_memory
         
         # Test a second call to ensure consistent behavior
-        count2 = noLZSS.write_factors_binary_file(in_path, out_path)
-        assert count2 == count
+        noLZSS.write_factors_binary_file(in_path, out_path)
+        with open(out_path, 'rb') as f:
+            binary_data2 = f.read()
+        actual_count2 = len(binary_data2) // 24
+        assert actual_count2 == expected_count
         
     finally:
         os.unlink(in_path)
@@ -147,13 +149,13 @@ def test_write_factors_binary_file():
 def test_consistency_across_functions():
     """Test that all functions give consistent results"""
     test_texts = [
-        b"a$",
-        b"aa$",
-        b"aaa$",
-        b"aaaa$",
-        b"aaaaa$",
-        b"abracadabra$",
-        b"mississippi$"
+        b"a",
+        b"aa",
+        b"aaa",
+        b"aaaa",
+        b"aaaaa",
+        b"abracadabra",
+        b"mississippi"
     ]
     
     for text in test_texts:
@@ -182,8 +184,12 @@ def test_consistency_across_functions():
                 bin_path = f.name
             
             try:
-                bin_count = noLZSS.write_factors_binary_file(temp_path, bin_path)
-                assert bin_count == count
+                noLZSS.write_factors_binary_file(temp_path, bin_path)
+                # Verify binary file was created and has correct size
+                with open(bin_path, 'rb') as f:
+                    binary_data = f.read()
+                expected_size = len(factors) * 24  # 24 bytes per factor
+                assert len(binary_data) == expected_size
             finally:
                 os.unlink(bin_path)
                 
