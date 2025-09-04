@@ -21,6 +21,7 @@
 #include <string_view>
 #include <stdexcept>
 #include "factorizer.hpp"
+#include "fasta_processor.hpp"
 #include "version.hpp"
 
 namespace py = pybind11;

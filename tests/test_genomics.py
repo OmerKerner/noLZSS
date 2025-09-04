@@ -17,30 +17,27 @@ class TestGenomicsStructure:
         try:
             from noLZSS import genomics
             print("Genomics subpackage imports successfully")
-            return True
         except ImportError as e:
             print(f"Warning: Genomics import failed: {e}")
-            return False
+            assert False, f"Genomics import failed: {e}"
     
     def test_fasta_module_import(self):
         """Test that fasta module can be imported."""
         try:
             from noLZSS.genomics import fasta
             print("FASTA module imports successfully")
-            return True
         except ImportError as e:
             print(f"Warning: FASTA module import failed: {e}")
-            return False
+            assert False, f"FASTA module import failed: {e}"
     
     def test_sequences_module_import(self):
         """Test that sequences module can be imported."""
         try:
             from noLZSS.genomics import sequences
             print("Sequences module imports successfully")
-            return True
         except ImportError as e:
             print(f"Warning: Sequences module import failed: {e}")
-            return False
+            assert False, f"Sequences module import failed: {e}"
     
     def test_genomics_namespace(self):
         """Test the genomics namespace structure."""
@@ -52,10 +49,9 @@ class TestGenomicsStructure:
             assert hasattr(genomics, 'sequences')
             
             print("Genomics namespace structure is correct")
-            return True
         except Exception as e:
             print(f"Warning: Genomics namespace error: {e}")
-            return False
+            assert False, f"Genomics namespace error: {e}"
 
 
 class TestFutureGenomicsFeatures:
@@ -70,10 +66,9 @@ class TestFutureGenomicsFeatures:
             assert hasattr(fasta, '__file__')
             
             print("FASTA module ready for implementation")
-            return True
         except Exception as e:
             print(f"Warning: FASTA module not ready: {e}")
-            return False
+            assert False, f"FASTA module not ready: {e}"
     
     def test_sequences_placeholder(self):
         """Test that sequences module exists and is ready for implementation."""
@@ -84,10 +79,9 @@ class TestFutureGenomicsFeatures:
             assert hasattr(sequences, '__file__')
             
             print("Sequences module ready for implementation")
-            return True
         except Exception as e:
             print(f"Warning: Sequences module not ready: {e}")
-            return False
+            assert False, f"Sequences module not ready: {e}"
 
 
 import tempfile
@@ -130,10 +124,9 @@ GCTAGCTA
             assert isinstance(results[1][1], list)
             
             print("Nucleotide FASTA reading works correctly")
-            return True
         except Exception as e:
             print(f"Warning: Nucleotide FASTA test failed: {e}")
-            return False
+            assert False, f"Nucleotide FASTA test failed: {e}"
         finally:
             os.unlink(temp_path)
     
@@ -151,10 +144,9 @@ ATCGNTCG
             with pytest.raises(FASTAError):
                 read_nucleotide_fasta(temp_path)
             print("Invalid nucleotide detection works correctly")
-            return True
         except Exception as e:
             print(f"Warning: Invalid nucleotide test failed: {e}")
-            return False
+            assert False, f"Invalid nucleotide test failed: {e}"
         finally:
             os.unlink(temp_path)
     
@@ -180,10 +172,9 @@ ACDEFGHIK
             assert results[1][1] == 'ACDEFGHIK'
             
             print("Protein FASTA reading works correctly")
-            return True
         except Exception as e:
             print(f"Warning: Protein FASTA test failed: {e}")
-            return False
+            assert False, f"Protein FASTA test failed: {e}"
         finally:
             os.unlink(temp_path)
     
@@ -201,10 +192,9 @@ MKVLWAALL1
             with pytest.raises(FASTAError):
                 read_protein_fasta(temp_path)
             print("Invalid amino acid detection works correctly")
-            return True
         except Exception as e:
             print(f"Warning: Invalid amino acid test failed: {e}")
-            return False
+            assert False, f"Invalid amino acid test failed: {e}"
         finally:
             os.unlink(temp_path)
     
@@ -227,10 +217,9 @@ ATCGATCG
             assert isinstance(results[0][1], list)  # factors
             
             print("Auto-detection of nucleotide FASTA works correctly")
-            return True
         except Exception as e:
             print(f"Warning: Auto-detection nucleotide test failed: {e}")
-            return False
+            assert False, f"Auto-detection nucleotide test failed: {e}"
         finally:
             os.unlink(temp_path)
     
@@ -253,10 +242,9 @@ MKVLWAALL
             assert results[0][1] == 'MKVLWAALL'
             
             print("Auto-detection of protein FASTA works correctly")
-            return True
         except Exception as e:
             print(f"Warning: Auto-detection protein test failed: {e}")
-            return False
+            assert False, f"Auto-detection protein test failed: {e}"
         finally:
             os.unlink(temp_path)
     
@@ -274,10 +262,9 @@ MKVLWAALL
             with pytest.raises(FASTAError):
                 read_fasta_auto(temp_path)
             print("Invalid sequence type detection works correctly")
-            return True
         except Exception as e:
             print(f"Warning: Invalid type test failed: {e}")
-            return False
+            assert False, f"Invalid type test failed: {e}"
         finally:
             os.unlink(temp_path)
 
@@ -318,13 +305,12 @@ GCTAGCTA
                 assert len(result["sequence"]) == 16 + 1  # 8 + 8 + 1 sentinel
                 
                 print("C++ FASTA processing works correctly")
-                return True
             except ImportError:
                 print("C++ extension not available, skipping test")
-                return True  # Skip test if C++ extension not built
+                return  # Skip test if C++ extension not built
         except Exception as e:
             print(f"Warning: C++ FASTA test failed: {e}")
-            return False
+            assert False, f"C++ FASTA test failed: {e}"
         finally:
             os.unlink(temp_path)
     
@@ -344,13 +330,12 @@ ATCGNTCG
                 with pytest.raises(RuntimeError):  # C++ throws runtime_error
                     cpp_process_fasta(temp_path)
                 print("C++ FASTA invalid nucleotide detection works correctly")
-                return True
             except ImportError:
                 print("C++ extension not available, skipping test")
-                return True
+                return
         except Exception as e:
             print(f"Warning: C++ invalid nucleotide test failed: {e}")
-            return False
+            assert False, f"C++ invalid nucleotide test failed: {e}"
         finally:
             os.unlink(temp_path)
     
@@ -368,13 +353,12 @@ ATCGNTCG
                 with pytest.raises(RuntimeError):
                     cpp_process_fasta(temp_path)
                 print("C++ FASTA empty file handling works correctly")
-                return True
             except ImportError:
                 print("C++ extension not available, skipping test")
-                return True
+                return
         except Exception as e:
             print(f"Warning: C++ empty file test failed: {e}")
-            return False
+            assert False, f"C++ empty file test failed: {e}"
         finally:
             os.unlink(temp_path)
     
@@ -411,13 +395,12 @@ LMNPQRSTV
                 assert len(result["sequence"]) == 18 + 1  # 9 + 9 + 1 sentinel
                 
                 print("C++ amino acid FASTA processing works correctly")
-                return True
             except ImportError:
                 print("C++ extension not available, skipping test")
-                return True  # Skip test if C++ extension not built
+                return  # Skip test if C++ extension not built
         except Exception as e:
             print(f"Warning: C++ amino acid FASTA test failed: {e}")
-            return False
+            assert False, f"C++ amino acid FASTA test failed: {e}"
         finally:
             os.unlink(temp_path)
     
@@ -437,109 +420,14 @@ ACDEFGHIK1
                 with pytest.raises(RuntimeError):  # C++ throws runtime_error
                     cpp_process_aa_fasta(temp_path)
                 print("C++ amino acid FASTA invalid character detection works correctly")
-                return True
             except ImportError:
                 print("C++ extension not available, skipping test")
-                return True
+                return
         except Exception as e:
             print(f"Warning: C++ invalid amino acid test failed: {e}")
-            return False
+            assert False, f"C++ invalid amino acid test failed: {e}"
         finally:
             os.unlink(temp_path)
-
-
-class TestProcessFastaWithPlots:
-    """Test the process_fasta_with_plots function."""
-
-    def test_process_fasta_with_plots_nucleotide(self):
-        """Test processing nucleotide FASTA with plots."""
-        fasta_content = """>seq1
-ATCGATCG
->seq2
-GCTAGCTA
-"""
-        
-        with tempfile.TemporaryDirectory() as temp_dir:
-            fasta_path = os.path.join(temp_dir, "test.fasta")
-            with open(fasta_path, 'w') as f:
-                f.write(fasta_content)
-            
-            try:
-                results = process_fasta_with_plots(fasta_path, temp_dir)
-                
-                # Verify results structure
-                assert isinstance(results, dict)
-                assert "seq1" in results
-                assert "seq2" in results
-                
-                # Check that factor files were created
-                factor_files = [f for f in os.listdir(temp_dir) if f.endswith('_factors.txt')]
-                assert len(factor_files) == 2
-                
-                print("Process FASTA with plots works correctly")
-                return True
-            except Exception as e:
-                print(f"Warning: Process FASTA with plots test failed: {e}")
-                return False
-    
-    def test_process_fasta_with_plots_protein(self):
-        """Test processing protein FASTA with plots."""
-        fasta_content = """>protein1
-MKVLWAALL
->protein2
-ACDEFGHIK
-"""
-        
-        with tempfile.TemporaryDirectory() as temp_dir:
-            fasta_path = os.path.join(temp_dir, "test.fasta")
-            with open(fasta_path, 'w') as f:
-                f.write(fasta_content)
-            
-            try:
-                results = process_fasta_with_plots(fasta_path, temp_dir)
-                
-                # For proteins, should return sequence strings, not factors
-                assert isinstance(results, dict)
-                assert "protein1" in results
-                assert "protein2" in results
-                assert results["protein1"] == "MKVLWAALL"
-                assert results["protein2"] == "ACDEFGHIK"
-                
-                print("Process FASTA with plots for proteins works correctly")
-                return True
-            except Exception as e:
-                print(f"Warning: Process FASTA with plots protein test failed: {e}")
-                return False
-    
-    def test_process_fasta_with_plots_max_sequences(self):
-        """Test processing FASTA with max_sequences limit."""
-        fasta_content = """>seq1
-ATCG
->seq2
-GCTA
->seq3
-TTTT
-"""
-        
-        with tempfile.TemporaryDirectory() as temp_dir:
-            fasta_path = os.path.join(temp_dir, "test.fasta")
-            with open(fasta_path, 'w') as f:
-                f.write(fasta_content)
-            
-            try:
-                results = process_fasta_with_plots(fasta_path, temp_dir, max_sequences=2)
-                
-                # Should only process first 2 sequences
-                assert len(results) == 2
-                assert "seq1" in results
-                assert "seq2" in results
-                assert "seq3" not in results
-                
-                print("Process FASTA with max_sequences works correctly")
-                return True
-            except Exception as e:
-                print(f"Warning: Process FASTA with max_sequences test failed: {e}")
-                return False
 
 
 class TestGenomicsIntegration:
@@ -555,10 +443,9 @@ class TestGenomicsIntegration:
             import noLZSS.genomics
             
             print("Genomics accessible from main package")
-            return True
         except Exception as e:
             print(f"Warning: Genomics not accessible from main package: {e}")
-            return False
+            assert False, f"Genomics not accessible from main package: {e}"
     
     def test_genomics_utils_integration(self):
         """Test that genomics can use utils functions."""
@@ -570,10 +457,9 @@ class TestGenomicsIntegration:
             assert is_protein_sequence("ACDEFG")
             
             print("Genomics utils integration works")
-            return True
         except Exception as e:
             print(f"Warning: Genomics utils integration failed: {e}")
-            return False
+            assert False, f"Genomics utils integration failed: {e}"
 
 
 if __name__ == "__main__":

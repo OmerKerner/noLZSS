@@ -83,17 +83,25 @@ def detect_sequence_type(data: Union[str, bytes]) -> str:
     # Convert to uppercase for analysis
     data_upper = data.upper()
     
+    # Handle empty string
+    if not data_upper:
+        return 'text'
+    
+    # Check if all characters are alphabetic (no numbers, punctuation, etc.)
+    if not all(c.isalpha() for c in data_upper):
+        return 'text'
+    
     # Check for characters that are amino-acid specific (not DNA nucleotides)
     amino_acid_only_chars = set('EFHIKLMNPQRSVWY')  # These are not DNA nucleotides
     has_amino_specific = any(c in amino_acid_only_chars for c in data_upper)
     
     # Check if all characters are valid DNA
     dna_chars = set('ACGT')
-    all_dna_chars = all(c in dna_chars for c in data_upper if c.isalpha())
+    all_dna_chars = all(c in dna_chars for c in data_upper)
     
     # Check if all characters are valid amino acids
     amino_chars = set('ACDEFGHIKLMNPQRSTVWY')
-    all_amino_chars = all(c in amino_chars for c in data_upper if c.isalpha())
+    all_amino_chars = all(c in amino_chars for c in data_upper)
     
     # Decision logic:
     # If it has amino-acid-specific characters, it's protein

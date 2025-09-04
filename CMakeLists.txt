@@ -64,7 +64,7 @@ if (NOT pybind11_FOUND)
   FetchContent_MakeAvailable(pybind11)
 endif()
 
-add_library(noLZSS_core STATIC src/cpp/factorizer.cpp)
+add_library(noLZSS_core STATIC src/cpp/factorizer.cpp src/cpp/fasta_processor.cpp)
 target_include_directories(noLZSS_core PUBLIC src/cpp)
 target_link_libraries(noLZSS_core PUBLIC ${SDSL_TARGET})
 

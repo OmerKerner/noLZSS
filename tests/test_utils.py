@@ -38,10 +38,9 @@ class TestValidateInput:
         assert result == b"hello"
     
     def test_validate_unicode_string(self):
-        """Test validation of unicode strings."""
-        result = validate_input("héllo")
-        assert isinstance(result, bytes)
-        assert result == "héllo".encode('utf-8')
+        """Test validation of unicode strings (should reject non-ASCII)."""
+        with pytest.raises(InvalidInputError, match="Input string must contain only ASCII characters"):
+            validate_input("héllo")
     
     def test_validate_empty_input_raises_error(self):
         """Test that empty input raises error."""
@@ -158,7 +157,7 @@ class TestSequenceDetection:
     def test_sequence_type_detection(self):
         """Test sequence type detection."""
         assert detect_sequence_type("ATCGATCG") == 'dna'
-        assert detect_sequence_type("PROTEIN") == 'protein'
+        assert detect_sequence_type("ACDEFGHIKLMNPQRSTVWY") == 'protein'  # Valid amino acids
         assert detect_sequence_type("Hello World") == 'text'
         assert detect_sequence_type(b"\x80\x81\x82") == 'binary'
         

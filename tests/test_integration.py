@@ -30,12 +30,12 @@ class TestPackageIntegration:
                     print(f"{func_name} available in main package")
                 else:
                     print(f"Warning: {func_name} not available in main package")
-                    return False
+                    assert False, f"{func_name} not available in main package"
             
-            return True
+            print("All modules can be imported together")
         except ImportError as e:
             print(f"Warning: Main package import failed: {e}")
-            return False
+            assert False, f"Main package import failed: {e}"
     
     def test_utils_through_main_package(self):
         """Test utils functionality through main package."""
@@ -52,10 +52,9 @@ class TestPackageIntegration:
             assert result['size'] == 4
             
             print("Utils functions work through main package")
-            return True
         except Exception as e:
             print(f"Warning: Utils through main package failed: {e}")
-            return False
+            assert False, f"Utils through main package failed: {e}"
     
     def test_all_modules_importable(self):
         """Test that all modules can be imported together."""
@@ -65,10 +64,9 @@ class TestPackageIntegration:
             from noLZSS.genomics import fasta, sequences
             
             print("All modules can be imported together")
-            return True
         except ImportError as e:
             print(f"Warning: Module import failed: {e}")
-            return False
+            assert False, f"Module import failed: {e}"
     
     def test_workflow_without_cpp(self):
         """Test a typical workflow without C++ extension."""
@@ -94,10 +92,9 @@ class TestPackageIntegration:
             assert isinstance(validated_data, bytes)
             
             print("Complete workflow (without C++ factorization) works")
-            return True
         except Exception as e:
             print(f"Warning: Workflow failed: {e}")
-            return False
+            assert False, f"Workflow failed: {e}"
 
 
 class TestFileOperations:
@@ -122,12 +119,11 @@ class TestFileOperations:
                 
                 assert reconstructed_data == test_data
                 print("File reader utility works")
-                return True
             finally:
                 os.unlink(temp_path)
         except Exception as e:
             print(f"Warning: File reader utility failed: {e}")
-            return False
+            assert False, f"File reader utility failed: {e}"
     
     def test_path_object_support(self):
         """Test that Path objects are supported."""
@@ -147,12 +143,11 @@ class TestFileOperations:
                 assert data == b"test data"
                 
                 print("Path object support works")
-                return True
             finally:
                 temp_path.unlink()
         except Exception as e:
             print(f"Warning: Path object support failed: {e}")
-            return False
+            assert False, f"Path object support failed: {e}"
 
 
 class TestErrorHandlingIntegration:
@@ -178,10 +173,9 @@ class TestErrorHandlingIntegration:
             except NoLZSSError:
                 print("NoLZSSError handling works")
             
-            return True
         except Exception as e:
             print(f"Warning: Custom exception handling failed: {e}")
-            return False
+            assert False, f"Custom exception handling failed: {e}"
     
     def test_validation_options_integration(self):
         """Test validation options across the package."""
@@ -200,10 +194,9 @@ class TestErrorHandlingIntegration:
                 else:
                     raise
             
-            return True
         except ImportError:
             print("Warning: Cannot test validation options without core module")
-            return False
+            # This is expected, so we don't fail the test
 
 
 class TestBenchmarkIntegration:
@@ -221,9 +214,9 @@ class TestBenchmarkIntegration:
                 print(f"{filename} exists")
             else:
                 print(f"Warning: {filename} missing")
-                return False
+                assert False, f"{filename} missing"
         
-        return True
+        print("Package functions work for benchmarking")
     
     def test_benchmark_can_import_package(self):
         """Test that benchmark scripts can import the package."""
@@ -238,10 +231,9 @@ class TestBenchmarkIntegration:
             assert 'size' in result
             
             print("Package functions work for benchmarking")
-            return True
         except Exception as e:
             print(f"Warning: Benchmark integration failed: {e}")
-            return False
+            assert False, f"Benchmark integration failed: {e}"
 
 
 if __name__ == "__main__":

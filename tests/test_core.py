@@ -31,11 +31,10 @@ class TestCoreModule:
             assert hasattr(core, 'factorize_with_info')
             
             print("Core module imports successfully")
-            return True
             
         except ImportError as e:
             print(f"Warning: Core module import failed (expected without C++ build): {e}")
-            return False
+            assert False, f"Core module import failed: {e}"
     
     def test_input_validation_in_wrappers(self):
         """Test input validation in wrapper functions."""
@@ -54,11 +53,9 @@ class TestCoreModule:
                 else:
                     raise
             
-            return True
-            
         except ImportError:
             print("Warning: Cannot test input validation without imports")
-            return False
+            # Expected when C++ module not built, so don't fail
     
     def test_file_validation_in_wrappers(self):
         """Test file validation in wrapper functions."""
@@ -77,11 +74,9 @@ class TestCoreModule:
                 else:
                     raise
             
-            return True
-            
         except ImportError:
             print("Warning: Cannot test file validation without imports")
-            return False
+            # Expected when C++ module not built, so don't fail
     
     def test_factorize_with_info_structure(self):
         """Test factorize_with_info return structure."""
@@ -107,11 +102,9 @@ class TestCoreModule:
                 else:
                     print(f"Warning: Unexpected error in factorize_with_info: {e}")
             
-            return True
-            
         except ImportError:
             print("Warning: Cannot test factorize_with_info without imports")
-            return False
+            # Expected when C++ module not built, so don't fail
 
 
 class TestIntegrationWithUtils:
@@ -130,11 +123,10 @@ class TestIntegrationWithUtils:
             assert alphabet_info['size'] == 4
             
             print("Utils functions work independently")
-            return True
             
         except ImportError as e:
             print(f"Warning: Cannot test utils integration: {e}")
-            return False
+            assert False, f"Cannot test utils integration: {e}"
     
     def test_validation_options(self):
         """Test that validation can be disabled."""
@@ -149,15 +141,13 @@ class TestIntegrationWithUtils:
                     print("Validation bypass works (C++ module missing)")
                 elif "InvalidInputError" in str(e):
                     print("Warning: Validation was not bypassed")
-                    return False
+                    assert False, "Validation was not bypassed"
                 else:
                     print(f"Warning: Unexpected error (validation bypass worked): {e}")
 
-            return True
-            
         except ImportError:
             print("Warning: Cannot test validation options without imports")
-            return False
+            # Expected when C++ module not built, so don't fail
 
 
 class TestErrorHandling:
@@ -180,11 +170,9 @@ class TestErrorHandling:
                 else:
                     raise
             
-            return True
-            
         except ImportError:
             print("Warning: Cannot test type errors without imports")
-            return False
+            # Expected when C++ module not built, so don't fail
     
     def test_path_handling(self):
         """Test Path object handling."""
@@ -204,11 +192,9 @@ class TestErrorHandling:
                 else:
                     raise
             
-            return True
-            
         except ImportError:
             print("Warning: Cannot test Path handling without imports")
-            return False
+            # Expected when C++ module not built, so don't fail
 
 
 if __name__ == "__main__":
