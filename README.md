@@ -14,6 +14,8 @@ High-performance Python library for text factorization using compressed suffix t
 - 🐍 **Python Bindings**: Easy-to-use Python interface with proper GIL management
 - 📊 **Multiple Output Formats**: Get factors as lists, counts, or binary files
 - 🔧 **Flexible API**: Support for both strings and files with optional performance hints
+- 🧬 **Genomics Support**: Specialized functions for FASTA file processing of nucleotide and protein sequences
+- ⚡ **C++ Extensions**: High-performance C++ implementations for memory-intensive operations
 
 ## Installation
 
@@ -217,6 +219,71 @@ results = noLZSS.process_fasta_with_plots(
 )
 ```
 
+#### `process_nucleotide_fasta(filepath)`
+High-performance C++ implementation for processing nucleotide FASTA files.
+
+This function provides memory-efficient processing of large FASTA files by directly reading
+and concatenating sequences in C++ without creating intermediate Python objects. It's ideal
+for processing large genome files that would otherwise cause memory issues.
+
+**Parameters:**
+- `filepath` (str): Path to FASTA file containing nucleotide sequences
+
+**Returns:**
+- `dict`: Dictionary containing:
+  - `"sequence"`: Concatenated sequences with sentinels
+  - `"num_sequences"`: Number of sequences processed
+  - `"sequence_ids"`: List of sequence IDs
+  - `"sequence_lengths"`: List of sequence lengths
+  - `"sequence_positions"`: List of sequence start positions
+
+**Raises:**
+- `RuntimeError`: If file cannot be read, contains invalid nucleotides, or has >251 sequences
+
+**Example:**
+```python
+from noLZSS._noLZSS import process_nucleotide_fasta
+
+# Process large FASTA file efficiently
+result = process_nucleotide_fasta("large_genome.fasta")
+print(f"Processed {result['num_sequences']} sequences")
+print(f"Total length: {len(result['sequence']):,} characters")
+
+# Use the concatenated sequence for factorization
+factors = noLZSS.factorize(result["sequence"])
+```
+
+**Note:** This function uses sentinels (characters 1-251) to separate sequences, avoiding conflicts with nucleotides A, C, G, T.
+
+### Genomics Usage Guide
+
+The library provides specialized functions for biological sequence analysis:
+
+#### Choosing the Right Function
+
+- **For small FASTA files (< 100MB)**: Use `read_nucleotide_fasta()` or `read_protein_fasta()`
+- **For large FASTA files (> 100MB)**: Use `process_nucleotide_fasta()` (C++ implementation)
+- **For mixed sequence types**: Use `read_fasta_auto()` for automatic detection
+- **For batch processing with visualization**: Use `process_fasta_with_plots()`
+
+#### Memory Considerations
+
+```python
+# Memory-efficient processing of large genomes
+from noLZSS._noLZSS import process_nucleotide_fasta
+
+# This avoids loading the entire file into Python memory
+result = process_nucleotide_fasta("human_genome.fasta")
+factors = noLZSS.factorize(result["sequence"])
+```
+
+#### Sequence Validation
+
+All genomics functions perform strict validation:
+- **Nucleotides**: Only A, C, T, G allowed (case insensitive)
+- **Proteins**: Only canonical amino acids allowed (case insensitive)
+- **Auto-detection**: Based on character composition analysis
+
 ### Usage Notes
 
 ```python
@@ -285,6 +352,21 @@ The library implements the **Non-overlapping Lempel-Ziv-Storer-Szymanski (LZSS)*
 - **Time Complexity**: 𝒪(𝑛 lg<sup>ϵ</sup> 𝑛) for factorization, where n is input length, and 𝜖 ∈ (0,1]
 - **Space Complexity**: 𝒪(𝑛lg𝜎) for suffix tree construction, where 𝜎 is the alphabet size
 - **Memory Usage**: File-based processing uses minimal memory for large files
+- **C++ Extensions**: Specialized high-performance functions for memory-intensive genomics operations
+
+### Performance Tips
+
+```python
+# For large files, use file-based functions
+factors = noLZSS.factorize_file("large_file.txt", reserve_hint=1000000)
+
+# For genomics, use C++ implementation for large FASTA files
+from noLZSS._noLZSS import process_nucleotide_fasta
+result = process_nucleotide_fasta("genome.fasta")  # Memory efficient
+
+# Use reserve_hint for better performance when you know factor count
+factors = noLZSS.factorize_file("data.txt", reserve_hint=50000)
+```
 
 ## Development
 

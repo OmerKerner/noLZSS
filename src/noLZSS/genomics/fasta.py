@@ -56,8 +56,8 @@ def _parse_fasta_content(content: str) -> Dict[str, str]:
             # Sequence line
             if current_id is None:
                 raise FASTAError(f"Sequence data before header at line {line_num}")
-            # Remove whitespace and digits (sometimes used for quality scores)
-            clean_line = re.sub(r'[\s\d]', '', line.upper())
+            # Remove whitespace only (preserve all sequence characters for validation)
+            clean_line = re.sub(r'\s', '', line.upper())
             current_seq.append(clean_line)
     
     # Save last sequence

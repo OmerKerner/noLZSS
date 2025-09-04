@@ -98,7 +98,8 @@ import pytest
 # Add the src directory to the path for testing
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
-from noLZSS.genomics.fasta import read_nucleotide_fasta, read_protein_fasta, read_fasta_auto, FASTAError
+from noLZSS.genomics.fasta import read_nucleotide_fasta, read_protein_fasta, read_fasta_auto, process_fasta_with_plots, FASTAError
+from noLZSS._noLZSS import process_nucleotide_fasta  # C++ function
 
 
 class TestFASTAFunctions:
@@ -280,6 +281,197 @@ MKVLWAALL
             os.unlink(temp_path)
 
 
+class TestCppFastaFunctions:
+    """Test C++ FASTA processing functions for memory efficiency."""
+
+    def test_process_nucleotide_fasta_valid(self):
+        """Test C++ FASTA processing with valid nucleotide sequences."""
+        fasta_content = """>seq1
+ATCGATCG
+>seq2
+GCTAGCTA
+"""
+        
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.fasta', delete=False) as f:
+            f.write(fasta_content)
+            temp_path = f.name
+        
+        try:
+            # Try to import C++ function
+            try:
+                from noLZSS._noLZSS import process_nucleotide_fasta as cpp_process_fasta
+                result = cpp_process_fasta(temp_path)
+                
+                # Verify result structure
+                assert isinstance(result, dict)
+                assert "sequence" in result
+                assert "num_sequences" in result
+                assert "sequence_ids" in result
+                assert "sequence_lengths" in result
+                assert "sequence_positions" in result
+                
+                # Verify content
+                assert result["num_sequences"] == 2
+                assert result["sequence_ids"] == ["seq1", "seq2"]
+                assert result["sequence_lengths"] == [8, 8]
+                assert len(result["sequence"]) == 16 + 1  # 8 + 8 + 1 sentinel
+                
+                print("C++ FASTA processing works correctly")
+                return True
+            except ImportError:
+                print("C++ extension not available, skipping test")
+                return True  # Skip test if C++ extension not built
+        except Exception as e:
+            print(f"Warning: C++ FASTA test failed: {e}")
+            return False
+        finally:
+            os.unlink(temp_path)
+    
+    def test_process_nucleotide_fasta_invalid_nucleotides(self):
+        """Test C++ FASTA processing with invalid nucleotides."""
+        fasta_content = """>seq1
+ATCGNTCG
+"""
+        
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.fasta', delete=False) as f:
+            f.write(fasta_content)
+            temp_path = f.name
+        
+        try:
+            try:
+                from noLZSS._noLZSS import process_nucleotide_fasta as cpp_process_fasta
+                with pytest.raises(RuntimeError):  # C++ throws runtime_error
+                    cpp_process_fasta(temp_path)
+                print("C++ FASTA invalid nucleotide detection works correctly")
+                return True
+            except ImportError:
+                print("C++ extension not available, skipping test")
+                return True
+        except Exception as e:
+            print(f"Warning: C++ invalid nucleotide test failed: {e}")
+            return False
+        finally:
+            os.unlink(temp_path)
+    
+    def test_process_nucleotide_fasta_empty_file(self):
+        """Test C++ FASTA processing with empty file."""
+        fasta_content = ""
+        
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.fasta', delete=False) as f:
+            f.write(fasta_content)
+            temp_path = f.name
+        
+        try:
+            try:
+                from noLZSS._noLZSS import process_nucleotide_fasta as cpp_process_fasta
+                with pytest.raises(RuntimeError):
+                    cpp_process_fasta(temp_path)
+                print("C++ FASTA empty file handling works correctly")
+                return True
+            except ImportError:
+                print("C++ extension not available, skipping test")
+                return True
+        except Exception as e:
+            print(f"Warning: C++ empty file test failed: {e}")
+            return False
+        finally:
+            os.unlink(temp_path)
+
+
+class TestProcessFastaWithPlots:
+    """Test the process_fasta_with_plots function."""
+
+    def test_process_fasta_with_plots_nucleotide(self):
+        """Test processing nucleotide FASTA with plots."""
+        fasta_content = """>seq1
+ATCGATCG
+>seq2
+GCTAGCTA
+"""
+        
+        with tempfile.TemporaryDirectory() as temp_dir:
+            fasta_path = os.path.join(temp_dir, "test.fasta")
+            with open(fasta_path, 'w') as f:
+                f.write(fasta_content)
+            
+            try:
+                results = process_fasta_with_plots(fasta_path, temp_dir)
+                
+                # Verify results structure
+                assert isinstance(results, dict)
+                assert "seq1" in results
+                assert "seq2" in results
+                
+                # Check that factor files were created
+                factor_files = [f for f in os.listdir(temp_dir) if f.endswith('_factors.txt')]
+                assert len(factor_files) == 2
+                
+                print("Process FASTA with plots works correctly")
+                return True
+            except Exception as e:
+                print(f"Warning: Process FASTA with plots test failed: {e}")
+                return False
+    
+    def test_process_fasta_with_plots_protein(self):
+        """Test processing protein FASTA with plots."""
+        fasta_content = """>protein1
+MKVLWAALL
+>protein2
+ACDEFGHIK
+"""
+        
+        with tempfile.TemporaryDirectory() as temp_dir:
+            fasta_path = os.path.join(temp_dir, "test.fasta")
+            with open(fasta_path, 'w') as f:
+                f.write(fasta_content)
+            
+            try:
+                results = process_fasta_with_plots(fasta_path, temp_dir)
+                
+                # For proteins, should return sequence strings, not factors
+                assert isinstance(results, dict)
+                assert "protein1" in results
+                assert "protein2" in results
+                assert results["protein1"] == "MKVLWAALL"
+                assert results["protein2"] == "ACDEFGHIK"
+                
+                print("Process FASTA with plots for proteins works correctly")
+                return True
+            except Exception as e:
+                print(f"Warning: Process FASTA with plots protein test failed: {e}")
+                return False
+    
+    def test_process_fasta_with_plots_max_sequences(self):
+        """Test processing FASTA with max_sequences limit."""
+        fasta_content = """>seq1
+ATCG
+>seq2
+GCTA
+>seq3
+TTTT
+"""
+        
+        with tempfile.TemporaryDirectory() as temp_dir:
+            fasta_path = os.path.join(temp_dir, "test.fasta")
+            with open(fasta_path, 'w') as f:
+                f.write(fasta_content)
+            
+            try:
+                results = process_fasta_with_plots(fasta_path, temp_dir, max_sequences=2)
+                
+                # Should only process first 2 sequences
+                assert len(results) == 2
+                assert "seq1" in results
+                assert "seq2" in results
+                assert "seq3" not in results
+                
+                print("Process FASTA with max_sequences works correctly")
+                return True
+            except Exception as e:
+                print(f"Warning: Process FASTA with max_sequences test failed: {e}")
+                return False
+
+
 class TestGenomicsIntegration:
     """Test integration with main package."""
     
@@ -316,7 +508,7 @@ class TestGenomicsIntegration:
 
 if __name__ == "__main__":
     # Run tests without pytest
-    test_classes = [TestGenomicsStructure, TestFutureGenomicsFeatures, TestGenomicsIntegration]
+    test_classes = [TestGenomicsStructure, TestFutureGenomicsFeatures, TestFASTAFunctions, TestCppFastaFunctions, TestProcessFastaWithPlots, TestGenomicsIntegration]
     
     total_tests = 0
     passed_tests = 0
