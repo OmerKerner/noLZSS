@@ -184,6 +184,45 @@ Note:
     This function overwrites the output file if it exists.
 )doc");
 
-    // Version information
+    // FASTA processing function
+    m.def("process_nucleotide_fasta", [](const std::string& fasta_path) {
+        // Release GIL while doing heavy C++ work
+        py::gil_scoped_release release;
+        auto result = noLZSS::process_nucleotide_fasta(fasta_path);
+        py::gil_scoped_acquire acquire;
+
+        // Return as Python dictionary
+        py::dict py_result;
+        py_result["sequence"] = result.sequence;
+        py_result["num_sequences"] = result.num_sequences;
+        py_result["sequence_ids"] = result.sequence_ids;
+        py_result["sequence_lengths"] = result.sequence_lengths;
+        py_result["sequence_positions"] = result.sequence_positions;
+        return py_result;
+    }, py::arg("fasta_path"), R"doc(Process a nucleotide FASTA file into concatenated string with sentinels.
+
+Reads a FASTA file containing nucleotide sequences and creates a single concatenated
+string with sentinel characters separating sequences. Only A, C, T, G nucleotides
+are allowed (case insensitive, converted to uppercase).
+
+Args:
+    fasta_path: Path to the FASTA file
+
+Returns:
+    Dictionary containing:
+    - 'sequence': Concatenated sequences with sentinels
+    - 'num_sequences': Number of sequences processed
+    - 'sequence_ids': List of sequence IDs
+    - 'sequence_lengths': List of sequence lengths (excluding sentinels)  
+    - 'sequence_positions': List of start positions in concatenated string
+
+Raises:
+    RuntimeError: If file cannot be read, contains invalid nucleotides,
+                 or has more than 251 sequences (sentinel limit)
+
+    Note:
+    Sentinels are characters 1-251 (avoiding 0, A=65, C=67, G=71, T=84).
+    Empty sequences are skipped. Only whitespace is ignored in sequences.
+)doc");    // Version information
     m.attr("__version__") = std::to_string(noLZSS::VERSION_MAJOR) + "." + std::to_string(noLZSS::VERSION_MINOR) + "." + std::to_string(noLZSS::VERSION_PATCH);
 }

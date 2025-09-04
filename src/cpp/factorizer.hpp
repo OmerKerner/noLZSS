@@ -98,4 +98,36 @@ size_t count_factors_file(const std::string& path);
  */
 size_t write_factors_binary_file(const std::string& in_path, const std::string& out_path);
 
+// FASTA processing
+
+/**
+ * @brief Result of FASTA file processing containing concatenated sequences and metadata.
+ */
+struct FastaProcessResult {
+    std::string sequence;      /**< Concatenated sequences with sentinels */
+    size_t num_sequences;      /**< Number of sequences processed */
+    std::vector<std::string> sequence_ids;  /**< IDs of processed sequences */
+    std::vector<size_t> sequence_lengths;   /**< Lengths of each sequence (excluding sentinels) */
+    std::vector<size_t> sequence_positions; /**< Start positions of each sequence in concatenated string */
+};
+
+/**
+ * @brief Processes a nucleotide FASTA file into a concatenated string with sentinels.
+ *
+ * Reads a FASTA file containing nucleotide sequences and creates a single concatenated
+ * string with sentinel characters separating sequences. Only A, C, T, G nucleotides
+ * are allowed (case insensitive, converted to uppercase).
+ *
+ * @param fasta_path Path to the FASTA file
+ * @return FastaProcessResult containing the processed sequence and metadata
+ * 
+ * @throws std::runtime_error If file cannot be read, contains invalid nucleotides,
+ *         or has more than 251 sequences (sentinel limit)
+ * 
+ * @note Sentinels are characters 1-251 (avoiding 0, A=65, C=67, G=71, T=84)
+ * @note Empty sequences are skipped
+ * @note Only whitespace is ignored in sequences; digits or other characters cause errors
+ */
+FastaProcessResult process_nucleotide_fasta(const std::string& fasta_path);
+
 }
