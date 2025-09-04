@@ -288,13 +288,31 @@ def process_fasta_with_plots(
             
         print(f"Processing sequence {seq_id} ({len(sequence)} bp)...")
         
-        # Validate and prepare sequence
-        if not re.match(r'^[ACGT]+$', sequence.upper()):
-            invalid_chars = set(sequence.upper()) - set('ACGT')
-            print(f"  Warning: Skipping {seq_id} - contains invalid nucleotides: {invalid_chars}")
-            continue
+        # Detect sequence type and validate
+        seq_type = detect_sequence_type(sequence)
         
-        sequence = sequence.upper()
+        if seq_type == 'dna':
+            # Validate as nucleotide
+            if not re.match(r'^[ACGT]+$', sequence.upper()):
+                invalid_chars = set(sequence.upper()) - set('ACGT')
+                print(f"  Warning: Skipping {seq_id} - contains invalid nucleotides: {invalid_chars}")
+                continue
+            sequence = sequence.upper()
+            print(f"  Detected nucleotide sequence")
+            
+        elif seq_type == 'protein':
+            # Validate as amino acid
+            valid_aa = set('ACDEFGHIKLMNPQRSTVWY')
+            if not all(c in valid_aa for c in sequence.upper()):
+                invalid_chars = set(sequence.upper()) - valid_aa
+                print(f"  Warning: Skipping {seq_id} - contains invalid amino acids: {invalid_chars}")
+                continue
+            sequence = sequence.upper()
+            print(f"  Detected amino acid sequence")
+            
+        else:
+            print(f"  Warning: Skipping {seq_id} - unknown sequence type: {seq_type}")
+            continue
         
         # Factorize
         try:

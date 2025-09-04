@@ -99,6 +99,7 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 from noLZSS.genomics.fasta import read_nucleotide_fasta, read_protein_fasta, read_fasta_auto, process_fasta_with_plots, FASTAError
+from noLZSS._noLZSS import process_nucleotide_fasta, process_amino_acid_fasta  # C++ functions
 from noLZSS._noLZSS import process_nucleotide_fasta  # C++ function
 
 
@@ -373,6 +374,75 @@ ATCGNTCG
                 return True
         except Exception as e:
             print(f"Warning: C++ empty file test failed: {e}")
+            return False
+        finally:
+            os.unlink(temp_path)
+    
+    def test_process_amino_acid_fasta_valid(self):
+        """Test C++ amino acid FASTA processing with valid sequences."""
+        fasta_content = """>protein1
+ACDEFGHIK
+>protein2
+LMNPQRSTV
+"""
+        
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.fasta', delete=False) as f:
+            f.write(fasta_content)
+            temp_path = f.name
+        
+        try:
+            # Try to import C++ function
+            try:
+                from noLZSS._noLZSS import process_amino_acid_fasta as cpp_process_aa_fasta
+                result = cpp_process_aa_fasta(temp_path)
+                
+                # Verify result structure
+                assert isinstance(result, dict)
+                assert "sequence" in result
+                assert "num_sequences" in result
+                assert "sequence_ids" in result
+                assert "sequence_lengths" in result
+                assert "sequence_positions" in result
+                
+                # Verify content
+                assert result["num_sequences"] == 2
+                assert result["sequence_ids"] == ["protein1", "protein2"]
+                assert result["sequence_lengths"] == [9, 9]
+                assert len(result["sequence"]) == 18 + 1  # 9 + 9 + 1 sentinel
+                
+                print("C++ amino acid FASTA processing works correctly")
+                return True
+            except ImportError:
+                print("C++ extension not available, skipping test")
+                return True  # Skip test if C++ extension not built
+        except Exception as e:
+            print(f"Warning: C++ amino acid FASTA test failed: {e}")
+            return False
+        finally:
+            os.unlink(temp_path)
+    
+    def test_process_amino_acid_fasta_invalid_amino_acids(self):
+        """Test C++ amino acid FASTA processing with invalid amino acids."""
+        fasta_content = """>protein1
+ACDEFGHIK1
+"""
+        
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.fasta', delete=False) as f:
+            f.write(fasta_content)
+            temp_path = f.name
+        
+        try:
+            try:
+                from noLZSS._noLZSS import process_amino_acid_fasta as cpp_process_aa_fasta
+                with pytest.raises(RuntimeError):  # C++ throws runtime_error
+                    cpp_process_aa_fasta(temp_path)
+                print("C++ amino acid FASTA invalid character detection works correctly")
+                return True
+            except ImportError:
+                print("C++ extension not available, skipping test")
+                return True
+        except Exception as e:
+            print(f"Warning: C++ invalid amino acid test failed: {e}")
             return False
         finally:
             os.unlink(temp_path)

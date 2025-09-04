@@ -130,4 +130,24 @@ struct FastaProcessResult {
  */
 FastaProcessResult process_nucleotide_fasta(const std::string& fasta_path);
 
+/**
+ * @brief Processes an amino acid FASTA file into a concatenated string with sentinels.
+ *
+ * Reads a FASTA file containing amino acid sequences and creates a single concatenated
+ * string with sentinel characters separating sequences. Only canonical amino acids
+ * are allowed (case insensitive, converted to uppercase).
+ *
+ * @param fasta_path Path to the FASTA file
+ * @return FastaProcessResult containing the processed sequence and metadata
+ * 
+ * @throws std::runtime_error If file cannot be read, contains invalid amino acids,
+ *         or has more than 235 sequences (sentinel limit)
+ * 
+ * @note Canonical amino acids: A, C, D, E, F, G, H, I, K, L, M, N, P, Q, R, S, T, V, W, Y
+ * @note Sentinels are characters 1-251 (avoiding 0 and common amino acids)
+ * @note Empty sequences are skipped
+ * @note Only whitespace is ignored in sequences; digits or other characters cause errors
+ */
+FastaProcessResult process_amino_acid_fasta(const std::string& fasta_path);
+
 }

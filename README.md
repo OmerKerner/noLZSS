@@ -255,6 +255,40 @@ factors = noLZSS.factorize(result["sequence"])
 
 **Note:** This function uses sentinels (characters 1-251) to separate sequences, avoiding conflicts with nucleotides A, C, G, T.
 
+#### `process_amino_acid_fasta(filepath)`
+High-performance C++ implementation for processing amino acid FASTA files.
+
+This function provides memory-efficient processing of large FASTA files containing amino acid sequences by directly reading and concatenating sequences in C++ without creating intermediate Python objects. It's ideal for processing large protein databases that would otherwise cause memory issues.
+
+**Parameters:**
+- `filepath` (str): Path to FASTA file containing amino acid sequences
+
+**Returns:**
+- `dict`: Dictionary containing:
+  - `"sequence"`: Concatenated sequences with sentinels
+  - `"num_sequences"`: Number of sequences processed
+  - `"sequence_ids"`: List of sequence IDs
+  - `"sequence_lengths"`: List of sequence lengths
+  - `"sequence_positions"`: List of sequence start positions
+
+**Raises:**
+- `RuntimeError`: If file cannot be read, contains invalid amino acids, or has more than 235 sequences
+
+**Example:**
+```python
+from noLZSS._noLZSS import process_amino_acid_fasta
+
+# Process large protein FASTA file efficiently
+result = process_amino_acid_fasta("proteins.fasta")
+print(f"Processed {result['num_sequences']} protein sequences")
+print(f"Total length: {len(result['sequence']):,} characters")
+
+# Use the concatenated sequence for factorization
+factors = noLZSS.factorize(result["sequence"])
+```
+
+**Note:** Canonical amino acids: A, C, D, E, F, G, H, I, K, L, M, N, P, Q, R, S, T, V, W, Y. Sentinels avoid these characters and null (0).
+
 ### Genomics Usage Guide
 
 The library provides specialized functions for biological sequence analysis:
