@@ -7,6 +7,24 @@
 
 namespace noLZSS {
 
+// Constants and utility functions for reverse complement handling
+/** @brief Mask for reverse complement flag in ref field (MSB of uint64_t) */
+constexpr uint64_t RC_MASK = (1ULL << 63);
+
+/**
+ * @brief Check if a reference value indicates a reverse complement match
+ * @param ref The reference value to check
+ * @return true if the MSB is set (reverse complement), false otherwise
+ */
+inline bool is_rc(uint64_t ref) { return (ref & RC_MASK) != 0; }
+
+/**
+ * @brief Extract the clean reference position by stripping the RC_MASK
+ * @param ref The reference value (potentially with RC_MASK set)
+ * @return The reference position with RC_MASK stripped
+ */
+inline uint64_t rc_end(uint64_t ref) { return (ref & ~RC_MASK); }
+
 /**
  * @brief Represents a factorization factor with start position, length, and reference position.
  *

@@ -34,7 +34,8 @@ PYBIND11_MODULE(_noLZSS, m) {
     py::class_<noLZSS::Factor>(m, "Factor", "Represents a single factorization factor with start position, length, and reference position")
         .def_readonly("start", &noLZSS::Factor::start, "Starting position of the factor in the original text")
         .def_readonly("length", &noLZSS::Factor::length, "Length of the factor substring")
-        .def_readonly("ref", &noLZSS::Factor::ref, "Reference position of the previous occurrence");
+        .def_property_readonly("ref", [](const noLZSS::Factor& f) { return f.ref & ~noLZSS::RC_MASK; }, "Reference position with RC_MASK stripped if it's a reverse complement match")
+        .def_property_readonly("is_rc", [](const noLZSS::Factor& f) { return noLZSS::is_rc(f.ref); }, "Whether this factor is a reverse complement match");
 
     // factorize function documentation
     m.def("factorize", [](py::buffer b) {
@@ -207,7 +208,7 @@ Note:
         py::gil_scoped_acquire acquire;
 
         py::list out;
-        for (auto &f : factors) out.append(py::make_tuple(f.start, f.length, f.ref));
+        for (auto &f : factors) out.append(py::make_tuple(f.start, f.length, f.ref & ~noLZSS::RC_MASK, noLZSS::is_rc(f.ref)));
         return out;
     }, py::arg("data"), R"doc(Factorize DNA text with reverse complement awareness into noLZSS factors.
 
@@ -219,13 +220,13 @@ Args:
     data: Python bytes-like object containing DNA text
 
 Returns:
-    List of (start, length, ref) tuples representing the factorization
+    List of (start, length, ref, is_rc) tuples representing the factorization
 
 Raises:
     ValueError: if data is not a valid bytes-like object
 
 Note:
-    Reverse complement matches are encoded with RC_MASK in the ref field.
+    ref field has RC_MASK cleared. is_rc boolean indicates if this was a reverse complement match.
     GIL is released during computation for better performance with large data.
 )doc");
 
@@ -237,7 +238,7 @@ Note:
         py::gil_scoped_acquire acquire;
 
         py::list out;
-        for (auto &f : factors) out.append(py::make_tuple(f.start, f.length, f.ref));
+        for (auto &f : factors) out.append(py::make_tuple(f.start, f.length, f.ref & ~noLZSS::RC_MASK, noLZSS::is_rc(f.ref)));
         return out;
     }, py::arg("path"), py::arg("reserve_hint") = 0, R"doc(Factorize DNA text from file with reverse complement awareness into noLZSS factors.
 
@@ -249,11 +250,11 @@ Args:
     reserve_hint: Optional hint for reserving space in output vector (0 = no hint)
 
 Returns:
-    List of (start, length, ref) tuples representing the factorization
+    List of (start, length, ref, is_rc) tuples representing the factorization
 
 Note:
     Use reserve_hint for better performance when you know approximate factor count.
-    Reverse complement matches are encoded with RC_MASK in the ref field.
+    ref field has RC_MASK cleared. is_rc boolean indicates if this was a reverse complement match.
 )doc");
 
     // count_factors_dna_w_rc function documentation

@@ -65,11 +65,6 @@ static std::string revcomp(std::string_view s) {
     return r;
 }
 
-// Pack RC orientation into ref field (uint64_t)
-constexpr uint64_t RC_MASK = (1ULL << 63);
-inline bool is_rc(uint64_t ref)    { return (ref & RC_MASK) != 0; }
-inline uint64_t rc_end(uint64_t r) { return (r & ~RC_MASK); }
-
 // ---------- generic, sink-driven noLZSS ----------
 
 /**
