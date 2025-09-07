@@ -58,7 +58,7 @@ PYBIND11_MODULE(_noLZSS, m) {
         py::list out;
         for (auto &f : factors) out.append(py::make_tuple(f.start, f.length, f.ref));
         return out;
-    }, py::arg("data"), R"doc(Factorize a text string into LZSS factors.
+    }, py::arg("data"), R"doc(Factorize a text string into noLZSS factors.
 
 This is the main factorization function for in-memory text processing.
 It accepts any Python bytes-like object and returns a list of (start, length) tuples.
@@ -86,7 +86,7 @@ Note:
         py::list out;
         for (auto &f : factors) out.append(py::make_tuple(f.start, f.length, f.ref));
         return out;
-    }, py::arg("path"), py::arg("reserve_hint") = 0, R"doc(Factorize text from file into LZSS factors.
+    }, py::arg("path"), py::arg("reserve_hint") = 0, R"doc(Factorize text from file into noLZSS factors.
 
 Reads text from a file and performs factorization. This is more memory-efficient
 for large files as it avoids loading the entire file into memory.
@@ -145,7 +145,7 @@ Note:
         py::gil_scoped_acquire acquire;
 
         return count;
-    }, py::arg("path"), R"doc(Count number of LZSS factors in a file.
+    }, py::arg("path"), R"doc(Count number of noLZSS factors in a file.
 
 Reads text from a file and counts factors without storing them.
 This is the most memory-efficient way to get factor counts for large files.
@@ -168,7 +168,7 @@ Note:
         py::gil_scoped_acquire acquire;
 
         return count;
-    }, py::arg("in_path"), py::arg("out_path"), R"doc(Write LZSS factors from file to binary output file.
+    }, py::arg("in_path"), py::arg("out_path"), R"doc(Write noLZSS factors from file to binary output file.
 
 Reads text from an input file, performs factorization, and writes the factors
 in binary format to an output file. Each factor is written as two uint64_t values.
@@ -182,6 +182,161 @@ Returns:
 
 Note:
     Binary format: each factor is 24 bytes (3 × uint64_t: start, length, ref).
+    This function overwrites the output file if it exists.
+)doc");
+
+    // DNA-aware factorization functions with reverse complement support
+
+    // factorize_dna_w_rc function documentation
+    m.def("factorize_dna_w_rc", [](py::buffer b) {
+        // Accept any bytes-like 1-byte-per-item contiguous buffer (e.g. bytes, bytearray, memoryview)
+        py::buffer_info info = b.request();
+        if (info.itemsize != 1) {
+            throw std::invalid_argument("factorize_dna_w_rc: buffer must be a bytes-like object with itemsize==1");
+        }
+        if (info.ndim != 1) {
+            throw std::invalid_argument("factorize_dna_w_rc: buffer must be a 1-dimensional bytes-like object");
+        }
+
+        const char* data = static_cast<const char*>(info.ptr);
+        std::string_view sv(data, static_cast<size_t>(info.size));
+
+        // Release GIL while doing heavy C++ work
+        py::gil_scoped_release release;
+        auto factors = noLZSS::factorize_dna_w_rc(sv);
+        py::gil_scoped_acquire acquire;
+
+        py::list out;
+        for (auto &f : factors) out.append(py::make_tuple(f.start, f.length, f.ref));
+        return out;
+    }, py::arg("data"), R"doc(Factorize DNA text with reverse complement awareness into noLZSS factors.
+
+Performs non-overlapping Lempel-Ziv-Storer-Szymanski factorization on DNA sequences,
+considering both forward and reverse complement matches. This is particularly useful
+for genomic data where reverse complement patterns are biologically significant.
+
+Args:
+    data: Python bytes-like object containing DNA text
+
+Returns:
+    List of (start, length, ref) tuples representing the factorization
+
+Raises:
+    ValueError: if data is not a valid bytes-like object
+
+Note:
+    Reverse complement matches are encoded with RC_MASK in the ref field.
+    GIL is released during computation for better performance with large data.
+)doc");
+
+    // factorize_file_dna_w_rc function documentation
+    m.def("factorize_file_dna_w_rc", [](const std::string& path, size_t reserve_hint) {
+        // Release GIL while doing heavy C++ work
+        py::gil_scoped_release release;
+        auto factors = noLZSS::factorize_file_dna_w_rc(path, reserve_hint);
+        py::gil_scoped_acquire acquire;
+
+        py::list out;
+        for (auto &f : factors) out.append(py::make_tuple(f.start, f.length, f.ref));
+        return out;
+    }, py::arg("path"), py::arg("reserve_hint") = 0, R"doc(Factorize DNA text from file with reverse complement awareness into noLZSS factors.
+
+Reads DNA text from a file and performs factorization considering both forward
+and reverse complement matches. This is more memory-efficient for large genomic files.
+
+Args:
+    path: Path to input file containing DNA text
+    reserve_hint: Optional hint for reserving space in output vector (0 = no hint)
+
+Returns:
+    List of (start, length, ref) tuples representing the factorization
+
+Note:
+    Use reserve_hint for better performance when you know approximate factor count.
+    Reverse complement matches are encoded with RC_MASK in the ref field.
+)doc");
+
+    // count_factors_dna_w_rc function documentation
+    m.def("count_factors_dna_w_rc", [](py::buffer b) {
+        // Accept any bytes-like 1-byte-per-item contiguous buffer
+        py::buffer_info info = b.request();
+        if (info.itemsize != 1) {
+            throw std::invalid_argument("count_factors_dna_w_rc: buffer must be a bytes-like object with itemsize==1");
+        }
+        if (info.ndim != 1) {
+            throw std::invalid_argument("count_factors_dna_w_rc: buffer must be a 1-dimensional bytes-like object");
+        }
+
+        const char* data = static_cast<const char*>(info.ptr);
+        std::string_view sv(data, static_cast<size_t>(info.size));
+
+        // Release GIL while doing heavy C++ work
+        py::gil_scoped_release release;
+        size_t count = noLZSS::count_factors_dna_w_rc(sv);
+        py::gil_scoped_acquire acquire;
+
+        return count;
+    }, py::arg("data"), R"doc(Count number of noLZSS factors in DNA text with reverse complement awareness.
+
+This is a memory-efficient alternative to factorize_dna_w_rc() when you only need
+the count of factors rather than the factors themselves.
+
+Args:
+    data: Python bytes-like object containing DNA text
+
+Returns:
+    Number of factors in the factorization
+
+Note:
+    GIL is released during computation for better performance with large data.
+)doc");
+
+    // count_factors_file_dna_w_rc function documentation
+    m.def("count_factors_file_dna_w_rc", [](const std::string& path) {
+        // Release GIL while doing heavy C++ work
+        py::gil_scoped_release release;
+        size_t count = noLZSS::count_factors_file_dna_w_rc(path);
+        py::gil_scoped_acquire acquire;
+
+        return count;
+    }, py::arg("path"), R"doc(Count number of noLZSS factors in a DNA file with reverse complement awareness.
+
+Reads DNA text from a file and counts factors without storing them.
+This is the most memory-efficient way to get factor counts for large genomic files.
+
+Args:
+    path: Path to input file containing DNA text
+
+Returns:
+    Number of factors in the factorization
+
+Note:
+    GIL is released during computation for better performance.
+)doc");
+
+    // write_factors_binary_file_dna_w_rc function documentation
+    m.def("write_factors_binary_file_dna_w_rc", [](const std::string& in_path, const std::string& out_path) {
+        // Release GIL while doing heavy C++ work
+        py::gil_scoped_release release;
+        size_t count = noLZSS::write_factors_binary_file_dna_w_rc(in_path, out_path);
+        py::gil_scoped_acquire acquire;
+
+        return count;
+    }, py::arg("in_path"), py::arg("out_path"), R"doc(Write noLZSS factors from DNA file with reverse complement awareness to binary output file.
+
+Reads DNA text from an input file, performs factorization with reverse complement support,
+and writes the factors in binary format to an output file.
+
+Args:
+    in_path: Path to input file containing DNA text
+    out_path: Path to output file where binary factors will be written
+
+Returns:
+    Number of factors written to the output file
+
+Note:
+    Binary format: each factor is 24 bytes (3 × uint64_t: start, length, ref).
+    Reverse complement factors have RC_MASK set in the ref field.
     This function overwrites the output file if it exists.
 )doc");
 

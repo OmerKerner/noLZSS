@@ -5,6 +5,7 @@
 #include <fstream>
 #include <iostream>
 #include <optional>
+#include <limits>
 
 namespace noLZSS {
 using cst_t = sdsl::cst_sada<>;
@@ -46,10 +47,33 @@ static cst_t::node_type next_leaf(cst_t& cst, cst_t::node_type lambda, size_t it
     return cst.select_leaf(lambda_rank + 1);
 }
 
-// ---------- generic, sink-driven LZSS ----------
+// ---------- reverse-complement utilities ----------
+char complement(char c) {
+    switch (c) {
+        case 'A': return 'T';
+        case 'C': return 'G';
+        case 'G': return 'C';
+        case 'T': return 'A';
+        default:
+            // Handle invalid input, e.g., throw an exception or return a sentinel value
+            throw std::invalid_argument("Invalid nucleotide: " + std::string(1, c));
+    }
+}
+static std::string revcomp(std::string_view s) {
+    std::string r; r.resize(s.size());
+    for (size_t i = 0, n = s.size(); i < n; ++i) r[i] = complement(s[n-1-i]);
+    return r;
+}
+
+// Pack RC orientation into ref field (uint64_t)
+constexpr uint64_t RC_MASK = (1ULL << 63);
+inline bool is_rc(uint64_t ref)    { return (ref & RC_MASK) != 0; }
+inline uint64_t rc_end(uint64_t r) { return (r & ~RC_MASK); }
+
+// ---------- generic, sink-driven noLZSS ----------
 
 /**
- * @brief Core LZSS factorization algorithm implementation.
+ * @brief Core noLZSS factorization algorithm implementation.
  *
  * Implements the non-overlapping Lempel-Ziv-Storer-Szymanski factorization
  * using a compressed suffix tree. The algorithm finds the longest previous
@@ -65,7 +89,7 @@ static cst_t::node_type next_leaf(cst_t& cst, cst_t::node_type lambda, size_t it
  * @note All factors are emitted, including the last one
  */
 template<class Sink>
-static size_t lzss(cst_t& cst, Sink&& sink) {
+static size_t nolzss(cst_t& cst, Sink&& sink) {
     sdsl::rmq_succinct_sct<> rmq(&cst.csa);
     const size_t str_len = cst.size() - 1; // the length of the string is the size of the CST minus the sentinel
 
@@ -134,13 +158,179 @@ static size_t lzss(cst_t& cst, Sink&& sink) {
     return count;
 }
 
+/**
+ * @brief Core noLZSS factorization algorithm implementation with reverse complement awareness for DNA.
+ *
+ * Implements the non-overlapping Lempel-Ziv-Storer-Szymanski factorization
+ * using a compressed suffix tree, extended to handle DNA sequences with reverse complement matches.
+ * The algorithm constructs a combined string S = T '$' rc(T) '#' where rc(T) is the reverse complement,
+ * builds a suffix tree over S, and finds the longest previous factor (either forward or reverse complement)
+ * for each position in the original text T, emitting factors through a sink.
+ *
+ * @tparam Sink Callable type that accepts Factor objects (e.g., lambda, function)
+ * @param T Input DNA text string
+ * @param sink Callable that receives each computed factor
+ * @return Number of factors emitted
+ *
+ * @note This is the core algorithm for DNA-aware factorization that all DNA public functions use
+ * @note The sink pattern allows for memory-efficient processing
+ * @note All factors are emitted, including the last one
+ * @note Reverse complement matches are encoded with the RC_MASK in the ref field
+ */
+template<class Sink>
+static size_t nolzss_dna_w_rc(const std::string& T, Sink&& sink) {
+    const size_t n = T.size();
+    if (n == 0) return 0;
+
+    // Build S = T '$' rc(T) '#'
+    std::string R = revcomp(T);
+    std::string S;
+    S.reserve(n + 1 + n + 1);
+    S.append(T);
+    S.push_back('$');
+    S.append(R);
+    S.push_back('#');
+
+    // Build CST over S
+    cst_t cst; construct_im(cst, S, 1);
+
+    // Build RMQ inputs aligned to SA: forward starts and RC ends (in T-coords)
+    const uint64_t INF = std::numeric_limits<uint64_t>::max()/2ULL;
+    sdsl::int_vector<64> fwd_starts(cst.csa.size(), INF);
+    sdsl::int_vector<64> rc_ends   (cst.csa.size(), INF);
+
+    const size_t T_beg = 0;
+    const size_t T_end = n;           // '$' at S[n]
+    const size_t R_beg = n + 1;       // first char of rc(T)
+    const size_t R_end = n + 1 + n;   // '#' at S[n+1+n]
+
+    for (size_t k = 0; k < cst.csa.size(); ++k) {
+        size_t posS = cst.csa[k];
+        if (posS < T_end) {
+            // suffix starts in T
+            fwd_starts[k] = posS;     // 0-based start in T
+        } else if (posS >= R_beg && posS < R_end) {
+            // suffix starts in R
+            size_t jR0   = posS - R_beg;         // 0-based start in R
+            size_t endT0 = n - jR0 - 1;          // mapped end in T (0-based)
+            rc_ends[k] = endT0;
+        }
+    }
+    sdsl::rmq_succinct_sct<> rmqF(&fwd_starts);
+    sdsl::rmq_succinct_sct<> rmqRcEnd(&rc_ends);
+
+    // Initialize to the leaf of suffix starting at S position 0 (i.e., T[0])
+    auto lambda = cst.select_leaf(cst.csa.isa[0] + 1);
+    size_t lambda_node_depth = cst.node_depth(lambda);
+    size_t i = cst.sn(lambda); // suffix start in S, begins at 0
+
+    size_t factors = 0;
+
+    while (i < n) { // only factorize inside T
+        // At factor start i (0-based in T), walk up ancestors and pick best candidate
+        size_t best_len_depth = 0;   // best candidate's depth (proxy for length)
+        bool   best_is_rc      = false;
+        size_t best_fwd_start  = 0;  // start in T (for FWD)
+        size_t best_rc_end     = 0;  // end in T (for RC)
+        size_t best_rc_posS    = 0;  // pos in S where RC candidate suffix starts (for LCP)
+
+        // Walk from leaf to root via level_anc
+        for (size_t step = 1; step <= lambda_node_depth; ++step) {
+            auto v = cst.bp_support.level_anc(lambda, lambda_node_depth - step);
+            size_t ell = cst.depth(v);
+            if (ell == 0) break; // reached root
+
+            auto lb = cst.lb(v), rb = cst.rb(v);
+
+            // Forward candidate (min start in T within v's interval)
+            size_t kF = rmqF(lb, rb);
+            uint64_t jF = fwd_starts[kF];
+            bool okF = (jF != INF) && (jF + ell - 1 < i); // non-overlap: endF <= i-1
+
+            // RC candidate (min END in T within v's interval; monotone with depth)
+            size_t kR = rmqRcEnd(lb, rb);
+            uint64_t endRC = rc_ends[kR];
+            bool okR = (endRC != INF) && (endRC < i); // endRC <= i-1
+
+            if (!okF && !okR) {
+                // deeper nodes can only increase jF and the minimal RC end
+                // -> non-overlap won't become true again for either; stop
+                break;
+            }
+
+            // Choose the better of the valid candidates at this depth
+            if (okF) {
+                if (ell > best_len_depth ||
+                    (ell == best_len_depth && !best_is_rc && (jF + ell - 1) < (best_fwd_start + best_len_depth - 1))) {
+                    best_len_depth = ell;
+                    best_is_rc     = false;
+                    best_fwd_start = jF;
+                }
+            }
+            if (okR) {
+                size_t posS_R = cst.csa[kR]; // suffix position in S for LCP
+                if (ell > best_len_depth ||
+                    (ell == best_len_depth && (best_is_rc ? (endRC < best_rc_end) : true))) {
+                    best_len_depth = ell;
+                    best_is_rc     = true;
+                    best_rc_end    = endRC;
+                    best_rc_posS   = posS_R;
+                }
+            }
+        }
+
+        size_t emit_len = 1;
+        uint64_t emit_ref = i; // default for literal
+        if (best_len_depth == 0) {
+            // No previous occurrence (FWD nor RC) — literal of length 1
+            Factor f{static_cast<uint64_t>(i), static_cast<uint64_t>(emit_len), static_cast<uint64_t>(emit_ref)};
+            sink(f);
+            ++factors;
+
+            // Advance
+            lambda = next_leaf(cst, lambda, emit_len);
+            lambda_node_depth = cst.node_depth(lambda);
+            i = cst.sn(lambda);
+            continue;
+        }
+
+        if (!best_is_rc) {
+            // Finalize FWD with true LCP and non-overlap cap
+            size_t cap = i - best_fwd_start; // i-1 - (best_fwd_start) + 1
+            size_t L   = lcp(cst, i, best_fwd_start);
+            emit_len   = std::min(L, cap);
+            emit_ref   = static_cast<uint64_t>(best_fwd_start);
+        } else {
+            // Finalize RC with true LCP (against suffix in R) and non-overlap cap
+            size_t cap = i - best_rc_end; // i-1 - end + 1
+            size_t L   = lcp(cst, i, best_rc_posS);
+            emit_len   = std::min(L, cap);
+            emit_ref   = RC_MASK | static_cast<uint64_t>(best_rc_end); // end-anchored + RC flag
+        }
+
+        // Safety: ensure progress
+        if (emit_len == 0) emit_len = 1;
+
+        Factor f{static_cast<uint64_t>(i), static_cast<uint64_t>(emit_len), emit_ref};
+        sink(f);
+        ++factors;
+
+        // Advance to next phrase start
+        lambda = next_leaf(cst, lambda, emit_len);
+        lambda_node_depth = cst.node_depth(lambda);
+        i = cst.sn(lambda);
+    }
+
+    return factors;
+}
+
 // ------------- public wrappers -------------
 
 /**
- * @brief Factorizes a text string using the LZSS algorithm.
+ * @brief Factorizes a text string using the noLZSS algorithm.
  *
  * This is a template function that provides the core factorization functionality
- * for in-memory text. It builds a compressed suffix tree and applies the LZSS
+ * for in-memory text. It builds a compressed suffix tree and applies the noLZSS
  * algorithm to find all factors.
  *
  * @tparam Sink Callable type that accepts Factor objects
@@ -157,11 +347,11 @@ size_t factorize_stream(std::string_view text, Sink&& sink) {
     // sdsl-lite will automatically add the sentinel when needed
     std::string tmp(text);
     cst_t cst; construct_im(cst, tmp, 1);
-    return lzss(cst, std::forward<Sink>(sink));
+    return nolzss(cst, std::forward<Sink>(sink));
 }
 
 /**
- * @brief Factorizes text from a file using the LZSS algorithm.
+ * @brief Factorizes text from a file using the noLZSS algorithm.
  *
  * This template function reads text directly from a file and performs factorization
  * without loading the entire file into memory. This is more memory-efficient for
@@ -179,11 +369,11 @@ template<class Sink>
 size_t factorize_file_stream(const std::string& path, Sink&& sink) {
     // sdsl-lite will automatically add the sentinel when needed
     cst_t cst; construct(cst, path, 1);
-    return lzss(cst, std::forward<Sink>(sink));
+    return nolzss(cst, std::forward<Sink>(sink));
 }
 
 /**
- * @brief Counts LZSS factors in a text string.
+ * @brief Counts noLZSS factors in a text string.
  *
  * This function provides a convenient way to count factors without storing them.
  * It uses the sink-based factorization internally with a counting lambda.
@@ -202,7 +392,7 @@ size_t count_factors(std::string_view text) {
 }
 
 /**
- * @brief Counts LZSS factors in a file.
+ * @brief Counts noLZSS factors in a file.
  *
  * This function reads text from a file and counts factors without storing them
  * or loading the entire file into memory. It's the most memory-efficient way
@@ -225,7 +415,7 @@ size_t count_factors_file(const std::string& path) {
  * @brief Factorizes a text string and returns factors as a vector.
  *
  * This is the main user-facing function for in-memory factorization.
- * It performs LZSS factorization and returns all factors in a vector.
+ * It performs noLZSS factorization and returns all factors in a vector.
  *
  * @param text Input text string
  * @return Vector containing all factors from the factorization
@@ -263,7 +453,7 @@ std::vector<Factor> factorize_file(const std::string& path, size_t reserve_hint)
 }
 
 /**
- * @brief Writes LZSS factors from a file to a binary output file.
+ * @brief Writes noLZSS factors from a file to a binary output file.
  *
  * This function reads text from an input file, performs factorization, and
  * writes the resulting factors in binary format to an output file. Each factor
@@ -282,6 +472,151 @@ size_t write_factors_binary_file(const std::string& in_path, const std::string& 
     std::vector<char> buf(1<<20);
     os.rdbuf()->pubsetbuf(buf.data(), static_cast<std::streamsize>(buf.size()));
     size_t n = factorize_file_stream(in_path, [&](const Factor& f){
+        os.write(reinterpret_cast<const char*>(&f), sizeof(Factor));
+    });
+    return n;
+}
+
+/**
+ * @brief Factorizes a DNA text string with reverse complement awareness using the noLZSS algorithm.
+ *
+ * This is a template function that provides the core factorization functionality
+ * for in-memory DNA text, considering both forward and reverse complement matches.
+ * It builds a compressed suffix tree and applies the noLZSS algorithm to find all factors.
+ *
+ * @tparam Sink Callable type that accepts Factor objects
+ * @param text Input DNA text string
+ * @param sink Callable that receives each computed factor
+ * @return Number of factors emitted
+ *
+ * @note This function copies the input string for suffix tree construction
+ * @note For large inputs, consider using factorize_file_stream_dna_w_rc() instead
+ * @see factorize_dna_w_rc() for the non-template version that returns a vector
+ */
+template<class Sink>
+size_t factorize_stream_dna_w_rc(std::string_view text, Sink&& sink) {
+    std::string tmp(text);
+    return nolzss_dna_w_rc(tmp, std::forward<Sink>(sink));
+}
+
+/**
+ * @brief Factorizes DNA text from a file with reverse complement awareness using the noLZSS algorithm.
+ *
+ * This template function reads DNA text directly from a file and performs factorization
+ * without loading the entire file into memory, considering both forward and reverse complement matches.
+ * This is more memory-efficient for large files.
+ *
+ * @tparam Sink Callable type that accepts Factor objects
+ * @param path Path to input file containing DNA text
+ * @param sink Callable that receives each computed factor
+ * @return Number of factors emitted
+ *
+ * @note This function builds the suffix tree directly from the file
+ * @see factorize_file_dna_w_rc() for the non-template version that returns a vector
+ */
+template<class Sink>
+size_t factorize_file_stream_dna_w_rc(const std::string& path, Sink&& sink) {
+    std::ifstream is(path, std::ios::binary);
+    if (!is) throw std::runtime_error("Cannot open input file: " + path);
+    std::string data((std::istreambuf_iterator<char>(is)), std::istreambuf_iterator<char>());
+    return nolzss_dna_w_rc(data, std::forward<Sink>(sink));
+}
+
+/**
+ * @brief Factorizes a DNA text string with reverse complement awareness and returns factors as a vector.
+ *
+ * This is the main user-facing function for in-memory DNA factorization with reverse complement.
+ * It performs noLZSS factorization and returns all factors in a vector.
+ *
+ * @param text Input DNA text string
+ * @return Vector containing all factors from the factorization
+ *
+ * @note Factors are returned in order of appearance in the text
+ * @note The returned factors are non-overlapping and cover the entire input
+ * @see factorize_file_dna_w_rc() for file-based factorization
+ */
+std::vector<Factor> factorize_dna_w_rc(std::string_view text) {
+    std::vector<Factor> out;
+    factorize_stream_dna_w_rc(text, [&](const Factor& f){ out.push_back(f); });
+    return out;
+}
+
+/**
+ * @brief Factorizes DNA text from a file with reverse complement awareness and returns factors as a vector.
+ *
+ * This function reads DNA text from a file, performs factorization with reverse complement, and returns
+ * all factors in a vector. The reserve_hint parameter can improve performance
+ * when you have an estimate of the number of factors.
+ *
+ * @param path Path to input file containing DNA text
+ * @param reserve_hint Optional hint for reserving space in output vector (0 = no hint)
+ * @return Vector containing all factors from the factorization
+ *
+ * @note Use reserve_hint for better performance when you know approximate factor count
+ * @note This is more memory-efficient than factorize_dna_w_rc() for large files
+ * @see factorize_dna_w_rc() for in-memory factorization
+ */
+std::vector<Factor> factorize_file_dna_w_rc(const std::string& path, size_t reserve_hint = 0) {
+    std::vector<Factor> out; if (reserve_hint) out.reserve(reserve_hint);
+    factorize_file_stream_dna_w_rc(path, [&](const Factor& f){ out.push_back(f); });
+    return out;
+}
+
+/**
+ * @brief Counts noLZSS factors in a DNA text string with reverse complement awareness.
+ *
+ * This function provides a convenient way to count factors in DNA text without storing them.
+ * It uses the sink-based factorization internally with a counting lambda.
+ *
+ * @param text Input DNA text string
+ * @return Number of factors in the factorization
+ *
+ * @note This is more memory-efficient than factorize_dna_w_rc() when you only need the count
+ * @see factorize_dna_w_rc() for getting the actual factors
+ * @see count_factors_file_dna_w_rc() for file-based counting
+ */
+size_t count_factors_dna_w_rc(std::string_view text) {
+    size_t n = 0; factorize_stream_dna_w_rc(text, [&](const Factor&){ ++n; }); return n;
+}
+
+/**
+ * @brief Counts noLZSS factors in a DNA file with reverse complement awareness.
+ *
+ * This function reads DNA text from a file and counts factors without storing them
+ * or loading the entire file into memory. It's the most memory-efficient way
+ * to get factor counts for large DNA files.
+ *
+ * @param path Path to input file containing DNA text
+ * @return Number of factors in the factorization
+ *
+ * @note This function builds the suffix tree directly from the file
+ * @see count_factors_dna_w_rc() for in-memory counting
+ * @see factorize_file_dna_w_rc() for getting the actual factors from a file
+ */
+size_t count_factors_file_dna_w_rc(const std::string& path) {
+    size_t n = 0; factorize_file_stream_dna_w_rc(path, [&](const Factor&){ ++n; }); return n;
+}
+
+/**
+ * @brief Writes noLZSS factors from a DNA file with reverse complement awareness to a binary output file.
+ *
+ * This function reads DNA text from an input file, performs factorization with reverse complement, and
+ * writes the resulting factors in binary format to an output file. Each factor
+ * is written as three uint64_t values (start position, length, ref).
+ *
+ * @param in_path Path to input file containing DNA text
+ * @param out_path Path to output file where binary factors will be written
+ * @return Number of factors written to the output file
+ *
+ * @note Binary format: each factor is 24 bytes (3 × uint64_t: start, length, ref)
+ * @note This function overwrites the output file if it exists
+ * @warning Ensure sufficient disk space for the output file
+ */
+size_t write_factors_binary_file_dna_w_rc(const std::string& in_path, const std::string& out_path) {
+    std::ofstream os(out_path, std::ios::binary);
+    std::vector<char> buf(1<<20);
+    os.rdbuf()->pubsetbuf(buf.data(), static_cast<std::streamsize>(buf.size()));
+    size_t n = factorize_file_stream_dna_w_rc(in_path, [&](const Factor& f){
         os.write(reinterpret_cast<const char*>(&f), sizeof(Factor));
     });
     return n;

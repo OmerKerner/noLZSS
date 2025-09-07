@@ -34,8 +34,8 @@ FastaProcessResult process_nucleotide_fasta(const std::string& fasta_path) {
         }
         char sentinel = static_cast<char>(seq_index + 1);
         // Skip nucleotide characters
-        if (sentinel == 65 || sentinel == 67 || sentinel == 71 || sentinel == 84) { // A, C, G, T
-            sentinel += 4; // Move past all nucleotides
+        while (sentinel == 65 || sentinel == 67 || sentinel == 71 || sentinel == 84) { // A, C, G, T
+            sentinel++;
             if (sentinel > 251) {
                 throw std::runtime_error("Sentinel generation failed - too many sequences");
             }

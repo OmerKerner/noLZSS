@@ -11,7 +11,7 @@ namespace noLZSS {
  * @brief Represents a factorization factor with start position, length, and reference position.
  *
  * A factor represents a substring in the original text that was identified
- * during LZSS factorization. The factor covers text from position 'start'
+ * during noLZSS factorization. The factor covers text from position 'start'
  * with the specified 'length', and 'ref' indicates the position of the
  * previous occurrence (reference) for compression purposes.
  */
@@ -24,7 +24,7 @@ struct Factor {
 // Core factorization functions
 
 /**
- * @brief Factorizes a text string into LZSS factors.
+ * @brief Factorizes a text string into noLZSS factors.
  *
  * Performs non-overlapping Lempel-Ziv-Storer-Szymanski factorization on the input text.
  * The algorithm uses a suffix tree to find the longest previous factors for each position.
@@ -38,9 +38,9 @@ struct Factor {
 std::vector<Factor> factorize(std::string_view text);
 
 /**
- * @brief Factorizes text from a file into LZSS factors.
+ * @brief Factorizes text from a file into noLZSS factors.
  *
- * Reads text from a file and performs LZSS factorization. This is more memory-efficient
+ * Reads text from a file and performs noLZSS factorization. This is more memory-efficient
  * for large files as it avoids loading the entire file into memory.
  *
  * @param path Path to the input file containing text
@@ -55,7 +55,7 @@ std::vector<Factor> factorize_file(const std::string& path, size_t reserve_hint 
 // Counting functions
 
 /**
- * @brief Counts the number of LZSS factors in a text string.
+ * @brief Counts the number of noLZSS factors in a text string.
  *
  * This is a memory-efficient alternative to factorize() when you only need
  * the count of factors rather than the factors themselves.
@@ -68,9 +68,9 @@ std::vector<Factor> factorize_file(const std::string& path, size_t reserve_hint 
 size_t count_factors(std::string_view text);
 
 /**
- * @brief Counts the number of LZSS factors in a file.
+ * @brief Counts the number of noLZSS factors in a file.
  *
- * Reads text from a file and counts LZSS factors without storing them.
+ * Reads text from a file and counts noLZSS factors without storing them.
  * This is the most memory-efficient way to get factor counts for large files.
  *
  * @param path Path to the input file containing text
@@ -83,7 +83,7 @@ size_t count_factors_file(const std::string& path);
 // Binary output
 
 /**
- * @brief Writes LZSS factors from a file to a binary output file.
+ * @brief Writes noLZSS factors from a file to a binary output file.
  *
  * Reads text from an input file, performs factorization, and writes the factors
  * in binary format to an output file. This is useful for storing factorizations
@@ -97,5 +97,110 @@ size_t count_factors_file(const std::string& path);
  * @warning This function overwrites the output file if it exists
  */
 size_t write_factors_binary_file(const std::string& in_path, const std::string& out_path);
+
+// DNA-aware factorization functions with reverse complement support
+
+/**
+ * @brief Factorizes a DNA text string with reverse complement awareness into noLZSS factors.
+ *
+ * Performs non-overlapping Lempel-Ziv-Storer-Szymanski factorization on DNA sequences,
+ * considering both forward and reverse complement matches. This is particularly useful
+ * for genomic data where reverse complement patterns are biologically significant.
+ *
+ * @param text Input DNA text string
+ * @return Vector of Factor objects representing the factorization
+ *
+ * @note Reverse complement matches are encoded with RC_MASK in the ref field
+ * @note Factors are non-overlapping and cover the entire input
+ * @see factorize_file_dna_w_rc() for file-based factorization
+ */
+std::vector<Factor> factorize_dna_w_rc(std::string_view text);
+
+/**
+ * @brief Factorizes DNA text from a file with reverse complement awareness into noLZSS factors.
+ *
+ * Reads DNA text from a file and performs noLZSS factorization considering both forward
+ * and reverse complement matches. This is more memory-efficient for large genomic files.
+ *
+ * @param path Path to the input file containing DNA text
+ * @param reserve_hint Optional hint for reserving space in the output vector (0 = no hint)
+ * @return Vector of Factor objects representing the factorization
+ *
+ * @note Use reserve_hint for better performance when you know approximate factor count
+ * @see factorize_dna_w_rc() for in-memory factorization
+ */
+std::vector<Factor> factorize_file_dna_w_rc(const std::string& path, size_t reserve_hint = 0);
+
+/**
+ * @brief Counts the number of noLZSS factors in a DNA text string with reverse complement awareness.
+ *
+ * This is a memory-efficient alternative to factorize_dna_w_rc() when you only need
+ * the count of factors rather than the factors themselves.
+ *
+ * @param text Input DNA text string
+ * @return Number of factors in the factorization
+ *
+ * @see count_factors_file_dna_w_rc() for file-based counting
+ */
+size_t count_factors_dna_w_rc(std::string_view text);
+
+/**
+ * @brief Counts the number of noLZSS factors in a DNA file with reverse complement awareness.
+ *
+ * Reads DNA text from a file and counts noLZSS factors without storing them.
+ * This is the most memory-efficient way to get factor counts for large genomic files.
+ *
+ * @param path Path to the input file containing DNA text
+ * @return Number of factors in the factorization
+ *
+ * @see count_factors_dna_w_rc() for in-memory counting
+ */
+size_t count_factors_file_dna_w_rc(const std::string& path);
+
+/**
+ * @brief Writes noLZSS factors from a DNA file with reverse complement awareness to a binary output file.
+ *
+ * Reads DNA text from an input file, performs factorization with reverse complement support,
+ * and writes the factors in binary format to an output file.
+ *
+ * @param in_path Path to input file containing DNA text
+ * @param out_path Path to output file where binary factors will be written
+ * @return Number of factors written to the output file
+ *
+ * @note Binary format: each factor is written as three uint64_t values (start, length, ref)
+ * @note Reverse complement factors have RC_MASK set in the ref field
+ * @warning This function overwrites the output file if it exists
+ */
+size_t write_factors_binary_file_dna_w_rc(const std::string& in_path, const std::string& out_path);
+
+// Template functions for advanced usage
+
+/**
+ * @brief Advanced factorization function for DNA text with reverse complement awareness.
+ *
+ * This template function provides low-level access to the factorization process,
+ * allowing custom handling of factors through a sink callable.
+ *
+ * @tparam Sink Callable type that accepts Factor objects
+ * @param text Input DNA text string
+ * @param sink Callable that receives each computed factor
+ * @return Number of factors emitted
+ */
+template<class Sink>
+size_t factorize_stream_dna_w_rc(std::string_view text, Sink&& sink);
+
+/**
+ * @brief Advanced factorization function for DNA files with reverse complement awareness.
+ *
+ * This template function reads DNA text from a file and provides low-level access
+ * to the factorization process through a sink callable.
+ *
+ * @tparam Sink Callable type that accepts Factor objects
+ * @param path Path to input file containing DNA text
+ * @param sink Callable that receives each computed factor
+ * @return Number of factors emitted
+ */
+template<class Sink>
+size_t factorize_file_stream_dna_w_rc(const std::string& path, Sink&& sink);
 
 } // namespace noLZSS
