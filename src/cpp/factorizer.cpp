@@ -556,7 +556,7 @@ std::vector<Factor> factorize_dna_w_rc(std::string_view text) {
  * @note This is more memory-efficient than factorize_dna_w_rc() for large files
  * @see factorize_dna_w_rc() for in-memory factorization
  */
-std::vector<Factor> factorize_file_dna_w_rc(const std::string& path, size_t reserve_hint = 0) {
+std::vector<Factor> factorize_file_dna_w_rc(const std::string& path, size_t reserve_hint) {
     std::vector<Factor> out; if (reserve_hint) out.reserve(reserve_hint);
     factorize_file_stream_dna_w_rc(path, [&](const Factor& f){ out.push_back(f); });
     return out;
