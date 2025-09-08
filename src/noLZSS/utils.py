@@ -5,8 +5,7 @@ This module provides reusable utilities for the noLZSS package, including
 input validation, sentinel handling, alphabet analysis, binary file I/O, and plotting functions.
 """
 
-from typing import Union, Dict, Any, Set, List, Tuple, Optional
-import re
+from typing import Union, Dict, Any, List, Tuple, Optional
 import math
 import struct
 from pathlib import Path
@@ -101,30 +100,6 @@ def analyze_alphabet(data: Union[str, bytes]) -> Dict[str, Any]:
         'most_common': distribution.most_common(10),  # Top 10 most frequent
         'total_length': total_chars
     }
-
-
-
-
-def safe_file_reader(filepath: Union[str, Path], chunk_size: int = 8192):
-    """
-    Generator for safely reading large files in chunks.
-    
-    Args:
-        filepath: Path to the file to read
-        chunk_size: Size of each chunk in bytes
-        
-    Yields:
-        Chunks of file data as bytes
-    """
-    try:
-        with open(filepath, 'rb') as f:
-            while True:
-                chunk = f.read(chunk_size)
-                if not chunk:
-                    break
-                yield chunk
-    except IOError as e:
-        raise NoLZSSError(f"Error reading file {filepath}: {e}")
 
 
 def read_factors_binary_file(filepath: Union[str, Path]) -> List[Tuple[int, int, int]]:
