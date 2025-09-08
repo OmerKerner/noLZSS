@@ -221,4 +221,113 @@ size_t factorize_stream_dna_w_rc(std::string_view text, Sink&& sink);
 template<class Sink>
 size_t factorize_file_stream_dna_w_rc(const std::string& path, Sink&& sink);
 
+// Multiple DNA sequences factorization functions with reverse complement support
+
+/**
+ * @brief Factorizes a DNA text string with reverse complement awareness for multiple sequences into noLZSS factors.
+ *
+ * Performs non-overlapping Lempel-Ziv-Storer-Szymanski factorization on DNA sequences
+ * containing multiple sequences, considering both forward and reverse complement matches.
+ * This is particularly useful for genomic data where reverse complement patterns are
+ * biologically significant across multiple sequences.
+ *
+ * @param text Input DNA text string with multiple sequences and sentinels
+ * @return Vector of Factor objects representing the factorization
+ *
+ * @note Reverse complement matches are encoded with RC_MASK in the ref field
+ * @note Factors are non-overlapping and cover the entire input
+ * @see factorize_file_multiple_dna_w_rc() for file-based factorization
+ */
+std::vector<Factor> factorize_multiple_dna_w_rc(std::string_view text);
+
+/**
+ * @brief Factorizes DNA text from a file with reverse complement awareness for multiple sequences into noLZSS factors.
+ *
+ * Reads DNA text from a file containing multiple sequences and performs noLZSS factorization
+ * considering both forward and reverse complement matches. This is more memory-efficient
+ * for large genomic files with multiple sequences.
+ *
+ * @param path Path to the input file containing DNA text with multiple sequences
+ * @param reserve_hint Optional hint for reserving space in the output vector (0 = no hint)
+ * @return Vector of Factor objects representing the factorization
+ *
+ * @note Use reserve_hint for better performance when you know approximate factor count
+ * @see factorize_multiple_dna_w_rc() for in-memory factorization
+ */
+std::vector<Factor> factorize_file_multiple_dna_w_rc(const std::string& path, size_t reserve_hint = 0);
+
+/**
+ * @brief Counts the number of noLZSS factors in a DNA text string with reverse complement awareness for multiple sequences.
+ *
+ * This is a memory-efficient alternative to factorize_multiple_dna_w_rc() when you only need
+ * the count of factors rather than the factors themselves.
+ *
+ * @param text Input DNA text string with multiple sequences
+ * @return Number of factors in the factorization
+ *
+ * @see count_factors_file_multiple_dna_w_rc() for file-based counting
+ */
+size_t count_factors_multiple_dna_w_rc(std::string_view text);
+
+/**
+ * @brief Counts the number of noLZSS factors in a DNA file with reverse complement awareness for multiple sequences.
+ *
+ * Reads DNA text from a file and counts noLZSS factors without storing them.
+ * This is the most memory-efficient way to get factor counts for large genomic files
+ * with multiple sequences.
+ *
+ * @param path Path to the input file containing DNA text with multiple sequences
+ * @return Number of factors in the factorization
+ *
+ * @see count_factors_multiple_dna_w_rc() for in-memory counting
+ */
+size_t count_factors_file_multiple_dna_w_rc(const std::string& path);
+
+/**
+ * @brief Writes noLZSS factors from a DNA file with reverse complement awareness for multiple sequences to a binary output file.
+ *
+ * Reads DNA text from an input file containing multiple sequences, performs factorization
+ * with reverse complement support, and writes the factors in binary format to an output file.
+ *
+ * @param in_path Path to input file containing DNA text with multiple sequences
+ * @param out_path Path to output file where binary factors will be written
+ * @return Number of factors written to the output file
+ *
+ * @note Binary format: each factor is written as three uint64_t values (start, length, ref)
+ * @note Reverse complement factors have RC_MASK set in the ref field
+ * @warning This function overwrites the output file if it exists
+ */
+size_t write_factors_binary_file_multiple_dna_w_rc(const std::string& in_path, const std::string& out_path);
+
+// Template functions for advanced usage with multiple sequences
+
+/**
+ * @brief Advanced factorization function for DNA text with reverse complement awareness for multiple sequences.
+ *
+ * This template function provides low-level access to the factorization process
+ * for multiple DNA sequences, allowing custom handling of factors through a sink callable.
+ *
+ * @tparam Sink Callable type that accepts Factor objects
+ * @param text Input DNA text string with multiple sequences and sentinels
+ * @param sink Callable that receives each computed factor
+ * @return Number of factors emitted
+ */
+template<class Sink>
+size_t factorize_stream_multiple_dna_w_rc(std::string_view text, Sink&& sink);
+
+/**
+ * @brief Advanced factorization function for DNA files with reverse complement awareness for multiple sequences.
+ *
+ * This template function reads DNA text from a file containing multiple sequences
+ * and provides low-level access to the factorization process through a sink callable.
+ *
+ * @tparam Sink Callable type that accepts Factor objects
+ * @param path Path to input file containing DNA text with multiple sequences
+ * @param sink Callable that receives each computed factor
+ * @return Number of factors emitted
+ */
+template<class Sink>
+size_t factorize_file_stream_multiple_dna_w_rc(const std::string& path, Sink&& sink);
+
+
 } // namespace noLZSS

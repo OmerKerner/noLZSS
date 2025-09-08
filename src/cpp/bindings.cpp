@@ -341,6 +341,153 @@ Note:
     This function overwrites the output file if it exists.
 )doc");
 
+
+    // factorize_multiple_dna_w_rc function documentation
+    m.def("factorize_multiple_dna_w_rc", [](py::buffer b) {
+        // Accept any bytes-like 1-byte-per-item contiguous buffer
+        py::buffer_info info = b.request();
+        if (info.itemsize != 1) {
+            throw std::invalid_argument("factorize_multiple_dna_w_rc: buffer must be a bytes-like object with itemsize==1");
+        }
+        if (info.ndim != 1) {
+            throw std::invalid_argument("factorize_multiple_dna_w_rc: buffer must be a 1-dimensional bytes-like object");
+        }
+
+        const char* data = static_cast<const char*>(info.ptr);
+        std::string_view sv(data, static_cast<size_t>(info.size));
+
+        // Release GIL while doing heavy C++ work
+        py::gil_scoped_release release;
+        auto factors = noLZSS::factorize_multiple_dna_w_rc(sv);
+        py::gil_scoped_acquire acquire;
+
+        return factors;
+    }, py::arg("data"), R"doc(Factorize DNA text with multiple sequences and reverse complement awareness.
+
+Performs non-overlapping Lempel-Ziv-Storer-Szymanski factorization on DNA text
+containing multiple sequences separated by sentinels, considering both forward
+and reverse complement matches.
+
+Args:
+    data: Python bytes-like object containing DNA text with multiple sequences and sentinels
+
+Returns:
+    List of (start, length, ref) tuples representing the factorization
+
+Note:
+    Reverse complement factors have RC_MASK set in the ref field.
+    GIL is released during computation for better performance with large data.
+)doc");
+
+    // factorize_file_multiple_dna_w_rc function documentation
+    m.def("factorize_file_multiple_dna_w_rc", [](const std::string& path, size_t reserve_hint) {
+        // Release GIL while doing heavy C++ work
+        py::gil_scoped_release release;
+        auto factors = noLZSS::factorize_file_multiple_dna_w_rc(path, reserve_hint);
+        py::gil_scoped_acquire acquire;
+
+        return factors;
+    }, py::arg("path"), py::arg("reserve_hint") = 0, R"doc(Factorize DNA text from file with multiple sequences and reverse complement awareness.
+
+Reads DNA text from a file and performs factorization with multiple sequences
+and reverse complement matches.
+
+Args:
+    path: Path to input file containing DNA text with multiple sequences
+    reserve_hint: Optional hint for reserving space in output vector (0 = no hint)
+
+Returns:
+    List of (start, length, ref) tuples representing the factorization
+
+Note:
+    Use reserve_hint for better performance when you know approximate factor count.
+    Reverse complement factors have RC_MASK set in the ref field.
+)doc");
+
+    // count_factors_multiple_dna_w_rc function documentation
+    m.def("count_factors_multiple_dna_w_rc", [](py::buffer b) {
+        // Accept any bytes-like 1-byte-per-item contiguous buffer
+        py::buffer_info info = b.request();
+        if (info.itemsize != 1) {
+            throw std::invalid_argument("count_factors_multiple_dna_w_rc: buffer must be a bytes-like object with itemsize==1");
+        }
+        if (info.ndim != 1) {
+            throw std::invalid_argument("count_factors_multiple_dna_w_rc: buffer must be a 1-dimensional bytes-like object");
+        }
+
+        const char* data = static_cast<const char*>(info.ptr);
+        std::string_view sv(data, static_cast<size_t>(info.size));
+
+        // Release GIL while doing heavy C++ work
+        py::gil_scoped_release release;
+        size_t count = noLZSS::count_factors_multiple_dna_w_rc(sv);
+        py::gil_scoped_acquire acquire;
+
+        return count;
+    }, py::arg("data"), R"doc(Count number of LZSS factors in DNA text with multiple sequences and reverse complement awareness.
+
+This is a memory-efficient alternative to factorize_multiple_dna_w_rc() when you only need
+the count of factors rather than the factors themselves.
+
+Args:
+    data: Python bytes-like object containing DNA text with multiple sequences
+
+Returns:
+    Number of factors in the factorization
+
+Note:
+    GIL is released during computation for better performance with large data.
+)doc");
+
+    // count_factors_file_multiple_dna_w_rc function documentation
+    m.def("count_factors_file_multiple_dna_w_rc", [](const std::string& path) {
+        // Release GIL while doing heavy C++ work
+        py::gil_scoped_release release;
+        size_t count = noLZSS::count_factors_file_multiple_dna_w_rc(path);
+        py::gil_scoped_acquire acquire;
+
+        return count;
+    }, py::arg("path"), R"doc(Count number of noLZSS factors in a DNA file with multiple sequences and reverse complement awareness.
+
+Reads DNA text from a file and counts factors with multiple sequences and
+reverse complement matches.
+
+Args:
+    path: Path to input file containing DNA text with multiple sequences
+
+Returns:
+    Number of factors in the factorization
+
+Note:
+    GIL is released during computation for better performance with large data.
+)doc");
+
+    // write_factors_binary_file_multiple_dna_w_rc function documentation
+    m.def("write_factors_binary_file_multiple_dna_w_rc", [](const std::string& in_path, const std::string& out_path) {
+        // Release GIL while doing heavy C++ work
+        py::gil_scoped_release release;
+        size_t count = noLZSS::write_factors_binary_file_multiple_dna_w_rc(in_path, out_path);
+        py::gil_scoped_acquire acquire;
+
+        return count;
+    }, py::arg("in_path"), py::arg("out_path"), R"doc(Write noLZSS factors from DNA file with multiple sequences and reverse complement awareness to binary output file.
+
+Reads DNA text from an input file, performs factorization with multiple sequences and reverse complement support,
+and writes the factors in binary format to an output file.
+
+Args:
+    in_path: Path to input file containing DNA text with multiple sequences
+    out_path: Path to output file where binary factors will be written
+
+Returns:
+    Number of factors written to the output file
+
+Note:
+    Binary format: each factor is 24 bytes (3 × uint64_t: start, length, ref).
+    Reverse complement factors have RC_MASK set in the ref field.
+    This function overwrites the output file if it exists.
+)doc");
+
     // FASTA processing function
     m.def("process_nucleotide_fasta", [](const std::string& fasta_path) {
         // Release GIL while doing heavy C++ work
