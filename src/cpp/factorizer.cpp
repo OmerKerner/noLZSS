@@ -296,10 +296,9 @@ static size_t nolzss_dna_w_rc(const std::string& T, Sink&& sink) {
             emit_len   = std::min(L, cap);
             emit_ref   = static_cast<uint64_t>(best_fwd_start);
         } else {
-            // Finalize RC with true LCP (against suffix in R) and non-overlap cap
-            size_t cap = i - best_rc_end; // i-1 - end + 1
+            // Finalize RC with true LCP (against suffix in R) 
             size_t L   = lcp(cst, i, best_rc_posS);
-            emit_len   = std::min(L, cap);
+            emit_len   = L;
             emit_ref   = RC_MASK | static_cast<uint64_t>(best_rc_end); // end-anchored + RC flag
         }
 
