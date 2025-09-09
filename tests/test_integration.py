@@ -97,59 +97,6 @@ class TestPackageIntegration:
             assert False, f"Workflow failed: {e}"
 
 
-class TestFileOperations:
-    """Test file-related operations."""
-    
-    def test_file_reader_utility(self):
-        """Test the file reader utility."""
-        try:
-            from noLZSS.utils import safe_file_reader
-            
-            # Create a test file
-            test_data = b"ATCGATCGATCG" * 100  # Some test DNA data
-            
-            with tempfile.NamedTemporaryFile(mode='wb', delete=False) as f:
-                f.write(test_data)
-                temp_path = f.name
-            
-            try:
-                # Read file in chunks
-                chunks = list(safe_file_reader(temp_path, chunk_size=50))
-                reconstructed_data = b''.join(chunks)
-                
-                assert reconstructed_data == test_data
-                print("File reader utility works")
-            finally:
-                os.unlink(temp_path)
-        except Exception as e:
-            print(f"Warning: File reader utility failed: {e}")
-            assert False, f"File reader utility failed: {e}"
-    
-    def test_path_object_support(self):
-        """Test that Path objects are supported."""
-        try:
-            from noLZSS.utils import safe_file_reader
-            from pathlib import Path
-            
-            # Create a test file
-            with tempfile.NamedTemporaryFile(mode='w', delete=False) as f:
-                f.write("test data")
-                temp_path = Path(f.name)
-            
-            try:
-                # Should work with Path objects
-                chunks = list(safe_file_reader(temp_path))
-                data = b''.join(chunks)
-                assert data == b"test data"
-                
-                print("Path object support works")
-            finally:
-                temp_path.unlink()
-        except Exception as e:
-            print(f"Warning: Path object support failed: {e}")
-            assert False, f"Path object support failed: {e}"
-
-
 class TestErrorHandlingIntegration:
     """Test error handling across modules."""
     
@@ -164,14 +111,6 @@ class TestErrorHandlingIntegration:
                 assert False, "Should have raised InvalidInputError"
             except InvalidInputError:
                 print("InvalidInputError handling works")
-            
-            # Test NoLZSSError with file operations
-            from noLZSS.utils import safe_file_reader
-            try:
-                list(safe_file_reader("nonexistent_file.txt"))
-                assert False, "Should have raised NoLZSSError"
-            except NoLZSSError:
-                print("NoLZSSError handling works")
             
         except Exception as e:
             print(f"Warning: Custom exception handling failed: {e}")

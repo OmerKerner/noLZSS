@@ -361,7 +361,9 @@ Note:
         auto factors = noLZSS::factorize_multiple_dna_w_rc(sv);
         py::gil_scoped_acquire acquire;
 
-        return factors;
+        py::list out;
+        for (auto &f : factors) out.append(py::make_tuple(f.start, f.length, f.ref & ~noLZSS::RC_MASK, noLZSS::is_rc(f.ref)));
+        return out;
     }, py::arg("data"), R"doc(Factorize DNA text with multiple sequences and reverse complement awareness.
 
 Performs non-overlapping Lempel-Ziv-Storer-Szymanski factorization on DNA text
@@ -372,10 +374,10 @@ Args:
     data: Python bytes-like object containing DNA text with multiple sequences and sentinels
 
 Returns:
-    List of (start, length, ref) tuples representing the factorization
+    List of (start, length, ref, is_rc) tuples representing the factorization
 
 Note:
-    Reverse complement factors have RC_MASK set in the ref field.
+    ref field has RC_MASK cleared. is_rc boolean indicates if this was a reverse complement match.
     GIL is released during computation for better performance with large data.
 )doc");
 
@@ -386,7 +388,9 @@ Note:
         auto factors = noLZSS::factorize_file_multiple_dna_w_rc(path, reserve_hint);
         py::gil_scoped_acquire acquire;
 
-        return factors;
+        py::list out;
+        for (auto &f : factors) out.append(py::make_tuple(f.start, f.length, f.ref & ~noLZSS::RC_MASK, noLZSS::is_rc(f.ref)));
+        return out;
     }, py::arg("path"), py::arg("reserve_hint") = 0, R"doc(Factorize DNA text from file with multiple sequences and reverse complement awareness.
 
 Reads DNA text from a file and performs factorization with multiple sequences
@@ -397,11 +401,11 @@ Args:
     reserve_hint: Optional hint for reserving space in output vector (0 = no hint)
 
 Returns:
-    List of (start, length, ref) tuples representing the factorization
+    List of (start, length, ref, is_rc) tuples representing the factorization
 
 Note:
     Use reserve_hint for better performance when you know approximate factor count.
-    Reverse complement factors have RC_MASK set in the ref field.
+    ref field has RC_MASK cleared. is_rc boolean indicates if this was a reverse complement match.
 )doc");
 
     // count_factors_multiple_dna_w_rc function documentation
@@ -569,6 +573,39 @@ Raises:
     Canonical amino acids: A, C, D, E, F, G, H, I, K, L, M, N, P, Q, R, S, T, V, W, Y
     Sentinels are characters 1-251 (avoiding 0 and common amino acids).
     Empty sequences are skipped. Only whitespace is ignored in sequences.
+)doc");
+
+    // DNA sequence preparation utility
+    m.def("prepare_multiple_dna_sequences", [](const std::vector<std::string>& sequences) {
+        // Release GIL while doing heavy C++ work
+        py::gil_scoped_release release;
+        auto result = noLZSS::prepare_multiple_dna_sequences(sequences);
+        py::gil_scoped_acquire acquire;
+
+        // Return as Python tuple (concatenated_string, original_length)
+        return py::make_tuple(result.first, result.second);
+    }, py::arg("sequences"), R"doc(Prepare multiple DNA sequences for factorization with reverse complement awareness.
+
+Takes multiple DNA sequences, concatenates them with unique sentinels, and appends
+their reverse complements with unique sentinels. The output format is compatible
+with nolzss_multiple_dna_w_rc(): S = T1!T2@T3$rt(T3)%rt(T2)^rt(T1)&
+
+Args:
+    sequences: List of DNA sequence strings (should contain only A, C, T, G)
+
+Returns:
+    Tuple containing:
+    - concatenated_string: The formatted string with sequences and reverse complements
+    - original_length: Length of the original sequences part (before reverse complements)
+
+Raises:
+    ValueError: If too many sequences (>251) or invalid nucleotides found
+    RuntimeError: If sequences contain invalid characters
+
+Note:
+    Sentinels range from 1-251, avoiding 0, A(65), C(67), G(71), T(84).
+    Input sequences can be lowercase or uppercase, output is always uppercase.
+    The function validates that all sequences contain only valid DNA nucleotides.
 )doc");
 
     // Version information

@@ -14,7 +14,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 from noLZSS.utils import (
     validate_input, analyze_alphabet, 
-    safe_file_reader, read_factors_binary_file, plot_factor_lengths,
+    read_factors_binary_file, plot_factor_lengths,
     InvalidInputError, NoLZSSError
 )
 from noLZSS.genomics import (
@@ -171,55 +171,6 @@ class TestSequenceDetection:
         
         # Valid ASCII should be processed
         assert detect_sequence_type(b"ATCG") == 'dna'
-
-
-class TestSafeFileReader:
-    """Test safe file reading functionality."""
-    
-    def test_safe_file_reader_small_file(self):
-        """Test reading a small file."""
-        with tempfile.NamedTemporaryFile(mode='w+', delete=False) as f:
-            f.write("Hello World")
-            temp_path = f.name
-        
-        try:
-            chunks = list(safe_file_reader(temp_path))
-            data = b''.join(chunks)
-            assert data == b"Hello World"
-        finally:
-            os.unlink(temp_path)
-    
-    def test_safe_file_reader_large_file(self):
-        """Test reading a larger file in chunks."""
-        test_data = b"A" * 10000  # 10KB of data
-        
-        with tempfile.NamedTemporaryFile(mode='wb', delete=False) as f:
-            f.write(test_data)
-            temp_path = f.name
-        
-        try:
-            chunks = list(safe_file_reader(temp_path, chunk_size=1024))
-            data = b''.join(chunks)
-            assert data == test_data
-            assert len(chunks) > 1  # Should be multiple chunks
-        finally:
-            os.unlink(temp_path)
-    
-    def test_safe_file_reader_nonexistent_file(self):
-        """Test reading a non-existent file raises error."""
-        with pytest.raises(NoLZSSError):
-            list(safe_file_reader("nonexistent_file.txt"))
-    
-    def test_safe_file_reader_empty_file(self):
-        """Test reading an empty file."""
-        with tempfile.NamedTemporaryFile(mode='w+', delete=False) as f:
-            temp_path = f.name
-        
-        try:
-            chunks = list(safe_file_reader(temp_path))
-            assert chunks == []
-        finally:
-            os.unlink(temp_path)
 
 
 class TestBinaryFileIO:

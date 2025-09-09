@@ -65,6 +65,103 @@ static std::string revcomp(std::string_view s) {
     return r;
 }
 
+/**
+ * @brief Prepares multiple DNA sequences for factorization with reverse complement awareness.
+ *
+ * Takes multiple DNA sequences, concatenates them with unique sentinels, and appends
+ * their reverse complements with unique sentinels. The output format is compatible
+ * with nolzss_multiple_dna_w_rc(): S = T1!T2@T3$rt(T3)%rt(T2)^rt(T1)&
+ *
+ * @param sequences Vector of DNA sequence strings (should contain only A, C, T, G)
+ * @return Pair containing: (concatenated_string, original_length)
+ *         - concatenated_string: The formatted string with sequences and reverse complements
+ *         - original_length: Length of the original sequences part with sentinels (before reverse complements)
+ *
+ * @throws std::invalid_argument If too many sequences (>251) or invalid nucleotides found
+ * @throws std::runtime_error If sequences contain invalid characters
+ *
+ * @note Sentinels range from 1-251, avoiding 0, A(65), C(67), G(71), T(84)
+ * @note The function validates that all sequences contain only valid DNA nucleotides
+ */
+std::pair<std::string, size_t> prepare_multiple_dna_sequences(const std::vector<std::string>& sequences) {
+    if (sequences.empty()) {
+        return {"", 0};
+    }
+    
+    // Check if we have too many sequences
+    // Available characters: 1-255 minus 5 characters (0,A,C,G,T) = 250 characters  
+    // Need 2 sentinels per sequence (original + reverse complement) = max 125 sequences
+    if (sequences.size() > 125) {
+        throw std::invalid_argument("Too many sequences: maximum 125 sequences supported (due to sentinel character limitations)");
+    }
+    
+    // Validate sequences contain only valid DNA nucleotides
+    for (size_t i = 0; i < sequences.size(); ++i) {
+        for (char c : sequences[i]) {
+            if (c != 'A' && c != 'C' && c != 'G' && c != 'T' && 
+                c != 'a' && c != 'c' && c != 'g' && c != 't') {
+                throw std::runtime_error("Invalid nucleotide '" + std::string(1, c) + 
+                                       "' found in sequence " + std::to_string(i));
+            }
+        }
+    }
+    
+    std::string result;
+    
+    // Generate sentinel characters avoiding 0 and uppercase DNA nucleotides A(65), C(67), G(71), T(84)
+    auto get_sentinel = [](size_t index) -> char {
+        char sentinel = 1;
+        size_t count = 0;
+        
+        while (true) {
+            // Check if current sentinel is valid (not 0 and not uppercase DNA nucleotides)
+            if (sentinel != 0 && sentinel != 'A' && sentinel != 'C' && sentinel != 'G' && sentinel != 'T') {
+                if (count == index) {
+                    return sentinel;  // Found the sentinel for this index
+                }
+                count++;
+            }
+            sentinel++;
+            if (sentinel == 0) sentinel = 1; // wrap around, skip 0
+        }
+    };
+    
+    // First, add original sequences with sentinels
+    for (size_t i = 0; i < sequences.size(); ++i) {
+        // Convert to uppercase
+        std::string seq = sequences[i];
+        for (char& c : seq) {
+            if (c >= 'a' && c <= 'z') c = c - 'a' + 'A';
+        }
+        result += seq;
+        
+        // Add sentinel (avoiding DNA nucleotides)
+        char sentinel = get_sentinel(i);
+        result += sentinel;
+    }
+    
+    size_t original_length = result.length();
+    
+    // Then, add reverse complements with different sentinels
+    for (int i = static_cast<int>(sequences.size()) - 1; i >= 0; --i) {
+        // Convert to uppercase first
+        std::string seq = sequences[i];
+        for (char& c : seq) {
+            if (c >= 'a' && c <= 'z') c = c - 'a' + 'A';
+        }
+        
+        // Add reverse complement
+        std::string rc = revcomp(seq);
+        result += rc;
+        
+        // Add sentinel (offset by sequences.size() to make them unique)
+        char sentinel = get_sentinel(sequences.size() + (sequences.size() - 1 - i));
+        result += sentinel;
+    }
+    
+    return {result, original_length};
+}
+
 // ---------- generic, sink-driven noLZSS ----------
 
 /**
@@ -177,145 +274,11 @@ static size_t nolzss_dna_w_rc(const std::string& T, Sink&& sink) {
     const size_t n = T.size();
     if (n == 0) return 0;
 
-    // Build S = T '$' rc(T) '#'
-    std::string R = revcomp(T);
-    std::string S;
-    S.reserve(n + 1 + n + 1);
-    S.append(T);
-    S.push_back('$');
-    S.append(R);
-    S.push_back('#');
+    // Use prepare_multiple_dna_sequences with a single sequence
+    auto [S, original_length] = prepare_multiple_dna_sequences({T});
 
-    // Build CST over S
-    cst_t cst; construct_im(cst, S, 1);
-
-    // Build RMQ inputs aligned to SA: forward starts and RC ends (in T-coords)
-    const uint64_t INF = std::numeric_limits<uint64_t>::max()/2ULL;
-    sdsl::int_vector<64> fwd_starts(cst.csa.size(), INF);
-    sdsl::int_vector<64> rc_ends   (cst.csa.size(), INF);
-
-    const size_t T_beg = 0;
-    const size_t T_end = n;           // '$' at S[n]
-    const size_t R_beg = n + 1;       // first char of rc(T)
-    const size_t R_end = n + 1 + n;   // '#' at S[n+1+n]
-
-    for (size_t k = 0; k < cst.csa.size(); ++k) {
-        size_t posS = cst.csa[k];
-        if (posS < T_end) {
-            // suffix starts in T
-            fwd_starts[k] = posS;     // 0-based start in T
-        } else if (posS >= R_beg && posS < R_end) {
-            // suffix starts in R
-            size_t jR0   = posS - R_beg;         // 0-based start in R
-            size_t endT0 = n - jR0 - 1;          // mapped end in T (0-based)
-            rc_ends[k] = endT0;
-        }
-    }
-    sdsl::rmq_succinct_sct<> rmqF(&fwd_starts);
-    sdsl::rmq_succinct_sct<> rmqRcEnd(&rc_ends);
-
-    // Initialize to the leaf of suffix starting at S position 0 (i.e., T[0])
-    auto lambda = cst.select_leaf(cst.csa.isa[0] + 1);
-    size_t lambda_node_depth = cst.node_depth(lambda);
-    size_t i = cst.sn(lambda); // suffix start in S, begins at 0
-
-    size_t factors = 0;
-
-    while (i < n) { // only factorize inside T
-        // At factor start i (0-based in T), walk up ancestors and pick best candidate
-        size_t best_len_depth = 0;   // best candidate's depth (proxy for length)
-        bool   best_is_rc      = false;
-        size_t best_fwd_start  = 0;  // start in T (for FWD)
-        size_t best_rc_end     = 0;  // end in T (for RC)
-        size_t best_rc_posS    = 0;  // pos in S where RC candidate suffix starts (for LCP)
-
-        // Walk from leaf to root via level_anc
-        for (size_t step = 1; step <= lambda_node_depth; ++step) {
-            auto v = cst.bp_support.level_anc(lambda, lambda_node_depth - step);
-            size_t ell = cst.depth(v);
-            if (ell == 0) break; // reached root
-
-            auto lb = cst.lb(v), rb = cst.rb(v);
-
-            // Forward candidate (min start in T within v's interval)
-            size_t kF = rmqF(lb, rb);
-            uint64_t jF = fwd_starts[kF];
-            bool okF = (jF != INF) && (jF + ell - 1 < i); // non-overlap: endF <= i-1
-
-            // RC candidate (min END in T within v's interval; monotone with depth)
-            size_t kR = rmqRcEnd(lb, rb);
-            uint64_t endRC = rc_ends[kR];
-            bool okR = (endRC != INF) && (endRC < i); // endRC <= i-1
-
-            if (!okF && !okR) {
-                // deeper nodes can only increase jF and the minimal RC end
-                // -> non-overlap won't become true again for either; stop
-                break;
-            }
-
-            // Choose the better of the valid candidates at this depth
-            if (okF) {
-                if (ell > best_len_depth ||
-                    (ell == best_len_depth && !best_is_rc && (jF + ell - 1) < (best_fwd_start + best_len_depth - 1))) {
-                    best_len_depth = ell;
-                    best_is_rc     = false;
-                    best_fwd_start = jF;
-                }
-            }
-            if (okR) {
-                size_t posS_R = cst.csa[kR]; // suffix position in S for LCP
-                if (ell > best_len_depth ||
-                    (ell == best_len_depth && (best_is_rc ? (endRC < best_rc_end) : true))) {
-                    best_len_depth = ell;
-                    best_is_rc     = true;
-                    best_rc_end    = endRC;
-                    best_rc_posS   = posS_R;
-                }
-            }
-        }
-
-        size_t emit_len = 1;
-        uint64_t emit_ref = i; // default for literal
-        if (best_len_depth == 0) {
-            // No previous occurrence (FWD nor RC) — literal of length 1
-            Factor f{static_cast<uint64_t>(i), static_cast<uint64_t>(emit_len), static_cast<uint64_t>(emit_ref)};
-            sink(f);
-            ++factors;
-
-            // Advance
-            lambda = next_leaf(cst, lambda, emit_len);
-            lambda_node_depth = cst.node_depth(lambda);
-            i = cst.sn(lambda);
-            continue;
-        }
-
-        if (!best_is_rc) {
-            // Finalize FWD with true LCP and non-overlap cap
-            size_t cap = i - best_fwd_start; // i-1 - (best_fwd_start) + 1
-            size_t L   = lcp(cst, i, best_fwd_start);
-            emit_len   = std::min(L, cap);
-            emit_ref   = static_cast<uint64_t>(best_fwd_start);
-        } else {
-            // Finalize RC with true LCP (against suffix in R) 
-            size_t L   = lcp(cst, i, best_rc_posS);
-            emit_len   = L;
-            emit_ref   = RC_MASK | static_cast<uint64_t>(best_rc_end); // end-anchored + RC flag
-        }
-
-        // Safety: ensure progress
-        if (emit_len == 0) emit_len = 1;
-
-        Factor f{static_cast<uint64_t>(i), static_cast<uint64_t>(emit_len), emit_ref};
-        sink(f);
-        ++factors;
-
-        // Advance to next phrase start
-        lambda = next_leaf(cst, lambda, emit_len);
-        lambda_node_depth = cst.node_depth(lambda);
-        i = cst.sn(lambda);
-    }
-
-    return factors;
+    // Use the multiple sequence algorithm
+    return nolzss_multiple_dna_w_rc(S, std::forward<Sink>(sink));
 }
 
 
@@ -340,8 +303,7 @@ static size_t nolzss_dna_w_rc(const std::string& T, Sink&& sink) {
  */
 template<class Sink>
 static size_t nolzss_multiple_dna_w_rc(const std::string& S, Sink&& sink) {
-    size_t n = S.size() / 2;
-    const size_t N = n;
+    const size_t N = (S.size() / 2) - 1;
     if (N == 0) return 0;
 
     // Build CST over S

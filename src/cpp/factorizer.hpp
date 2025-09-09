@@ -25,6 +25,29 @@ inline bool is_rc(uint64_t ref) { return (ref & RC_MASK) != 0; }
  */
 inline uint64_t rc_end(uint64_t ref) { return (ref & ~RC_MASK); }
 
+// Utility functions for DNA sequence preparation
+
+/**
+ * @brief Prepares multiple DNA sequences for factorization with reverse complement awareness.
+ *
+ * Takes multiple DNA sequences, concatenates them with unique sentinels, and appends
+ * their reverse complements with unique sentinels. The output format is compatible
+ * with nolzss_multiple_dna_w_rc(): S = T1!T2@T3$rt(T3)%rt(T2)^rt(T1)&
+ *
+ * @param sequences Vector of DNA sequence strings (should contain only A, C, T, G)
+ * @return Pair containing: (concatenated_string, original_length)
+ *         - concatenated_string: The formatted string with sequences and reverse complements
+ *         - original_length: Length of the original sequences part (before reverse complements)
+ *
+ * @throws std::invalid_argument If too many sequences (>125) or invalid nucleotides found
+ * @throws std::runtime_error If sequences contain invalid characters
+ *
+ * @note Sentinels avoid 0, A(65), C(67), G(71), T(84) - lowercase nucleotides are safe as sentinels
+ * @note The function validates that all sequences contain only valid DNA nucleotides
+ * @note Input sequences can be lowercase or uppercase, output is always uppercase
+ */
+std::pair<std::string, size_t> prepare_multiple_dna_sequences(const std::vector<std::string>& sequences);
+
 /**
  * @brief Represents a factorization factor with start position, length, and reference position.
  *
