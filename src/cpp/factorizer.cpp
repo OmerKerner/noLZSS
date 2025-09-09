@@ -460,7 +460,6 @@ static size_t nolzss_multiple_dna_w_rc(const std::string& S, Sink&& sink) {
  */
 template<class Sink>
 size_t factorize_stream(std::string_view text, Sink&& sink) {
-    // sdsl-lite will automatically add the sentinel when needed
     std::string tmp(text);
     cst_t cst; construct_im(cst, tmp, 1);
     return nolzss(cst, std::forward<Sink>(sink));
