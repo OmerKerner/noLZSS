@@ -1,4 +1,5 @@
 #include "fasta_processor.hpp"
+#include "factorizer.hpp"
 #include <iostream>
 #include <algorithm>
 
@@ -245,6 +246,69 @@ FastaProcessResult process_amino_acid_fasta(const std::string& fasta_path) {
 
     file.close();
     return result;
+}
+
+/**
+ * @brief Factorizes multiple DNA sequences from a FASTA file with reverse complement awareness.
+ *
+ * Reads a FASTA file containing DNA sequences, parses them into individual sequences,
+ * prepares them for factorization using prepare_multiple_dna_sequences(), and then
+ * performs noLZSS factorization with reverse complement awareness.
+ */
+std::vector<Factor> factorize_fasta_multiple_dna_w_rc(const std::string& fasta_path) {
+    // Parse FASTA file directly into individual sequences
+    std::ifstream file(fasta_path);
+    if (!file.is_open()) {
+        throw std::runtime_error("Cannot open FASTA file: " + fasta_path);
+    }
+
+    std::vector<std::string> sequences;
+    std::string line;
+    std::string current_sequence;
+
+    while (std::getline(file, line)) {
+        // Remove trailing whitespace
+        while (!line.empty() && std::isspace(line.back())) {
+            line.pop_back();
+        }
+
+        if (line.empty()) {
+            continue; // Skip empty lines
+        }
+
+        if (line[0] == '>') {
+            // Header line - finish previous sequence if exists
+            if (!current_sequence.empty()) {
+                sequences.push_back(current_sequence);
+                current_sequence.clear();
+            }
+            // Skip header, continue to next line
+        } else {
+            // Sequence line - append to current sequence
+            for (char c : line) {
+                if (!std::isspace(c)) {
+                    current_sequence += c;
+                }
+            }
+        }
+    }
+
+    // Add the last sequence if it exists
+    if (!current_sequence.empty()) {
+        sequences.push_back(current_sequence);
+    }
+
+    file.close();
+
+    if (sequences.empty()) {
+        throw std::runtime_error("No valid sequences found in FASTA file");
+    }
+
+    // Prepare sequences for factorization (this will validate nucleotides)
+    auto [prepared_string, original_length] = prepare_multiple_dna_sequences(sequences);
+    
+    // Perform factorization
+    return factorize_multiple_dna_w_rc(prepared_string);
 }
 
 } // namespace noLZSS
