@@ -330,17 +330,14 @@ TTTTAAAA
         assert isinstance(factors, list)
         assert len(factors) > 0
         
-        # Each factor should be a Factor object
+        # Each factor should be a tuple (start, length, ref, is_rc)
         for factor in factors:
-            assert hasattr(factor, 'start')
-            assert hasattr(factor, 'length')
-            assert hasattr(factor, 'ref')
-            assert hasattr(factor, 'is_rc')
-            assert isinstance(factor.start, int)
-            assert isinstance(factor.length, int)
-            assert isinstance(factor.ref, int)
-            assert isinstance(factor.is_rc, bool)
-            assert factor.length > 0
+            start, length, ref, is_rc = factor
+            assert isinstance(start, int)
+            assert isinstance(length, int)
+            assert isinstance(ref, int)
+            assert isinstance(is_rc, bool)
+            assert length > 0
             
     finally:
         os.unlink(temp_path)
@@ -471,12 +468,15 @@ GCTAGCTA
         factors = cpp.factorize_fasta_multiple_dna_w_rc(fasta_path)
         assert len(factors) == num_factors
         
-        # Verify factors are Factor objects with valid data
+        # Verify factors are tuples with valid data
         for factor in factors:
-            assert hasattr(factor, 'start')
-            assert hasattr(factor, 'length')
-            assert hasattr(factor, 'ref')
-            assert hasattr(factor, 'is_rc')
+            assert isinstance(factor, tuple)
+            assert len(factor) == 4
+            start, length, ref, is_rc = factor
+            assert isinstance(start, int)
+            assert isinstance(length, int)
+            assert isinstance(ref, int)
+            assert isinstance(is_rc, bool)
             
     finally:
         os.unlink(fasta_path)

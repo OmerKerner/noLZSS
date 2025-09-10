@@ -7,61 +7,8 @@ LZ factorizations of strings and files.
 
 # Import C++ bindings
 from ._noLZSS import (
-    # factorize as _factorize,
-    # factorize_file as _factorize_file,
-    # count_factors as _count_factors,
-    # count_factors_file as _count_factors_file,
-    # write_factors_binary_file as _write_factors_binary_file,
     __version__
 )
 
-# Import enhanced Python wrappers
-from .core import (
-    factorize,
-    factorize_file, 
-    count_factors,
-    count_factors_file,
-    write_factors_binary_file,
-    factorize_with_info
-)
-
-# Import utilities
-from .utils import (
-    analyze_alphabet,
-    read_factors_binary_file,
-    plot_factor_lengths
-)
-from .genomics import (
-    detect_sequence_type,
-    is_dna_sequence,
-    is_protein_sequence,
-    read_nucleotide_fasta,
-    read_protein_fasta,
-    read_fasta_auto,
-    plot_single_seq_accum_factors_from_fasta,
-)
-
-__all__ = [
-    # Enhanced wrapper functions (recommended for most users)
-    "factorize",
-    "factorize_file", 
-    "count_factors",
-    "count_factors_file",
-    "write_factors_binary_file",
-    "factorize_with_info",
-    
-    # Utility functions
-    "analyze_alphabet",
-    "read_factors_binary_file",
-    "plot_factor_lengths",
-    "detect_sequence_type", 
-    "is_dna_sequence",
-    "is_protein_sequence",
-    "read_nucleotide_fasta",
-    "read_protein_fasta",
-    "read_fasta_auto",
-    "plot_single_seq_accum_factors_from_fasta",
-    
-    # Version info
-    "__version__"
-]
+from .core import *
+from .utils import *

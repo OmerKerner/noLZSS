@@ -5,13 +5,13 @@ This module provides functions for reading, parsing, and compressing FASTA files
 with proper handling of biological sequences and edge cases.
 """
 
-from typing import Union, List, Tuple, Optional, Dict, Any
+from typing import Union, List, Tuple, Dict
 import re
 from pathlib import Path
 
-from ..utils import validate_input, NoLZSSError
+from ..utils import NoLZSSError
 from ..core import factorize
-from .sequences import is_dna_sequence, is_protein_sequence, detect_sequence_type
+from .sequences import detect_sequence_type
 
 
 class FASTAError(NoLZSSError):
