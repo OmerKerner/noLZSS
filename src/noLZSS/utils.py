@@ -155,9 +155,12 @@ def plot_factor_lengths(
         show_plot: Whether to display the plot (default: True)
         
     Raises:
-        ImportError: If matplotlib is not installed
         NoLZSSError: If binary file cannot be read
         TypeError: If input type is invalid
+        ValueError: If no factors to plot
+        
+    Warns:
+        UserWarning: If matplotlib is not installed (function returns gracefully)
     """
     try:
         import matplotlib.pyplot as plt

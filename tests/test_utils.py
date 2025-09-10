@@ -1,7 +1,7 @@
 """
 Comprehensive tests for the utils module.
 """
-
+import warnings
 import pytest
 import sys
 import os
@@ -222,22 +222,26 @@ class TestPlotting:
         """Test plotting with factor list."""
         factors = [(0, 3, 1), (3, 2, 2), (5, 4, 3)]
         
-        # This would normally show a plot, but we'll just test it doesn't crash
-        # Since matplotlib might not be available in test environment
-        try:
+        # Test that function works when matplotlib is available
+        # or gracefully handles when it's not available
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", UserWarning)
             plot_factor_lengths(factors, show_plot=False)
-        except ImportError:
-            pytest.skip("matplotlib not available")
+            # Function should complete without raising exceptions
     
     def test_plot_factor_lengths_empty_list(self):
         """Test plotting with empty factor list."""
-        with pytest.raises(ValueError):
-            plot_factor_lengths([])
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", UserWarning)
+            with pytest.raises(ValueError):
+                plot_factor_lengths([])
     
     def test_plot_factor_lengths_invalid_type(self):
         """Test plotting with invalid input type."""
-        with pytest.raises(TypeError):
-            plot_factor_lengths(123)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", UserWarning)
+            with pytest.raises(TypeError):
+                plot_factor_lengths(123)
 
 
 class TestEdgeCases:
@@ -281,7 +285,7 @@ if __name__ == "__main__":
     
     test_classes = [
         TestValidateInput, TestAnalyzeAlphabet,
-        TestSequenceDetection, TestSafeFileReader, TestEdgeCases
+        TestSequenceDetection, TestBinaryFileIO, TestPlotting, TestEdgeCases
     ]
     
     total_tests = 0
