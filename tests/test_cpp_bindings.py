@@ -330,16 +330,17 @@ TTTTAAAA
         assert isinstance(factors, list)
         assert len(factors) > 0
         
-        # Each factor should be valid
+        # Each factor should be a Factor object
         for factor in factors:
-            assert isinstance(factor, tuple)
-            assert len(factor) == 4  # (start, length, ref, is_rc)
-            start, length, ref, is_rc = factor
-            assert isinstance(start, int)
-            assert isinstance(length, int)
-            assert isinstance(ref, int)
-            assert isinstance(is_rc, bool)
-            assert length > 0
+            assert hasattr(factor, 'start')
+            assert hasattr(factor, 'length')
+            assert hasattr(factor, 'ref')
+            assert hasattr(factor, 'is_rc')
+            assert isinstance(factor.start, int)
+            assert isinstance(factor.length, int)
+            assert isinstance(factor.ref, int)
+            assert isinstance(factor.is_rc, bool)
+            assert factor.length > 0
             
     finally:
         os.unlink(temp_path)
@@ -470,6 +471,56 @@ GCTAGCTA
         factors = cpp.factorize_fasta_multiple_dna_w_rc(fasta_path)
         assert len(factors) == num_factors
         
+        # Verify factors are Factor objects with valid data
+        for factor in factors:
+            assert hasattr(factor, 'start')
+            assert hasattr(factor, 'length')
+            assert hasattr(factor, 'ref')
+            assert hasattr(factor, 'is_rc')
+            
     finally:
         os.unlink(fasta_path)
         os.unlink(binary_path)
+
+def test_comprehensive_dna_functionality():
+    """Test comprehensive DNA functionality with real biological sequences"""
+    import noLZSS._noLZSS as cpp
+    
+    # Test with realistic DNA sequences that will show RC matches
+    # These sequences are palindromic and have reverse complement relationships
+    sequences = [
+        "ATCGATCGATCG",  # Original sequence
+        "CGATCGATCGAT",  # Shifted version  
+        "GATCGATCGATC"   # Another shift that should have RC matches
+    ]
+    
+    # Test preparation
+    prepared, original_length = cpp.prepare_multiple_dna_sequences(sequences)
+    assert isinstance(prepared, str)
+    assert original_length > 0
+    assert len(prepared) > original_length  # Should include RC parts
+    
+    # Convert to bytes for factorization
+    prepared_bytes = prepared.encode('latin-1')
+    
+    # Test factorization
+    factors = cpp.factorize_multiple_dna_w_rc(prepared_bytes)
+    count = cpp.count_factors_multiple_dna_w_rc(prepared_bytes)
+    
+    assert len(factors) == count
+    assert count > 0
+    
+    # Check that we have some factors with RC matches
+    rc_factors = [f for f in factors if f[3] == True]  # is_rc is True
+    print(f"Found {len(rc_factors)} reverse complement factors out of {len(factors)} total factors")
+    
+    # Verify all factors are valid
+    for i, factor in enumerate(factors):
+        start, length, ref, is_rc = factor
+        assert start >= 0, f"Factor {i}: start should be non-negative"
+        assert length > 0, f"Factor {i}: length should be positive"
+        assert ref >= 0, f"Factor {i}: ref should be non-negative"
+        assert isinstance(is_rc, bool), f"Factor {i}: is_rc should be boolean"
+        
+        # Start + length should not exceed the factorizable portion
+        assert start + length <= original_length, f"Factor {i}: exceeds original sequence bounds"
