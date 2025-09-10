@@ -15,6 +15,24 @@ from ._noLZSS import (
     count_factors as _count_factors,
     count_factors_file as _count_factors_file,
     write_factors_binary_file as _write_factors_binary_file,
+    # DNA-aware functions
+    factorize_dna_w_rc as _factorize_dna_w_rc,
+    factorize_file_dna_w_rc as _factorize_file_dna_w_rc,
+    count_factors_dna_w_rc as _count_factors_dna_w_rc,
+    count_factors_file_dna_w_rc as _count_factors_file_dna_w_rc,
+    write_factors_binary_file_dna_w_rc as _write_factors_binary_file_dna_w_rc,
+    # Multiple DNA functions
+    factorize_multiple_dna_w_rc as _factorize_multiple_dna_w_rc,
+    factorize_file_multiple_dna_w_rc as _factorize_file_multiple_dna_w_rc,
+    count_factors_multiple_dna_w_rc as _count_factors_multiple_dna_w_rc,
+    count_factors_file_multiple_dna_w_rc as _count_factors_file_multiple_dna_w_rc,
+    write_factors_binary_file_multiple_dna_w_rc as _write_factors_binary_file_multiple_dna_w_rc,
+    # FASTA functions
+    process_nucleotide_fasta as _process_nucleotide_fasta,
+    process_amino_acid_fasta as _process_amino_acid_fasta,
+    factorize_fasta_multiple_dna_w_rc as _factorize_fasta_multiple_dna_w_rc,
+    # Utility functions
+    prepare_multiple_dna_sequences as _prepare_multiple_dna_sequences,
 )
 from .utils import validate_input, analyze_alphabet
 

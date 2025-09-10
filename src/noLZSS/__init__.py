@@ -7,11 +7,11 @@ LZ factorizations of strings and files.
 
 # Import C++ bindings
 from ._noLZSS import (
-    factorize as _factorize,
-    factorize_file as _factorize_file,
-    count_factors as _count_factors,
-    count_factors_file as _count_factors_file,
-    write_factors_binary_file as _write_factors_binary_file,
+    # factorize as _factorize,
+    # factorize_file as _factorize_file,
+    # count_factors as _count_factors,
+    # count_factors_file as _count_factors_file,
+    # write_factors_binary_file as _write_factors_binary_file,
     __version__
 )
 
@@ -38,7 +38,7 @@ from .genomics import (
     read_nucleotide_fasta,
     read_protein_fasta,
     read_fasta_auto,
-    plot_single_seq_accum_factors_from_fasta
+    plot_single_seq_accum_factors_from_fasta,
 )
 
 __all__ = [

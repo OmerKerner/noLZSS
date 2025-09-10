@@ -1,0 +1,9 @@
+>YNCA0002W TRN1 SGDID:S000006680, Chr I from 139152-139187,139219-139254, Genome Release 64-5-1, tRNA_gene, "Proline tRNA (tRNA-Pro), predicted by tRNAscan-SE analysis; target of K. lactis zymocin; can mutate to suppress +1 frameshift mutations in proline codons"
+GGGCGTGTGGTCTAGTGGTATGATTCTCGCTTTGGGTGCGAGAGGCCCTGGGTTCAATTC
+CCAGCTCGCCCC
+>YNCA0003W SNR18 SGDID:S000007500, Chr I from 142367-142468, Genome Release 64-5-1, snoRNA_gene, "C/D box small nucleolar RNA (snoRNA); commonly referred to as U18; guides 2'-O-methylation of large subunit (LSU) rRNA at positions A649 and C650"
+GTGAATGATGAATTTAATTCTTTGGTCCGTGTTTATGATGGGAAGTAAGACCCCCGATAT
+GAGTGACAAAAGAGATGTGGTTGACTATCACAGTATCTGACG
+>YNCA0004W TGA1 SGDID:S000006521, Chr I from 166267-166339, Genome Release 64-5-1, tRNA_gene, "Alanine tRNA (tRNA-Ala), predicted by tRNAscan-SE analysis; one of 5 nuclear tRNA genes containing the tDNA-anticodon TGC (mature tRNA may be UGC or may contain modified bases), decodes GCA and probably GCG codons into alanine, one of 16 nuclear tRNAs for alanine"
+GGGCACATGGCGCAGTTGGTAGCGCGCTTCCCTTGCAAGGAAGAGGTCATCGGTTCGATT
+CCGGTTGCGTCCA

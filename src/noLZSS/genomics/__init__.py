@@ -18,6 +18,7 @@ __all__ = [
     
     # From plots module
     "plot_single_seq_accum_factors_from_fasta",
+    "plot_multiple_seq_self_weizmann_factor_plot_from_fasta",
     "PlotError",
     
     # From sequences module
