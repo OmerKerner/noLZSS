@@ -16,6 +16,7 @@ from ._noLZSS import (
     count_factors_file as _count_factors_file,
     write_factors_binary_file as _write_factors_binary_file,
 )
+
 from .utils import validate_input, analyze_alphabet
 
 

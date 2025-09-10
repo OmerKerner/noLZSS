@@ -210,7 +210,7 @@ def plot_multiple_seq_self_weizmann_factor_plot_from_fasta(
         warnings.warn("matplotlib is required for plotting. Install with: pip install matplotlib", UserWarning)
         return
 
-    from ..core import factorize_fasta_multiple_dna_w_rc
+    from .._noLZSS import factorize_fasta_multiple_dna_w_rc
 
     fasta_filepath = Path(fasta_filepath)
 
@@ -223,8 +223,10 @@ def plot_multiple_seq_self_weizmann_factor_plot_from_fasta(
 
     try:
         # Get factors from FASTA file
+        print(f"Reading and factorizing sequences from {fasta_filepath}...")
         factors = factorize_fasta_multiple_dna_w_rc(str(fasta_filepath))
 
+        print(f"Preparing plot for {len(factors)} factors...")
         if not factors:
             raise PlotError("No factors found in FASTA file")
 
@@ -264,8 +266,14 @@ def plot_multiple_seq_self_weizmann_factor_plot_from_fasta(
         else:
             norm_lengths = np.array([0.5])  # Default for single factor
 
+        # Additionally consider position to vary color intensity
+        if len(positions) > 1:
+            norm_positions = (positions - positions.min()) / (positions.max() - positions.min())
+        else:
+            norm_positions = np.array([0.5])  # Default for single factor
+
         # Plot each factor as a line
-        for i, (pos, length, ref, is_rc, norm_len) in enumerate(zip(positions, lengths, refs, is_rcs, norm_lengths)):
+        for i, (pos, length, ref, is_rc, norm_len, norm_pos) in enumerate(zip(positions, lengths, refs, is_rcs, norm_lengths, norm_positions)):
             if is_rc:
                 # Reverse complement: red line
                 # x_init = pos, x_final = pos + length
@@ -273,8 +281,8 @@ def plot_multiple_seq_self_weizmann_factor_plot_from_fasta(
                 x_coords = [pos, pos + length]
                 y_coords = [ref + length, ref]
 
-                # Red color with intensity based on length (brighter for shorter factors)
-                alpha = 1.0 - norm_len * 0.7  # Shorter factors more opaque
+                # Red color with intensity based on length (more opaque for longer factors)
+                alpha = min((norm_len * 0.5 + norm_pos * 0.5), 1.0)  # Combine length and position for alpha
                 color = (1.0, 0.0, 0.0, alpha)  # Red with variable alpha
             else:
                 # Forward: blue line
@@ -283,12 +291,16 @@ def plot_multiple_seq_self_weizmann_factor_plot_from_fasta(
                 x_coords = [pos, pos + length]
                 y_coords = [ref, ref + length]
 
-                # Blue color with intensity based on length (brighter for shorter factors)
-                alpha = 1.0 - norm_len * 0.7  # Shorter factors more opaque
+                # Blue color with intensity based on length (more opaque for longer factors)
+                alpha = min((norm_len * 0.5 + norm_pos * 0.5), 1.0)  # Combine length and position for alpha
                 color = (0.0, 0.0, 1.0, alpha)  # Blue with variable alpha
 
             # Plot the line
             ax.plot(x_coords, y_coords, color=color, linewidth=1.5, alpha=alpha)
+
+        # Add diagonal line y=x for reference
+        max_val = max(positions.max() + lengths.max(), refs.max() + lengths.max())
+        ax.plot([0, max_val], [0, max_val], color='gray', linestyle='--', linewidth=1, alpha=0.5)
 
         # Set axis labels and title
         ax.set_xlabel(f'Position in concatenated sequence ({name})')
