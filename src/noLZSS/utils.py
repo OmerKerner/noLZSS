@@ -10,6 +10,7 @@ import math
 import struct
 from pathlib import Path
 from collections import Counter
+import warnings
 
 
 class NoLZSSError(Exception):
@@ -161,7 +162,8 @@ def plot_factor_lengths(
     try:
         import matplotlib.pyplot as plt
     except ImportError:
-        raise ImportError("matplotlib is required for plotting. Install with: pip install matplotlib")
+        warnings.warn("matplotlib is required for plotting. Install with: pip install matplotlib", UserWarning)
+        return
     
     # Get factors
     if isinstance(factors_or_file, (str, Path)):

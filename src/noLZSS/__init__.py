@@ -38,7 +38,7 @@ from .genomics import (
     read_nucleotide_fasta,
     read_protein_fasta,
     read_fasta_auto,
-    process_fasta_with_plots
+    plot_single_seq_accum_factors_from_fasta
 )
 
 __all__ = [
@@ -60,7 +60,7 @@ __all__ = [
     "read_nucleotide_fasta",
     "read_protein_fasta",
     "read_fasta_auto",
-    "process_fasta_with_plots",
+    "plot_single_seq_accum_factors_from_fasta",
     
     # Version info
     "__version__"

@@ -92,7 +92,8 @@ import pytest
 # Add the src directory to the path for testing
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
-from noLZSS.genomics.fasta import read_nucleotide_fasta, read_protein_fasta, read_fasta_auto, process_fasta_with_plots, FASTAError
+from noLZSS.genomics.fasta import read_nucleotide_fasta, read_protein_fasta, read_fasta_auto, FASTAError
+from noLZSS.genomics.plots import plot_single_seq_accum_factors_from_fasta, PlotError
 from noLZSS._noLZSS import process_nucleotide_fasta, process_amino_acid_fasta  # C++ functions
 from noLZSS._noLZSS import process_nucleotide_fasta  # C++ function
 

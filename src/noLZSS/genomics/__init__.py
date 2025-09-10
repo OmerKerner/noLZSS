@@ -7,14 +7,18 @@ including FASTA file parsing, sequence validation, and genomics-aware compressio
 
 from .fasta import *
 from .sequences import *
+from .plots import *
 
 __all__ = [
     # From fasta module
     "read_nucleotide_fasta",
     "read_protein_fasta", 
     "read_fasta_auto",
-    "process_fasta_with_plots",
     "FASTAError",
+    
+    # From plots module
+    "plot_single_seq_accum_factors_from_fasta",
+    "PlotError",
     
     # From sequences module
     "is_dna_sequence",
