@@ -574,36 +574,38 @@ Raises:
     Sentinels are characters 1-251 (avoiding 0 and common amino acids).
     Empty sequences are skipped. Only whitespace is ignored in sequences.
 )doc");
+// FASTA factorization function
+m.def("factorize_fasta_multiple_dna_w_rc", [](const std::string& fasta_path) {
+    // Release GIL while doing heavy C++ work
+    py::gil_scoped_release release;
+    auto factors = noLZSS::factorize_fasta_multiple_dna_w_rc(fasta_path);
+    py::gil_scoped_acquire acquire;
 
-    // FASTA factorization function
-    m.def("factorize_fasta_multiple_dna_w_rc", [](const std::string& fasta_path) {
-        // Release GIL while doing heavy C++ work
-        py::gil_scoped_release release;
-        auto result = noLZSS::factorize_fasta_multiple_dna_w_rc(fasta_path);
-        py::gil_scoped_acquire acquire;
-        return result;
-    }, py::arg("fasta_path"), R"doc(Factorize multiple DNA sequences from a FASTA file with reverse complement awareness.
+    py::list out;
+    for (auto &f : factors) out.append(py::make_tuple(f.start, f.length, f.ref & ~noLZSS::RC_MASK, noLZSS::is_rc(f.ref)));
+    return out;
+}, py::arg("fasta_path"), R"doc(Factorize multiple DNA sequences from a FASTA file with reverse complement awareness.
 
 Reads a FASTA file containing DNA sequences, parses them into individual sequences,
 prepares them for factorization using prepare_multiple_dna_sequences(), and then
 performs noLZSS factorization with reverse complement awareness.
 
 Args:
-    fasta_path: Path to the FASTA file containing DNA sequences
+fasta_path: Path to the FASTA file containing DNA sequences
 
 Returns:
-    List of Factor objects representing the factorization
+List of (start, length, ref, is_rc) tuples representing the factorization
 
 Raises:
-    RuntimeError: If FASTA file cannot be opened or contains no valid sequences
-    ValueError: If too many sequences (>125) in the FASTA file or invalid nucleotides found
+RuntimeError: If FASTA file cannot be opened or contains no valid sequences
+ValueError: If too many sequences (>125) in the FASTA file or invalid nucleotides found
 
 Note:
-    Only A, C, T, G nucleotides are allowed (case insensitive)
-    Sequences are converted to uppercase before factorization
-    Reverse complement matches are supported during factorization
-    Nucleotide validation is performed by prepare_multiple_dna_sequences()
-    Each Factor has attributes: start, length, ref
+Only A, C, T, G nucleotides are allowed (case insensitive)
+Sequences are converted to uppercase before factorization
+Reverse complement matches are supported during factorization
+Nucleotide validation is performed by prepare_multiple_dna_sequences()
+ref field has RC_MASK cleared. is_rc boolean indicates if this was a reverse complement match.
 )doc");
 
     // DNA sequence preparation utility

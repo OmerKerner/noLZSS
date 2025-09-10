@@ -235,13 +235,7 @@ def plot_multiple_seq_self_weizmann_factor_plot_from_fasta(
         is_rcs = []
 
         for factor in factors:
-            # Handle both Factor objects and tuples
-            if hasattr(factor, 'start'):  # Factor object
-                start = factor.start
-                length = factor.length
-                ref = factor.ref
-                is_rc = factor.is_rc
-            elif len(factor) == 4:  # (start, length, ref, is_rc) tuple
+            if len(factor) == 4:  # (start, length, ref, is_rc) tuple
                 start, length, ref, is_rc = factor
             else:  # Assume (start, length, ref) format, default is_rc to False
                 start, length, ref = factor
