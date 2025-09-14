@@ -83,7 +83,7 @@ static std::string revcomp(std::string_view s) {
  * @note Sentinels range from 1-251, avoiding 0, A(65), C(67), G(71), T(84)
  * @note The function validates that all sequences contain only valid DNA nucleotides
  */
-std::pair<std::string, size_t> prepare_multiple_dna_sequences(const std::vector<std::string>& sequences) {
+std::pair<std::string, size_t> prepare_multiple_dna_sequences_w_rc(const std::vector<std::string>& sequences) {
     if (sequences.empty()) {
         return {"", 0};
     }
@@ -274,8 +274,8 @@ static size_t nolzss_dna_w_rc(const std::string& T, Sink&& sink) {
     const size_t n = T.size();
     if (n == 0) return 0;
 
-    // Use prepare_multiple_dna_sequences with a single sequence
-    auto [S, original_length] = prepare_multiple_dna_sequences({T});
+    // Use prepare_multiple_dna_sequences_w_rc with a single sequence
+    auto [S, original_length] = prepare_multiple_dna_sequences_w_rc({T});
 
     // Use the multiple sequence algorithm
     return nolzss_multiple_dna_w_rc(S, std::forward<Sink>(sink));

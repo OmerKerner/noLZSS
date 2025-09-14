@@ -40,7 +40,7 @@ FastaProcessResult process_amino_acid_fasta(const std::string& fasta_path);
  * @brief Factorizes multiple DNA sequences from a FASTA file with reverse complement awareness.
  *
  * Reads a FASTA file containing DNA sequences, parses them into individual sequences,
- * prepares them for factorization using prepare_multiple_dna_sequences(), and then
+ * prepares them for factorization using prepare_multiple_dna_sequences_w_rc(), and then
  * performs noLZSS factorization with reverse complement awareness.
  *
  * @param fasta_path Path to the FASTA file containing DNA sequences
@@ -52,7 +52,7 @@ FastaProcessResult process_amino_acid_fasta(const std::string& fasta_path);
  * @note Only A, C, T, G nucleotides are allowed (case insensitive)
  * @note Sequences are converted to uppercase before factorization
  * @note Reverse complement matches are supported during factorization
- * @note Nucleotide validation is performed by prepare_multiple_dna_sequences()
+ * @note Nucleotide validation is performed by prepare_multiple_dna_sequences_w_rc()
  */
 std::vector<Factor> factorize_fasta_multiple_dna_w_rc(const std::string& fasta_path);
 

@@ -20,7 +20,7 @@ from .._noLZSS import (
     process_nucleotide_fasta,
     process_amino_acid_fasta,
     factorize_fasta_multiple_dna_w_rc,
-    prepare_multiple_dna_sequences,
+    prepare_multiple_dna_sequences_w_rc,
 )
 
 from .fasta import *

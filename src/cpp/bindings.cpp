@@ -587,7 +587,7 @@ m.def("factorize_fasta_multiple_dna_w_rc", [](const std::string& fasta_path) {
 }, py::arg("fasta_path"), R"doc(Factorize multiple DNA sequences from a FASTA file with reverse complement awareness.
 
 Reads a FASTA file containing DNA sequences, parses them into individual sequences,
-prepares them for factorization using prepare_multiple_dna_sequences(), and then
+prepares them for factorization using prepare_multiple_dna_sequences_w_rc(), and then
 performs noLZSS factorization with reverse complement awareness.
 
 Args:
@@ -604,15 +604,15 @@ Note:
 Only A, C, T, G nucleotides are allowed (case insensitive)
 Sequences are converted to uppercase before factorization
 Reverse complement matches are supported during factorization
-Nucleotide validation is performed by prepare_multiple_dna_sequences()
+Nucleotide validation is performed by prepare_multiple_dna_sequences_w_rc()
 ref field has RC_MASK cleared. is_rc boolean indicates if this was a reverse complement match.
 )doc");
 
     // DNA sequence preparation utility
-    m.def("prepare_multiple_dna_sequences", [](const std::vector<std::string>& sequences) {
+    m.def("prepare_multiple_dna_sequences_w_rc", [](const std::vector<std::string>& sequences) {
         // Release GIL while doing heavy C++ work
         py::gil_scoped_release release;
-        auto result = noLZSS::prepare_multiple_dna_sequences(sequences);
+        auto result = noLZSS::prepare_multiple_dna_sequences_w_rc(sequences);
         py::gil_scoped_acquire acquire;
 
         // Return as Python tuple (concatenated_string, original_length)

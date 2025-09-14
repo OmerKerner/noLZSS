@@ -196,13 +196,13 @@ def test_consistency_across_functions():
         finally:
             os.unlink(temp_path)
 
-def test_prepare_multiple_dna_sequences():
-    """Test prepare_multiple_dna_sequences function"""
+def test_prepare_multiple_dna_sequences_w_rc():
+    """Test prepare_multiple_dna_sequences_w_rc function"""
     import noLZSS._noLZSS as cpp
     
     # Test basic functionality with valid DNA sequences
     sequences = ["ATCG", "GCTA"]
-    result = cpp.prepare_multiple_dna_sequences(sequences)
+    result = cpp.prepare_multiple_dna_sequences_w_rc(sequences)
     
     assert isinstance(result, tuple)
     assert len(result) == 2
@@ -215,12 +215,12 @@ def test_prepare_multiple_dna_sequences():
     assert original_length < len(concatenated)  # Original length should be less than total
     
     # Test with single sequence
-    single_result = cpp.prepare_multiple_dna_sequences(["ATCG"])
+    single_result = cpp.prepare_multiple_dna_sequences_w_rc(["ATCG"])
     assert isinstance(single_result, tuple)
     assert len(single_result) == 2
     
     # Test with mixed case (should be converted to uppercase)
-    mixed_result = cpp.prepare_multiple_dna_sequences(["atcg", "GCTA"])
+    mixed_result = cpp.prepare_multiple_dna_sequences_w_rc(["atcg", "GCTA"])
     mixed_concatenated, _ = mixed_result
     # Should not contain lowercase letters
     assert 'a' not in mixed_concatenated
@@ -228,24 +228,24 @@ def test_prepare_multiple_dna_sequences():
     assert 'g' not in mixed_concatenated
     assert 't' not in mixed_concatenated
 
-def test_prepare_multiple_dna_sequences_validation():
-    """Test prepare_multiple_dna_sequences input validation"""
+def test_prepare_multiple_dna_sequences_w_rc_validation():
+    """Test prepare_multiple_dna_sequences_w_rc input validation"""
     import noLZSS._noLZSS as cpp
     
     # Test empty sequences list
-    result = cpp.prepare_multiple_dna_sequences([])
+    result = cpp.prepare_multiple_dna_sequences_w_rc([])
     assert result == ("", 0)
     
     # Test invalid nucleotides
     try:
-        cpp.prepare_multiple_dna_sequences(["ATCGN"])  # N is not valid
+        cpp.prepare_multiple_dna_sequences_w_rc(["ATCGN"])  # N is not valid
         assert False, "Should have raised an exception for invalid nucleotide"
     except RuntimeError as e:
         assert "Invalid nucleotide" in str(e)
     
     # Test sequences with numbers
     try:
-        cpp.prepare_multiple_dna_sequences(["ATCG1"])
+        cpp.prepare_multiple_dna_sequences_w_rc(["ATCG1"])
         assert False, "Should have raised an exception for invalid nucleotide"
     except RuntimeError as e:
         assert "Invalid nucleotide" in str(e)
@@ -253,7 +253,7 @@ def test_prepare_multiple_dna_sequences_validation():
     # Test too many sequences (more than 125)
     try:
         many_sequences = ["ATCG"] * 126
-        cpp.prepare_multiple_dna_sequences(many_sequences)
+        cpp.prepare_multiple_dna_sequences_w_rc(many_sequences)
         assert False, "Should have raised an exception for too many sequences"
     except Exception as e:
         assert "Too many sequences" in str(e)
@@ -264,7 +264,7 @@ def test_factorize_multiple_dna_w_rc():
     
     # Test basic functionality
     sequences = ["ATCG", "CGTA"]
-    prepared, _ = cpp.prepare_multiple_dna_sequences(sequences)
+    prepared, _ = cpp.prepare_multiple_dna_sequences_w_rc(sequences)
     # Convert string to bytes for the factorization function
     prepared_bytes = prepared.encode('latin-1')
     factors = cpp.factorize_multiple_dna_w_rc(prepared_bytes)
@@ -289,7 +289,7 @@ def test_count_factors_multiple_dna_w_rc():
     
     # Test basic functionality
     sequences = ["ATCG", "CGTA"]
-    prepared, _ = cpp.prepare_multiple_dna_sequences(sequences)
+    prepared, _ = cpp.prepare_multiple_dna_sequences_w_rc(sequences)
     prepared_bytes = prepared.encode('latin-1')
     
     # Get factors and count
@@ -301,7 +301,7 @@ def test_count_factors_multiple_dna_w_rc():
     
     # Test with single sequence
     single_seq = ["ATCG"]
-    single_prepared, _ = cpp.prepare_multiple_dna_sequences(single_seq)
+    single_prepared, _ = cpp.prepare_multiple_dna_sequences_w_rc(single_seq)
     single_prepared_bytes = single_prepared.encode('latin-1')
     single_count = cpp.count_factors_multiple_dna_w_rc(single_prepared_bytes)
     assert single_count > 0
@@ -399,7 +399,7 @@ def test_dna_w_rc_functions_integration():
     
     # Test multiple DNA functions with single sequence
     sequences = [dna_text]
-    prepared, _ = cpp.prepare_multiple_dna_sequences(sequences)
+    prepared, _ = cpp.prepare_multiple_dna_sequences_w_rc(sequences)
     prepared_bytes = prepared.encode('latin-1')
     multi_factors = cpp.factorize_multiple_dna_w_rc(prepared_bytes)
     multi_count = cpp.count_factors_multiple_dna_w_rc(prepared_bytes)
@@ -417,7 +417,7 @@ def test_reverse_complement_awareness():
     # Create sequences where reverse complement matches should occur
     # ATCG reverse complement is CGAT
     sequences = ["ATCG", "CGAT", "ATCG"]  # Third sequence should match first
-    prepared, _ = cpp.prepare_multiple_dna_sequences(sequences)
+    prepared, _ = cpp.prepare_multiple_dna_sequences_w_rc(sequences)
     prepared_bytes = prepared.encode('latin-1')
     factors = cpp.factorize_multiple_dna_w_rc(prepared_bytes)
     
@@ -495,7 +495,7 @@ def test_comprehensive_dna_functionality():
     ]
     
     # Test preparation
-    prepared, original_length = cpp.prepare_multiple_dna_sequences(sequences)
+    prepared, original_length = cpp.prepare_multiple_dna_sequences_w_rc(sequences)
     assert isinstance(prepared, str)
     assert original_length > 0
     assert len(prepared) > original_length  # Should include RC parts

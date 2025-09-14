@@ -46,7 +46,7 @@ inline uint64_t rc_end(uint64_t ref) { return (ref & ~RC_MASK); }
  * @note The function validates that all sequences contain only valid DNA nucleotides
  * @note Input sequences can be lowercase or uppercase, output is always uppercase
  */
-std::pair<std::string, size_t> prepare_multiple_dna_sequences(const std::vector<std::string>& sequences);
+std::pair<std::string, size_t> prepare_multiple_dna_sequences_w_rc(const std::vector<std::string>& sequences);
 
 /**
  * @brief Represents a factorization factor with start position, length, and reference position.
