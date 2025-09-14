@@ -77,8 +77,8 @@ def analyze_alphabet(data: Union[str, bytes]) -> Dict[str, Any]:
         chars = data
         char_set = set(data)
     elif isinstance(data, bytes):
-        chars = data
-        char_set = set(data)
+        chars = data.decode('ascii')
+        char_set = set(chars)
     else:
         raise TypeError(f"Input must be str or bytes, got {type(data)}")
     

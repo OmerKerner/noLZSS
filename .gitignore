@@ -88,6 +88,15 @@ benchmarks/plots/
 *.png
 *.pdf
 
+# Documentation build artifacts
+docs/_build/
+docs/api/
+docs/.doctrees/
+
+# Doxygen output
+Doxyfile.bak
+docs/doxygen/
+
 # Sensitive / environment
 *.env
 .env.local
