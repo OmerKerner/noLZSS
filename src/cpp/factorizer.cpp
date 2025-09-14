@@ -47,7 +47,7 @@ static cst_t::node_type next_leaf(cst_t& cst, cst_t::node_type lambda, size_t it
     return cst.select_leaf(lambda_rank + 1);
 }
 
-// ---------- reverse-complement utilities ----------
+// ---------- genomic utilities ----------
 char complement(char c) {
     switch (c) {
         case 'A': return 'T';

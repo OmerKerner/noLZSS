@@ -608,6 +608,40 @@ Nucleotide validation is performed by prepare_multiple_dna_sequences_w_rc()
 ref field has RC_MASK cleared. is_rc boolean indicates if this was a reverse complement match.
 )doc");
 
+// FASTA factorization function (no reverse complement)
+m.def("factorize_fasta_multiple_dna_no_rc", [](const std::string& fasta_path) {
+    // Release GIL while doing heavy C++ work
+    py::gil_scoped_release release;
+    auto factors = noLZSS::factorize_fasta_multiple_dna_no_rc(fasta_path);
+    py::gil_scoped_acquire acquire;
+
+    py::list out;
+    for (auto &f : factors) out.append(py::make_tuple(f.start, f.length, f.ref & ~noLZSS::RC_MASK, noLZSS::is_rc(f.ref)));
+    return out;
+}, py::arg("fasta_path"), R"doc(Factorize multiple DNA sequences from a FASTA file without reverse complement awareness.
+
+Reads a FASTA file containing DNA sequences, parses them into individual sequences,
+prepares them for factorization using prepare_multiple_dna_sequences_no_rc(), and then
+performs noLZSS factorization without reverse complement awareness.
+
+Args:
+fasta_path: Path to the FASTA file containing DNA sequences
+
+Returns:
+List of (start, length, ref, is_rc) tuples representing the factorization
+
+Raises:
+RuntimeError: If FASTA file cannot be opened or contains no valid sequences
+ValueError: If too many sequences (>250) in the FASTA file or invalid nucleotides found
+
+Note:
+Only A, C, T, G nucleotides are allowed (case insensitive)
+Sequences are converted to uppercase before factorization
+Reverse complement matches are NOT supported during factorization
+Nucleotide validation is performed by prepare_multiple_dna_sequences_no_rc()
+ref field has RC_MASK cleared. is_rc boolean indicates if this was a reverse complement match.
+)doc");
+
     // DNA sequence preparation utility
     m.def("prepare_multiple_dna_sequences_w_rc", [](const std::vector<std::string>& sequences) {
         // Release GIL while doing heavy C++ work

@@ -450,6 +450,87 @@ ATCGNTCG
     finally:
         os.unlink(empty_path)
 
+def test_factorize_fasta_multiple_dna_no_rc():
+    """Test factorize_fasta_multiple_dna_no_rc function"""
+    import noLZSS._noLZSS as cpp
+    
+    # Create a test FASTA file
+    fasta_content = """>seq1
+ATCGATCG
+>seq2
+GCTAGCTA
+>seq3
+TTTTAAAA
+"""
+    
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.fasta', delete=False) as f:
+        f.write(fasta_content)
+        temp_path = f.name
+    
+    try:
+        # Test factorization
+        factors = cpp.factorize_fasta_multiple_dna_no_rc(temp_path)
+        
+        assert isinstance(factors, list)
+        assert len(factors) > 0
+        
+        # Each factor should be a tuple (start, length, ref, is_rc)
+        for factor in factors:
+            start, length, ref, is_rc = factor
+            assert isinstance(start, int)
+            assert isinstance(length, int)
+            assert isinstance(ref, int)
+            assert isinstance(is_rc, bool)
+            assert length > 0
+            # For no_rc version, is_rc should always be False
+            assert is_rc == False
+            
+    finally:
+        os.unlink(temp_path)
+
+def test_factorize_fasta_multiple_dna_no_rc_validation():
+    """Test factorize_fasta_multiple_dna_no_rc input validation"""
+    import noLZSS._noLZSS as cpp
+    
+    # Test with invalid nucleotides in FASTA
+    invalid_fasta = """>seq1
+ATCGNTCG
+"""
+    
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.fasta', delete=False) as f:
+        f.write(invalid_fasta)
+        temp_path = f.name
+    
+    try:
+        try:
+            cpp.factorize_fasta_multiple_dna_no_rc(temp_path)
+            assert False, "Should have raised an exception for invalid nucleotide"
+        except RuntimeError as e:
+            assert "Invalid nucleotide" in str(e)
+    finally:
+        os.unlink(temp_path)
+    
+    # Test with non-existent file
+    try:
+        cpp.factorize_fasta_multiple_dna_no_rc("/non/existent/file.fasta")
+        assert False, "Should have raised an exception for non-existent file"
+    except RuntimeError as e:
+        assert "Cannot open FASTA file" in str(e)
+    
+    # Test with empty FASTA file
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.fasta', delete=False) as f:
+        f.write("")
+        empty_path = f.name
+    
+    try:
+        try:
+            cpp.factorize_fasta_multiple_dna_no_rc(empty_path)
+            assert False, "Should have raised an exception for empty FASTA"
+        except RuntimeError as e:
+            assert "No valid sequences found" in str(e)
+    finally:
+        os.unlink(empty_path)
+
 def test_dna_w_rc_functions_integration():
     """Test integration between DNA reverse complement functions"""
     import noLZSS._noLZSS as cpp
