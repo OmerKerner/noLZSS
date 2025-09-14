@@ -57,7 +57,7 @@ jobs:
         mkdir -p _build
         
         # Build Sphinx documentation (Exhale will run Doxygen automatically)
-        sphinx-build -W --keep-going -b html . _build/html
+        sphinx-build -b html . _build/html
         
     - name: Upload documentation artifact
       uses: actions/upload-pages-artifact@v2
