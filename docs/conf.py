@@ -18,8 +18,6 @@ author = 'Omer Kerner'
 try:
     import noLZSS
     release = noLZSS.__version__
-except ImportError:
-    release = '0.1.2'
 
 version = release
 
