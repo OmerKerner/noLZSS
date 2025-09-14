@@ -9,9 +9,6 @@ import tempfile
 import struct
 from pathlib import Path
 
-# Add the src directory to the path for testing
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
-
 from noLZSS.utils import (
     validate_input, analyze_alphabet, 
     read_factors_binary_file, plot_factor_lengths,

@@ -5,9 +5,6 @@ Tests for the genomics subpackage.
 import sys
 import os
 
-# Add the src directory to the path for testing
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
-
 
 class TestGenomicsStructure:
     """Test the genomics subpackage structure."""
@@ -88,9 +85,6 @@ import tempfile
 import os
 from pathlib import Path
 import pytest
-
-# Add the src directory to the path for testing
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 from noLZSS.genomics.fasta import read_nucleotide_fasta, read_protein_fasta, read_fasta_auto, FASTAError
 from noLZSS.genomics.plots import plot_single_seq_accum_factors_from_fasta, PlotError

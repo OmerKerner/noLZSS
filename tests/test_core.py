@@ -7,9 +7,6 @@ import os
 import tempfile
 from pathlib import Path
 
-# Add the src directory to the path for testing
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
-
 # Note: These tests will only work when the C++ extension is built
 # For now, we test the structure and error handling
 

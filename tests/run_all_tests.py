@@ -6,9 +6,6 @@ import sys
 import os
 from pathlib import Path
 
-# Add the src directory to the path for testing
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
-
 def run_test_file(filepath):
     """Run a test file and return (passed, total) counts."""
     print(f"\n{'='*60}")
