@@ -15,9 +15,8 @@ copyright = '2024, Omer Kerner'
 author = 'Omer Kerner'
 
 # The full version, including alpha/beta/rc tags
-try:
-    import noLZSS
-    release = noLZSS.__version__
+import noLZSS
+release = noLZSS.__version__
 
 version = release
 
