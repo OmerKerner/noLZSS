@@ -162,13 +162,7 @@ def plot_factor_lengths(
     Warns:
         UserWarning: If matplotlib is not installed (function returns gracefully)
     """
-    try:
-        import matplotlib.pyplot as plt
-    except ImportError:
-        warnings.warn("matplotlib is required for plotting. Install with: pip install matplotlib", UserWarning)
-        return
-    
-    # Get factors
+    # Validate input and get factors BEFORE trying to import matplotlib
     if isinstance(factors_or_file, (str, Path)):
         factors = read_factors_binary_file(factors_or_file)
     elif isinstance(factors_or_file, list):
@@ -178,6 +172,13 @@ def plot_factor_lengths(
     
     if not factors:
         raise ValueError("No factors to plot")
+    
+    # Now try to import matplotlib for plotting
+    try:
+        import matplotlib.pyplot as plt
+    except ImportError:
+        warnings.warn("matplotlib is required for plotting. Install with: pip install matplotlib", UserWarning)
+        return
     
     # Compute cumulative lengths
     cumulative_lengths = []
