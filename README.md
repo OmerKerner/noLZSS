@@ -1,6 +1,7 @@
 # noLZSS
 
 [![Build Wheels](https://github.com/OmerKerner/noLZSS/actions/workflows/wheels.yml/badge.svg)](https://github.com/OmerKerner/noLZSS/actions/workflows/wheels.yml)
+[![Documentation](https://github.com/OmerKerner/noLZSS/actions/workflows/docs.yml/badge.svg)](https://omerkerner.github.io/noLZSS/)
 <img align="right" src="assets/logo.png" alt="noLZSS Logo" width=200px/>
 
 **Non-overlapping Lempel–Ziv–Storer–Szymanski factorization**
@@ -401,6 +402,16 @@ result = process_nucleotide_fasta("genome.fasta")  # Memory efficient
 # Use reserve_hint for better performance when you know factor count
 factors = noLZSS.factorize_file("data.txt", reserve_hint=50000)
 ```
+
+## Documentation
+
+Complete documentation is available at **[omerkerner.github.io/noLZSS](https://omerkerner.github.io/noLZSS/)**
+
+The documentation includes:
+- **Python API Reference**: Complete Python API with examples and parameter descriptions
+- **C++ API Reference**: Auto-generated C++ API documentation from source code
+- **Genomics Module**: Specialized functions for biological sequence analysis
+- **Examples and Tutorials**: Comprehensive usage examples and best practices
 
 ## Development
 
