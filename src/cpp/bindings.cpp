@@ -641,6 +641,39 @@ Note:
     The function validates that all sequences contain only valid DNA nucleotides.
 )doc");
 
+    // DNA sequence preparation utility (no reverse complement)
+    m.def("prepare_multiple_dna_sequences_no_rc", [](const std::vector<std::string>& sequences) {
+        // Release GIL while doing heavy C++ work
+        py::gil_scoped_release release;
+        auto result = noLZSS::prepare_multiple_dna_sequences_no_rc(sequences);
+        py::gil_scoped_acquire acquire;
+
+        // Return as Python tuple (concatenated_string, total_length)
+        return py::make_tuple(result.first, result.second);
+    }, py::arg("sequences"), R"doc(Prepare multiple DNA sequences for factorization without reverse complement.
+
+Takes multiple DNA sequences and concatenates them with unique sentinels.
+Unlike prepare_multiple_dna_sequences_w_rc(), this function does not append
+reverse complements. The output format is: S = T1!T2@T3$
+
+Args:
+    sequences: List of DNA sequence strings (should contain only A, C, T, G)
+
+Returns:
+    Tuple containing:
+    - concatenated_string: The formatted string with sequences and sentinels
+    - total_length: Total length of the concatenated string
+
+Raises:
+    ValueError: If too many sequences (>250) or invalid nucleotides found
+    RuntimeError: If sequences contain invalid characters
+
+Note:
+    Sentinels range from 1-251, avoiding 0, A(65), C(67), G(71), T(84).
+    Input sequences can be lowercase or uppercase, output is always uppercase.
+    The function validates that all sequences contain only valid DNA nucleotides.
+)doc");
+
     // Version information
     m.attr("__version__") = std::to_string(noLZSS::VERSION_MAJOR) + "." + std::to_string(noLZSS::VERSION_MINOR) + "." + std::to_string(noLZSS::VERSION_PATCH);
 }

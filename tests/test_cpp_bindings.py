@@ -258,6 +258,71 @@ def test_prepare_multiple_dna_sequences_w_rc_validation():
     except Exception as e:
         assert "Too many sequences" in str(e)
 
+def test_prepare_multiple_dna_sequences_no_rc():
+    """Test prepare_multiple_dna_sequences_no_rc function"""
+    import noLZSS._noLZSS as cpp
+    
+    # Test basic functionality with valid DNA sequences
+    sequences = ["ATCG", "GCTA"]
+    result = cpp.prepare_multiple_dna_sequences_no_rc(sequences)
+    
+    assert isinstance(result, tuple)
+    assert len(result) == 2
+    concatenated, total_length = result
+    assert isinstance(concatenated, str)
+    assert isinstance(total_length, int)
+    assert total_length == len(concatenated)  # Total length should equal string length
+    
+    # Should contain original sequences + sentinels (no reverse complements)
+    assert len(concatenated) == len("ATCG") + len("GCTA") + 2  # 2 sentinels
+    assert concatenated.startswith("ATCG")
+    assert "GCTA" in concatenated
+    assert total_length == len(concatenated)
+    
+    # Test with single sequence
+    single_result = cpp.prepare_multiple_dna_sequences_no_rc(["ATCG"])
+    assert isinstance(single_result, tuple)
+    assert len(single_result) == 2
+    
+    # Test with mixed case (should be converted to uppercase)
+    mixed_result = cpp.prepare_multiple_dna_sequences_no_rc(["atcg", "GCTA"])
+    mixed_concatenated, _ = mixed_result
+    # Should not contain lowercase letters
+    assert 'a' not in mixed_concatenated
+    assert 'c' not in mixed_concatenated
+    assert 'g' not in mixed_concatenated
+    assert 't' not in mixed_concatenated
+
+def test_prepare_multiple_dna_sequences_no_rc_validation():
+    """Test prepare_multiple_dna_sequences_no_rc input validation"""
+    import noLZSS._noLZSS as cpp
+    
+    # Test empty sequences list
+    result = cpp.prepare_multiple_dna_sequences_no_rc([])
+    assert result == ("", 0)
+    
+    # Test invalid nucleotides
+    try:
+        cpp.prepare_multiple_dna_sequences_no_rc(["ATCGN"])  # N is not valid
+        assert False, "Should have raised an exception for invalid nucleotide"
+    except RuntimeError as e:
+        assert "Invalid nucleotide" in str(e)
+    
+    # Test sequences with numbers
+    try:
+        cpp.prepare_multiple_dna_sequences_no_rc(["ATCG1"])
+        assert False, "Should have raised an exception for invalid nucleotide"
+    except RuntimeError as e:
+        assert "Invalid nucleotide" in str(e)
+    
+    # Test too many sequences (more than 250)
+    try:
+        many_sequences = ["ATCG"] * 251
+        cpp.prepare_multiple_dna_sequences_no_rc(many_sequences)
+        assert False, "Should have raised an exception for too many sequences"
+    except Exception as e:
+        assert "Too many sequences" in str(e)
+
 def test_factorize_multiple_dna_w_rc():
     """Test factorize_multiple_dna_w_rc function"""
     import noLZSS._noLZSS as cpp

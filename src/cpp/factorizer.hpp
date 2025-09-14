@@ -49,6 +49,27 @@ inline uint64_t rc_end(uint64_t ref) { return (ref & ~RC_MASK); }
 std::pair<std::string, size_t> prepare_multiple_dna_sequences_w_rc(const std::vector<std::string>& sequences);
 
 /**
+ * @brief Prepares multiple DNA sequences for factorization without reverse complement.
+ *
+ * Takes multiple DNA sequences, concatenates them with unique sentinels.
+ * Unlike prepare_multiple_dna_sequences_w_rc(), this function does not append
+ * reverse complements. The output format is: S = T1!T2@T3$
+ *
+ * @param sequences Vector of DNA sequence strings (should contain only A, C, T, G)
+ * @return Pair containing: (concatenated_string, total_length)
+ *         - concatenated_string: The formatted string with sequences and sentinels
+ *         - total_length: Total length of the concatenated string (same as concatenated_string.length())
+ *
+ * @throws std::invalid_argument If too many sequences (>250) or invalid nucleotides found
+ * @throws std::runtime_error If sequences contain invalid characters
+ *
+ * @note Sentinels range from 1-251, avoiding 0, A(65), C(67), G(71), T(84)
+ * @note The function validates that all sequences contain only valid DNA nucleotides
+ * @note Input sequences can be lowercase or uppercase, output is always uppercase
+ */
+std::pair<std::string, size_t> prepare_multiple_dna_sequences_no_rc(const std::vector<std::string>& sequences);
+
+/**
  * @brief Represents a factorization factor with start position, length, and reference position.
  *
  * A factor represents a substring in the original text that was identified

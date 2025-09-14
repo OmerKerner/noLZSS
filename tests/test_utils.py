@@ -97,7 +97,7 @@ class TestAnalyzeAlphabet:
         
         assert result['size'] == 4
         assert result['total_length'] == 8
-        assert result['characters'] == {ord('A'), ord('T'), ord('C'), ord('G')}
+        assert result['characters'] == {'A', 'T', 'C', 'G'}
     
     def test_analyze_empty_raises_error(self):
         """Test that analyzing empty data works."""

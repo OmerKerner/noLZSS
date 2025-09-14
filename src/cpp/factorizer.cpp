@@ -162,6 +162,88 @@ std::pair<std::string, size_t> prepare_multiple_dna_sequences_w_rc(const std::ve
     return {result, original_length};
 }
 
+/**
+ * @brief Prepares multiple DNA sequences for factorization without reverse complement.
+ *
+ * Takes multiple DNA sequences, concatenates them with unique sentinels.
+ * Unlike prepare_multiple_dna_sequences_w_rc(), this function does not append
+ * reverse complements. The output format is: S = T1!T2@T3$
+ *
+ * @param sequences Vector of DNA sequence strings (should contain only A, C, T, G)
+ * @return Pair containing: (concatenated_string, total_length)
+ *         - concatenated_string: The formatted string with sequences and sentinels
+ *         - total_length: Total length of the concatenated string (same as concatenated_string.length())
+ *
+ * @throws std::invalid_argument If too many sequences (>251) or invalid nucleotides found
+ * @throws std::runtime_error If sequences contain invalid characters
+ *
+ * @note Sentinels range from 1-251, avoiding 0, A(65), C(67), G(71), T(84)
+ * @note The function validates that all sequences contain only valid DNA nucleotides
+ * @note Input sequences can be lowercase or uppercase, output is always uppercase
+ */
+std::pair<std::string, size_t> prepare_multiple_dna_sequences_no_rc(const std::vector<std::string>& sequences) {
+    if (sequences.empty()) {
+        return {"", 0};
+    }
+    
+    // Check if we have too many sequences
+    // Available characters: 1-255 minus 5 characters (0,A,C,G,T) = 250 characters  
+    // Need 1 sentinel per sequence = max 250 sequences
+    if (sequences.size() > 250) {
+        throw std::invalid_argument("Too many sequences: maximum 250 sequences supported (due to sentinel character limitations)");
+    }
+    
+    // Validate sequences contain only valid DNA nucleotides
+    for (size_t i = 0; i < sequences.size(); ++i) {
+        for (char c : sequences[i]) {
+            if (c != 'A' && c != 'C' && c != 'G' && c != 'T' && 
+                c != 'a' && c != 'c' && c != 'g' && c != 't') {
+                throw std::runtime_error("Invalid nucleotide '" + std::string(1, c) + 
+                                       "' found in sequence " + std::to_string(i));
+            }
+        }
+    }
+    
+    std::string result;
+    
+    // Generate sentinel characters avoiding 0 and uppercase DNA nucleotides A(65), C(67), G(71), T(84)
+    auto get_sentinel = [](size_t index) -> char {
+        char sentinel = 1;
+        size_t count = 0;
+        
+        while (true) {
+            // Check if current sentinel is valid (not 0 and not uppercase DNA nucleotides)
+            if (sentinel != 0 && sentinel != 'A' && sentinel != 'C' && sentinel != 'G' && sentinel != 'T') {
+                if (count == index) {
+                    return sentinel;  // Found the sentinel for this index
+                }
+                count++;
+            }
+            sentinel++;
+            if (sentinel == 0) sentinel = 1; // wrap around, skip 0
+        }
+    };
+    
+    // Add original sequences with sentinels
+    for (size_t i = 0; i < sequences.size(); ++i) {
+        // Convert to uppercase
+        std::string seq = sequences[i];
+        for (char& c : seq) {
+            if (c >= 'a' && c <= 'z') c = c - 'a' + 'A';
+        }
+        result += seq;
+        
+        // Add sentinel (avoiding DNA nucleotides)
+        char sentinel = get_sentinel(i);
+        result += sentinel;
+    }
+    
+    size_t total_length = result.length();
+    
+    return {result, total_length};
+}
+
+
 // ---------- generic, sink-driven noLZSS ----------
 
 /**
