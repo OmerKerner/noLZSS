@@ -670,3 +670,162 @@ def test_comprehensive_dna_functionality():
         
         # Start + length should not exceed the factorizable portion
         assert start + length <= original_length, f"Factor {i}: exceeds original sequence bounds"
+
+def test_write_factors_binary_file_fasta_multiple_dna_w_rc():
+    """Test write_factors_binary_file_fasta_multiple_dna_w_rc function"""
+    import noLZSS._noLZSS as cpp
+    import tempfile
+    import os
+    
+    # Create a test FASTA file
+    fasta_content = """>seq1
+ATCGATCG
+>seq2
+GCTAGCTA
+>seq3
+TTTTAAAA
+"""
+    
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.fasta', delete=False) as f:
+        f.write(fasta_content)
+        fasta_path = f.name
+    
+    with tempfile.NamedTemporaryFile(delete=False) as f:
+        binary_path = f.name
+    
+    try:
+        # Test binary output
+        num_factors = cpp.write_factors_binary_file_fasta_multiple_dna_w_rc(fasta_path, binary_path)
+        
+        assert num_factors > 0
+        
+        # Verify binary file was created and has correct size
+        with open(binary_path, 'rb') as f:
+            binary_data = f.read()
+        
+        expected_size = num_factors * 24  # 24 bytes per factor (3 * 8 bytes)
+        assert len(binary_data) == expected_size
+        
+        # Compare with regular factorization
+        factors = cpp.factorize_fasta_multiple_dna_w_rc(fasta_path)
+        assert len(factors) == num_factors
+        
+        # Verify factors are tuples with valid data
+        for factor in factors:
+            assert isinstance(factor, tuple)
+            assert len(factor) == 4
+            start, length, ref, is_rc = factor
+            assert isinstance(start, int)
+            assert isinstance(length, int)
+            assert isinstance(ref, int)
+            assert isinstance(is_rc, bool)
+            
+    finally:
+        os.unlink(fasta_path)
+        os.unlink(binary_path)
+
+def test_write_factors_binary_file_fasta_multiple_dna_no_rc():
+    """Test write_factors_binary_file_fasta_multiple_dna_no_rc function"""
+    import noLZSS._noLZSS as cpp
+    import tempfile
+    import os
+    
+    # Create a test FASTA file
+    fasta_content = """>seq1
+ATCGATCG
+>seq2
+GCTAGCTA
+>seq3
+TTTTAAAA
+"""
+    
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.fasta', delete=False) as f:
+        f.write(fasta_content)
+        fasta_path = f.name
+    
+    with tempfile.NamedTemporaryFile(delete=False) as f:
+        binary_path = f.name
+    
+    try:
+        # Test binary output
+        num_factors = cpp.write_factors_binary_file_fasta_multiple_dna_no_rc(fasta_path, binary_path)
+        
+        assert num_factors > 0
+        
+        # Verify binary file was created and has correct size
+        with open(binary_path, 'rb') as f:
+            binary_data = f.read()
+        
+        expected_size = num_factors * 24  # 24 bytes per factor (3 * 8 bytes)
+        assert len(binary_data) == expected_size
+        
+        # Compare with regular factorization
+        factors = cpp.factorize_fasta_multiple_dna_no_rc(fasta_path)
+        assert len(factors) == num_factors
+        
+        # Verify factors are tuples with valid data
+        for factor in factors:
+            assert isinstance(factor, tuple)
+            assert len(factor) == 4
+            start, length, ref, is_rc = factor
+            assert isinstance(start, int)
+            assert isinstance(length, int)
+            assert isinstance(ref, int)
+            assert isinstance(is_rc, bool)
+            
+    finally:
+        os.unlink(fasta_path)
+        os.unlink(binary_path)
+
+def test_write_factors_binary_file_fasta_validation():
+    """Test validation for the new FASTA binary writing functions"""
+    import noLZSS._noLZSS as cpp
+    import tempfile
+    import os
+    
+    # Test with invalid FASTA file
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.fasta', delete=False) as f:
+        f.write(">invalid\nXYZ123")  # Invalid nucleotides
+        invalid_path = f.name
+    
+    with tempfile.NamedTemporaryFile(delete=False) as f:
+        binary_path = f.name
+    
+    try:
+        try:
+            cpp.write_factors_binary_file_fasta_multiple_dna_w_rc(invalid_path, binary_path)
+            assert False, "Should have raised an exception for invalid nucleotides"
+        except (RuntimeError, ValueError) as e:
+            # Should raise an error for invalid nucleotides
+            pass
+            
+        try:
+            cpp.write_factors_binary_file_fasta_multiple_dna_no_rc(invalid_path, binary_path)
+            assert False, "Should have raised an exception for invalid nucleotides"
+        except (RuntimeError, ValueError) as e:
+            # Should raise an error for invalid nucleotides
+            pass
+            
+    finally:
+        os.unlink(invalid_path)
+        os.unlink(binary_path)
+    
+    # Test with non-existent file
+    with tempfile.NamedTemporaryFile(delete=False) as f:
+        binary_path = f.name
+    
+    try:
+        try:
+            cpp.write_factors_binary_file_fasta_multiple_dna_w_rc("/non/existent/file.fasta", binary_path)
+            assert False, "Should have raised an exception for non-existent file"
+        except RuntimeError as e:
+            assert "Cannot open FASTA file" in str(e)
+            
+        try:
+            cpp.write_factors_binary_file_fasta_multiple_dna_no_rc("/non/existent/file.fasta", binary_path)
+            assert False, "Should have raised an exception for non-existent file"
+        except RuntimeError as e:
+            assert "Cannot open FASTA file" in str(e)
+            
+    finally:
+        os.unlink(binary_path)

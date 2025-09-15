@@ -5,6 +5,58 @@
 
 namespace noLZSS {
 
+// Helper function to parse FASTA file into individual sequences
+static std::vector<std::string> parse_fasta_sequences(const std::string& fasta_path) {
+    std::ifstream file(fasta_path);
+    if (!file.is_open()) {
+        throw std::runtime_error("Cannot open FASTA file: " + fasta_path);
+    }
+
+    std::vector<std::string> sequences;
+    std::string line;
+    std::string current_sequence;
+
+    while (std::getline(file, line)) {
+        // Remove trailing whitespace
+        while (!line.empty() && std::isspace(line.back())) {
+            line.pop_back();
+        }
+
+        if (line.empty()) {
+            continue; // Skip empty lines
+        }
+
+        if (line[0] == '>') {
+            // Header line - finish previous sequence if exists
+            if (!current_sequence.empty()) {
+                sequences.push_back(current_sequence);
+                current_sequence.clear();
+            }
+            // Skip header, continue to next line
+        } else {
+            // Sequence line - append to current sequence
+            for (char c : line) {
+                if (!std::isspace(c)) {
+                    current_sequence += c;
+                }
+            }
+        }
+    }
+
+    // Add the last sequence if it exists
+    if (!current_sequence.empty()) {
+        sequences.push_back(current_sequence);
+    }
+
+    file.close();
+
+    if (sequences.empty()) {
+        throw std::runtime_error("No valid sequences found in FASTA file");
+    }
+
+    return sequences;
+}
+
 /**
  * @brief Processes a nucleotide FASTA file into a concatenated string with sentinels.
  *
@@ -256,53 +308,8 @@ FastaProcessResult process_amino_acid_fasta(const std::string& fasta_path) {
  * performs noLZSS factorization with reverse complement awareness.
  */
 std::vector<Factor> factorize_fasta_multiple_dna_w_rc(const std::string& fasta_path) {
-    // Parse FASTA file directly into individual sequences
-    std::ifstream file(fasta_path);
-    if (!file.is_open()) {
-        throw std::runtime_error("Cannot open FASTA file: " + fasta_path);
-    }
-
-    std::vector<std::string> sequences;
-    std::string line;
-    std::string current_sequence;
-
-    while (std::getline(file, line)) {
-        // Remove trailing whitespace
-        while (!line.empty() && std::isspace(line.back())) {
-            line.pop_back();
-        }
-
-        if (line.empty()) {
-            continue; // Skip empty lines
-        }
-
-        if (line[0] == '>') {
-            // Header line - finish previous sequence if exists
-            if (!current_sequence.empty()) {
-                sequences.push_back(current_sequence);
-                current_sequence.clear();
-            }
-            // Skip header, continue to next line
-        } else {
-            // Sequence line - append to current sequence
-            for (char c : line) {
-                if (!std::isspace(c)) {
-                    current_sequence += c;
-                }
-            }
-        }
-    }
-
-    // Add the last sequence if it exists
-    if (!current_sequence.empty()) {
-        sequences.push_back(current_sequence);
-    }
-
-    file.close();
-
-    if (sequences.empty()) {
-        throw std::runtime_error("No valid sequences found in FASTA file");
-    }
+    // Parse FASTA file into individual sequences
+    std::vector<std::string> sequences = parse_fasta_sequences(fasta_path);
 
     // Prepare sequences for factorization (this will validate nucleotides)
     auto [prepared_string, original_length] = prepare_multiple_dna_sequences_w_rc(sequences);
@@ -319,59 +326,76 @@ std::vector<Factor> factorize_fasta_multiple_dna_w_rc(const std::string& fasta_p
  * performs noLZSS factorization without reverse complement awareness.
  */
 std::vector<Factor> factorize_fasta_multiple_dna_no_rc(const std::string& fasta_path) {
-    // Parse FASTA file directly into individual sequences
-    std::ifstream file(fasta_path);
-    if (!file.is_open()) {
-        throw std::runtime_error("Cannot open FASTA file: " + fasta_path);
-    }
-
-    std::vector<std::string> sequences;
-    std::string line;
-    std::string current_sequence;
-
-    while (std::getline(file, line)) {
-        // Remove trailing whitespace
-        while (!line.empty() && std::isspace(line.back())) {
-            line.pop_back();
-        }
-
-        if (line.empty()) {
-            continue; // Skip empty lines
-        }
-
-        if (line[0] == '>') {
-            // Header line - finish previous sequence if exists
-            if (!current_sequence.empty()) {
-                sequences.push_back(current_sequence);
-                current_sequence.clear();
-            }
-            // Skip header, continue to next line
-        } else {
-            // Sequence line - append to current sequence
-            for (char c : line) {
-                if (!std::isspace(c)) {
-                    current_sequence += c;
-                }
-            }
-        }
-    }
-
-    // Add the last sequence if it exists
-    if (!current_sequence.empty()) {
-        sequences.push_back(current_sequence);
-    }
-
-    file.close();
-
-    if (sequences.empty()) {
-        throw std::runtime_error("No valid sequences found in FASTA file");
-    }
+    // Parse FASTA file into individual sequences
+    std::vector<std::string> sequences = parse_fasta_sequences(fasta_path);
 
     // Prepare sequences for factorization (this will validate nucleotides)
     auto [prepared_string, total_length] = prepare_multiple_dna_sequences_no_rc(sequences);
     
     // Perform factorization using regular factorize function
     return factorize(prepared_string);
+}
+
+/**
+ * @brief Writes noLZSS factors from multiple DNA sequences in a FASTA file with reverse complement awareness to a binary output file.
+ *
+ * This function reads DNA sequences from a FASTA file, parses them into individual sequences,
+ * prepares them for factorization using prepare_multiple_dna_sequences_w_rc(), performs 
+ * factorization with reverse complement awareness, and writes the resulting factors in 
+ * binary format to an output file. Each factor is written as three uint64_t values.
+ */
+size_t write_factors_binary_file_fasta_multiple_dna_w_rc(const std::string& fasta_path, const std::string& out_path) {
+    // Parse FASTA file into individual sequences
+    std::vector<std::string> sequences = parse_fasta_sequences(fasta_path);
+
+    // Prepare sequences for factorization (this will validate nucleotides)
+    auto [prepared_string, original_length] = prepare_multiple_dna_sequences_w_rc(sequences);
+    
+    // Perform factorization with reverse complement awareness
+    std::vector<Factor> factors = factorize_multiple_dna_w_rc(prepared_string);
+    
+    // Set up binary output file with buffering
+    std::ofstream os(out_path, std::ios::binary);
+    std::vector<char> buf(1<<20); // 1 MB buffer for performance
+    os.rdbuf()->pubsetbuf(buf.data(), static_cast<std::streamsize>(buf.size()));
+    
+    // Write factors to file
+    for (const Factor& f : factors) {
+        os.write(reinterpret_cast<const char*>(&f), sizeof(Factor));
+    }
+    
+    return factors.size();
+}
+
+/**
+ * @brief Writes noLZSS factors from multiple DNA sequences in a FASTA file without reverse complement awareness to a binary output file.
+ *
+ * This function reads DNA sequences from a FASTA file, parses them into individual sequences,
+ * prepares them for factorization using prepare_multiple_dna_sequences_no_rc(), performs 
+ * factorization without reverse complement awareness, and writes the resulting factors in 
+ * binary format to an output file. Each factor is written as three uint64_t values.
+ */
+size_t write_factors_binary_file_fasta_multiple_dna_no_rc(const std::string& fasta_path, const std::string& out_path) {
+    // Parse FASTA file into individual sequences
+    std::vector<std::string> sequences = parse_fasta_sequences(fasta_path);
+
+    // Prepare sequences for factorization (this will validate nucleotides)
+    auto [prepared_string, total_length] = prepare_multiple_dna_sequences_no_rc(sequences);
+    
+    // Set up binary output file with buffering
+    std::ofstream os(out_path, std::ios::binary);
+    std::vector<char> buf(1<<20); // 1 MB buffer for performance
+    os.rdbuf()->pubsetbuf(buf.data(), static_cast<std::streamsize>(buf.size()));
+    
+    // Perform factorization and write factors to file using the regular factorize
+    std::vector<Factor> factors = factorize(prepared_string);
+    
+    // Write factors to file
+    for (const Factor& f : factors) {
+        os.write(reinterpret_cast<const char*>(&f), sizeof(Factor));
+    }
+    
+    return factors.size();
 }
 
 } // namespace noLZSS

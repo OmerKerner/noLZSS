@@ -76,4 +76,50 @@ std::vector<Factor> factorize_fasta_multiple_dna_w_rc(const std::string& fasta_p
  */
 std::vector<Factor> factorize_fasta_multiple_dna_no_rc(const std::string& fasta_path);
 
+/**
+ * @brief Writes noLZSS factors from multiple DNA sequences in a FASTA file with reverse complement awareness to a binary output file.
+ *
+ * This function reads DNA sequences from a FASTA file, parses them into individual sequences,
+ * prepares them for factorization using prepare_multiple_dna_sequences_w_rc(), performs 
+ * factorization with reverse complement awareness, and writes the resulting factors in 
+ * binary format to an output file. Each factor is written as three uint64_t values.
+ *
+ * @param fasta_path Path to input FASTA file containing DNA sequences
+ * @param out_path Path to output file where binary factors will be written
+ * @return Number of factors written to the output file
+ *
+ * @throws std::runtime_error If FASTA file cannot be opened or contains no valid sequences
+ * @throws std::invalid_argument If too many sequences (>125) in the FASTA file or invalid nucleotides found
+ *
+ * @note Binary format: each factor is 24 bytes (3 × uint64_t: start, length, ref)
+ * @note Only A, C, T, G nucleotides are allowed (case insensitive)
+ * @note This function overwrites the output file if it exists
+ * @note Reverse complement matches are supported during factorization
+ * @warning Ensure sufficient disk space for the output file
+ */
+size_t write_factors_binary_file_fasta_multiple_dna_w_rc(const std::string& fasta_path, const std::string& out_path);
+
+/**
+ * @brief Writes noLZSS factors from multiple DNA sequences in a FASTA file without reverse complement awareness to a binary output file.
+ *
+ * This function reads DNA sequences from a FASTA file, parses them into individual sequences,
+ * prepares them for factorization using prepare_multiple_dna_sequences_no_rc(), performs 
+ * factorization without reverse complement awareness, and writes the resulting factors in 
+ * binary format to an output file. Each factor is written as three uint64_t values.
+ *
+ * @param fasta_path Path to input FASTA file containing DNA sequences
+ * @param out_path Path to output file where binary factors will be written
+ * @return Number of factors written to the output file
+ *
+ * @throws std::runtime_error If FASTA file cannot be opened or contains no valid sequences
+ * @throws std::invalid_argument If too many sequences (>250) in the FASTA file or invalid nucleotides found
+ *
+ * @note Binary format: each factor is 24 bytes (3 × uint64_t: start, length, ref)
+ * @note Only A, C, T, G nucleotides are allowed (case insensitive)
+ * @note This function overwrites the output file if it exists
+ * @note Reverse complement matches are NOT supported during factorization
+ * @warning Ensure sufficient disk space for the output file
+ */
+size_t write_factors_binary_file_fasta_multiple_dna_no_rc(const std::string& fasta_path, const std::string& out_path);
+
 } // namespace noLZSS
