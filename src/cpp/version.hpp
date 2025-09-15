@@ -12,7 +12,7 @@ namespace noLZSS {
     /** Major version number - incremented for breaking changes */
     static constexpr int VERSION_MAJOR = 0;
     /** Minor version number - incremented for new features */
-    static constexpr int VERSION_MINOR = 1;
+    static constexpr int VERSION_MINOR = 2;
     /** Patch version number - incremented for bug fixes */
-    static constexpr int VERSION_PATCH = 2;
+    static constexpr int VERSION_PATCH = 0;
 }
