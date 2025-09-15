@@ -7,6 +7,7 @@ and factorization for improved performance.
 """
 
 import argparse
+import gzip
 import logging
 import os
 import sys
@@ -89,6 +90,64 @@ def is_url(path: str) -> bool:
         True if path appears to be a URL
     """
     return path.startswith(('http://', 'https://', 'ftp://'))
+
+
+def is_gzipped(file_path: Path) -> bool:
+    """
+    Check if a file is gzipped by reading the first few bytes.
+    
+    Args:
+        file_path: Path to the file to check
+        
+    Returns:
+        True if the file appears to be gzipped
+    """
+    try:
+        with open(file_path, 'rb') as f:
+            # Gzip files start with 0x1f 0x8b
+            magic_bytes = f.read(2)
+            return magic_bytes == b'\x1f\x8b'
+    except (OSError, IOError):
+        return False
+
+
+def decompress_gzip(input_path: Path, output_path: Path, logger: Optional[logging.Logger] = None) -> bool:
+    """
+    Decompress a gzipped file.
+    
+    Args:
+        input_path: Path to the gzipped input file
+        output_path: Path where to save the decompressed file
+        logger: Logger instance for progress reporting
+        
+    Returns:
+        True if decompression successful, False otherwise
+    """
+    if logger is None:
+        logger = logging.getLogger(__name__)
+    
+    try:
+        logger.info(f"Decompressing {input_path} to {output_path}")
+        
+        # Create output directory if it doesn't exist
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        with gzip.open(input_path, 'rb') as f_in:
+            with open(output_path, 'wb') as f_out:
+                # Read in chunks to handle large files
+                chunk_size = 8192
+                while True:
+                    chunk = f_in.read(chunk_size)
+                    if not chunk:
+                        break
+                    f_out.write(chunk)
+        
+        logger.info(f"Successfully decompressed {input_path}")
+        return True
+        
+    except Exception as e:
+        logger.error(f"Failed to decompress {input_path}: {e}")
+        return False
 
 
 def download_file(url: str, output_path: Path, max_retries: int = 3, 
@@ -240,12 +299,12 @@ def factorize_single_file(input_path: Path, output_paths: Dict[str, Path],
     return results
 
 
-def download_file_worker(file_info: Tuple[str, Path, int, logging.Logger]) -> Tuple[str, bool, Optional[Path]]:
+def download_file_worker(file_info: Tuple[str, Path, int, str]) -> Tuple[str, bool, Optional[Path]]:
     """
     Download a single file. This function is used for parallel processing.
     
     Args:
-        file_info: Tuple of (file_path_or_url, download_dir, max_retries, logger)
+        file_info: Tuple of (file_path_or_url, download_dir, max_retries, logger_name)
         
     Returns:
         Tuple of (original_path, success, local_path)
@@ -271,6 +330,32 @@ def download_file_worker(file_info: Tuple[str, Path, int, logging.Logger]) -> Tu
         local_path = Path(file_path)
         if not local_path.exists():
             logger.error(f"Local file not found: {file_path}")
+            return file_path, False, None
+    
+    # Check if file is gzipped and decompress if needed
+    if is_gzipped(local_path):
+        logger.info(f"Detected gzipped file: {local_path}")
+        decompressed_path = local_path.with_suffix('')  # Remove .gz extension if present
+        if decompressed_path.suffix == '.gz':
+            decompressed_path = decompressed_path.with_suffix('')
+        
+        # If decompressed file already exists, use it
+        if decompressed_path.exists():
+            logger.info(f"Decompressed file already exists: {decompressed_path}")
+            return file_path, True, decompressed_path
+        
+        # Decompress the file
+        if decompress_gzip(local_path, decompressed_path, logger):
+            # Clean up the compressed file if it was downloaded
+            if is_url(file_path):
+                try:
+                    local_path.unlink()
+                    logger.debug(f"Cleaned up compressed file: {local_path}")
+                except OSError:
+                    pass
+            return file_path, True, decompressed_path
+        else:
+            logger.error(f"Failed to decompress {local_path}")
             return file_path, False, None
     
     return file_path, True, local_path
@@ -323,6 +408,7 @@ def process_file_list(file_list: List[str], output_dir: Path, mode: str,
         logger = logging.getLogger(__name__)
     
     results = {}
+    decompressed_files = []  # Track files that were decompressed for cleanup
     
     # Use provided download directory or create temp directory
     if download_dir is None:
@@ -354,6 +440,15 @@ def process_file_list(file_list: List[str], output_dir: Path, mode: str,
                     if success and local_path:
                         prepared_files.append((file_path, local_path))
                         logger.info(f"Successfully prepared {file_path}")
+                        
+                        # Check if this file was decompressed (different from original download path)
+                        original_download_path = download_dir / Path(urllib.parse.urlparse(file_path).path).name
+                        if not is_url(file_path):
+                            original_download_path = Path(file_path)
+                        
+                        if local_path != original_download_path and local_path.exists():
+                            decompressed_files.append(local_path)
+                        
                     else:
                         # Determine error type
                         if not success:
@@ -394,6 +489,15 @@ def process_file_list(file_list: List[str], output_dir: Path, mode: str,
                         results[original_path] = {"error": "factorization_error"}
         
     finally:
+        # Clean up decompressed files
+        for decompressed_file in decompressed_files:
+            try:
+                if decompressed_file.exists():
+                    decompressed_file.unlink()
+                    logger.debug(f"Cleaned up decompressed file: {decompressed_file}")
+            except OSError:
+                logger.warning(f"Failed to clean up decompressed file: {decompressed_file}")
+        
         # Clean up temporary download directory if we created it
         if cleanup_temp:
             try:
