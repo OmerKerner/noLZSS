@@ -26,3 +26,4 @@ from .._noLZSS import (
 from .fasta import *
 from .sequences import *
 from .plots import *
+from . import batch_factorize
