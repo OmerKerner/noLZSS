@@ -642,6 +642,70 @@ Nucleotide validation is performed by prepare_multiple_dna_sequences_no_rc()
 ref field has RC_MASK cleared. is_rc boolean indicates if this was a reverse complement match.
 )doc");
 
+// FASTA binary factorization function (with reverse complement)
+m.def("write_factors_binary_file_fasta_multiple_dna_w_rc", [](const std::string& fasta_path, const std::string& out_path) {
+    // Release GIL while doing heavy C++ work
+    py::gil_scoped_release release;
+    size_t count = noLZSS::write_factors_binary_file_fasta_multiple_dna_w_rc(fasta_path, out_path);
+    py::gil_scoped_acquire acquire;
+    return count;
+}, py::arg("fasta_path"), py::arg("out_path"), R"doc(Write noLZSS factors from multiple DNA sequences in a FASTA file with reverse complement awareness to a binary output file.
+
+This function reads DNA sequences from a FASTA file, parses them into individual sequences,
+prepares them for factorization using prepare_multiple_dna_sequences_w_rc(), performs 
+factorization with reverse complement awareness, and writes the resulting factors in 
+binary format to an output file. Each factor is written as three uint64_t values.
+
+Args:
+    fasta_path: Path to input FASTA file containing DNA sequences
+    out_path: Path to output file where binary factors will be written
+
+Returns:
+    int: Number of factors written to the output file
+
+Raises:
+    RuntimeError: If FASTA file cannot be opened or contains no valid sequences
+    ValueError: If too many sequences (>125) in the FASTA file or invalid nucleotides found
+
+Note:
+    Binary format: each factor is 24 bytes (3 × uint64_t: start, length, ref)
+    Only A, C, T, G nucleotides are allowed (case insensitive)
+    This function overwrites the output file if it exists
+    Reverse complement matches are supported during factorization
+)doc");
+
+// FASTA binary factorization function (no reverse complement)
+m.def("write_factors_binary_file_fasta_multiple_dna_no_rc", [](const std::string& fasta_path, const std::string& out_path) {
+    // Release GIL while doing heavy C++ work
+    py::gil_scoped_release release;
+    size_t count = noLZSS::write_factors_binary_file_fasta_multiple_dna_no_rc(fasta_path, out_path);
+    py::gil_scoped_acquire acquire;
+    return count;
+}, py::arg("fasta_path"), py::arg("out_path"), R"doc(Write noLZSS factors from multiple DNA sequences in a FASTA file without reverse complement awareness to a binary output file.
+
+This function reads DNA sequences from a FASTA file, parses them into individual sequences,
+prepares them for factorization using prepare_multiple_dna_sequences_no_rc(), performs 
+factorization without reverse complement awareness, and writes the resulting factors in 
+binary format to an output file. Each factor is written as three uint64_t values.
+
+Args:
+    fasta_path: Path to input FASTA file containing DNA sequences
+    out_path: Path to output file where binary factors will be written
+
+Returns:
+    int: Number of factors written to the output file
+
+Raises:
+    RuntimeError: If FASTA file cannot be opened or contains no valid sequences
+    ValueError: If too many sequences (>250) in the FASTA file or invalid nucleotides found
+
+Note:
+    Binary format: each factor is 24 bytes (3 × uint64_t: start, length, ref)
+    Only A, C, T, G nucleotides are allowed (case insensitive)
+    This function overwrites the output file if it exists
+    Reverse complement matches are NOT supported during factorization
+)doc");
+
     // DNA sequence preparation utility
     m.def("prepare_multiple_dna_sequences_w_rc", [](const std::vector<std::string>& sequences) {
         // Release GIL while doing heavy C++ work
