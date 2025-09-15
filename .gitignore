@@ -85,6 +85,7 @@ ehthumbs.db
 
 # Generated benchmark plots and results
 benchmarks/plots/
+benchmarks/fasta_results/
 *.png
 *.pdf
 
