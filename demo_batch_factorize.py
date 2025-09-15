@@ -112,7 +112,7 @@ def run_demo():
             results = batch_factorize.process_file_list(
                 file_list=[str(file_paths[0])],
                 output_dir=output_dir2,
-                mode=batch_factorize.FactorizationMode.REVERSE_COMPLEMENT,
+                mode=batch_factorize.FactorizationMode.WITH_REVERSE_COMPLEMENT,
                 skip_existing=False
             )
             
@@ -143,18 +143,13 @@ def run_demo():
             is_url_result = batch_factorize.is_url(url)
             print(f"    {url}: {'URL' if is_url_result else 'Local'}")
         
-        print("  ✅ FASTA validation:")
-        for file_path in file_paths[:2]:  # Test first two files
-            is_valid = batch_factorize.validate_fasta_file(file_path)
-            print(f"    {file_path.name}: {'Valid' if is_valid else 'Invalid'}")
-        
         # Demo 4: Show command line usage
         print(f"\n📚 Command Line Usage Examples:")
         print("  # Process file list with both modes:")
         print("  python -m noLZSS.genomics.batch_factorize --file-list files.txt --output-dir results --mode both")
         print()
         print("  # Process individual files:")
-        print("  python -m noLZSS.genomics.batch_factorize file1.fasta file2.fasta --output-dir results --mode reverse_complement")
+        print("  python -m noLZSS.genomics.batch_factorize file1.fasta file2.fasta --output-dir results --mode with_reverse_complement")
         print()
         print("  # Process remote files:")
         print("  python -m noLZSS.genomics.batch_factorize --file-list remote_urls.txt --output-dir results --download-dir downloads")

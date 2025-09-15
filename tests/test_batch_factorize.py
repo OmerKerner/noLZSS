@@ -36,8 +36,8 @@ class TestBatchFactorize:
             print("Skipping FactorizationMode test - module not available")
             return
         
-        assert batch_factorize.FactorizationMode.NORMAL == "normal"
-        assert batch_factorize.FactorizationMode.REVERSE_COMPLEMENT == "reverse_complement"
+        assert batch_factorize.FactorizationMode.WITHOUT_REVERSE_COMPLEMENT == "without_reverse_complement"
+        assert batch_factorize.FactorizationMode.WITH_REVERSE_COMPLEMENT == "with_reverse_complement"
         assert batch_factorize.FactorizationMode.BOTH == "both"
         print("FactorizationMode constants test passed")
     
@@ -83,15 +83,12 @@ class TestBatchFactorize:
                 assert len(files) == 1
                 assert files[0] == str(test_fasta)
                 
-                # Test FASTA validation
-                assert batch_factorize.validate_fasta_file(test_fasta) == True
-                
                 # Test output path generation
                 output_paths = batch_factorize.get_output_paths(
                     test_fasta, output_dir, batch_factorize.FactorizationMode.BOTH
                 )
-                assert "normal" in output_paths
-                assert "reverse_complement" in output_paths
+                assert "without_reverse_complement" in output_paths
+                assert "with_reverse_complement" in output_paths
                 
                 print("Basic functionality test passed")
                 

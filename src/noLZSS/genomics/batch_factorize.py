@@ -33,8 +33,8 @@ class BatchFactorizeError(NoLZSSError):
 
 class FactorizationMode:
     """Enumeration of factorization modes."""
-    NORMAL = "normal"
-    REVERSE_COMPLEMENT = "reverse_complement"
+    WITHOUT_REVERSE_COMPLEMENT = "without_reverse_complement"
+    WITH_REVERSE_COMPLEMENT = "with_reverse_complement"
     BOTH = "both"
 
 
@@ -163,15 +163,15 @@ def get_output_paths(input_path: Path, output_dir: Path, mode: str) -> Dict[str,
     base_name = input_path.stem  # File name without extension
     
     paths = {}
-    if mode in [FactorizationMode.NORMAL, FactorizationMode.BOTH]:
-        normal_dir = output_dir / "normal"
-        normal_dir.mkdir(parents=True, exist_ok=True)
-        paths["normal"] = normal_dir / f"{base_name}.bin"
+    if mode in [FactorizationMode.WITHOUT_REVERSE_COMPLEMENT, FactorizationMode.BOTH]:
+        without_rc_dir = output_dir / "without_reverse_complement"
+        without_rc_dir.mkdir(parents=True, exist_ok=True)
+        paths["without_reverse_complement"] = without_rc_dir / f"{base_name}.bin"
     
-    if mode in [FactorizationMode.REVERSE_COMPLEMENT, FactorizationMode.BOTH]:
-        rc_dir = output_dir / "reverse_complement"
-        rc_dir.mkdir(parents=True, exist_ok=True)
-        paths["reverse_complement"] = rc_dir / f"{base_name}.bin"
+    if mode in [FactorizationMode.WITH_REVERSE_COMPLEMENT, FactorizationMode.BOTH]:
+        with_rc_dir = output_dir / "with_reverse_complement"
+        with_rc_dir.mkdir(parents=True, exist_ok=True)
+        paths["with_reverse_complement"] = with_rc_dir / f"{base_name}.bin"
     
     return paths
 
@@ -210,12 +210,12 @@ def factorize_single_file(input_path: Path, output_paths: Dict[str, Path],
             # Create output directory
             output_path.parent.mkdir(parents=True, exist_ok=True)
             
-            if mode == "normal":
-                # Normal factorization without reverse complement
+            if mode == "without_reverse_complement":
+                # Factorization without reverse complement
                 factor_count = write_factors_binary_file_fasta_multiple_dna_no_rc(
                     str(input_path), str(output_path)
                 )
-            elif mode == "reverse_complement":
+            elif mode == "with_reverse_complement":
                 # Factorization with reverse complement awareness
                 factor_count = write_factors_binary_file_fasta_multiple_dna_w_rc(
                     str(input_path), str(output_path)
@@ -509,10 +509,10 @@ Examples:
   python -m noLZSS.genomics.batch_factorize --file-list files.txt --output-dir results --mode both
   
   # Process individual files with reverse complement only and 4 parallel workers
-  python -m noLZSS.genomics.batch_factorize file1.fasta file2.fasta --output-dir results --mode reverse_complement --max-workers 4
+  python -m noLZSS.genomics.batch_factorize file1.fasta file2.fasta --output-dir results --mode with_reverse_complement --max-workers 4
   
   # Process remote files with custom download directory
-  python -m noLZSS.genomics.batch_factorize --file-list urls.txt --output-dir results --download-dir downloads --mode normal
+  python -m noLZSS.genomics.batch_factorize --file-list urls.txt --output-dir results --download-dir downloads --mode without_reverse_complement
         """
     )
     
@@ -532,7 +532,7 @@ Examples:
         help="Output directory for binary factorization results"
     )
     parser.add_argument(
-        "--mode", choices=[FactorizationMode.NORMAL, FactorizationMode.REVERSE_COMPLEMENT, FactorizationMode.BOTH],
+        "--mode", choices=[FactorizationMode.WITHOUT_REVERSE_COMPLEMENT, FactorizationMode.WITH_REVERSE_COMPLEMENT, FactorizationMode.BOTH],
         default=FactorizationMode.BOTH,
         help="Factorization mode (default: both)"
     )
