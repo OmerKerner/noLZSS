@@ -43,14 +43,26 @@ def create_demo_app():
     hv.extension('bokeh')
     pn.extension()
     
-    # Generate synthetic factor data
+    # Generate synthetic factor data (more realistic for LZSS)
     np.random.seed(42)
     n_factors = 1000
     
+    # Random starts, then sort them (non-overlapping assumption)
     starts = np.sort(np.random.randint(0, 10000, n_factors))
-    lengths = np.random.randint(5, 100, n_factors)
-    refs = np.random.randint(0, 10000, n_factors)
-    is_rcs = np.random.choice([True, False], n_factors, p=[0.3, 0.7])
+    
+    # Calculate lengths as gaps to next start (LZSS-style non-overlapping)
+    lengths = np.diff(starts)  # Differences between consecutive starts
+    if len(lengths) < n_factors:
+        lengths = np.append(lengths, np.random.randint(5, 50))  # Fallback for last factor
+    
+    # Refs: Random up to current start (references to previous positions)
+    refs = np.array([np.random.randint(0, starts[i] + 1) for i in range(n_factors)])
+    
+    is_rcs = np.random.choice([0, 1], size=n_factors)
+    # If ref + length > start, change rcs to false
+    for i in range(n_factors):
+        if refs[i] + lengths[i] > starts[i]:
+            is_rcs[i] = 0
     
     # Build coordinates
     x0_vals = starts
