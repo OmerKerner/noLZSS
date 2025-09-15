@@ -1,9 +1,9 @@
 """
 Batch FASTA file factorization script with support for local and remote files.
 
-This script processes multiple FASTA files and factorizes each one, saving binary results
-to organized output folders. It supports error handling, re-downloads, restart capabilities,
-and different reverse complement processing modes.
+This script processes multiple FASTA files and factorizes each one using optimized
+C++ functions that handle validation and binary output. It supports parallel downloads
+and factorization for improved performance.
 """
 
 import argparse
@@ -20,9 +20,7 @@ from typing import List, Dict, Union, Optional, Tuple
 from urllib.error import URLError, HTTPError
 
 from ..utils import NoLZSSError
-from .fasta import FASTAError
 from .._noLZSS import (
-    process_nucleotide_fasta,
     write_factors_binary_file_fasta_multiple_dna_w_rc,
     write_factors_binary_file_fasta_multiple_dna_no_rc,
 )
@@ -144,47 +142,10 @@ def download_file(url: str, output_path: Path, max_retries: int = 3,
     return False
 
 
-def write_factors_to_binary(factors: List[Tuple], output_path: Path) -> None:
-    """
-    Write factors to binary file.
-    
-    Args:
-        factors: List of factor tuples (start, length, ref) or (start, length, ref, is_rc)
-        output_path: Output file path
-        
-    Note:
-        This function is deprecated. Use the C++ write_factors_binary_file_fasta_* functions instead.
-    """
-    import struct
-    
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    
-    with open(output_path, 'wb') as f:
-        for factor in factors:
-            if len(factor) == 4:
-                # (start, length, ref, is_rc) format - ignore is_rc for binary output
-                start, length, ref, is_rc = factor
-            else:
-                # (start, length, ref) format
-                start, length, ref = factor
-            
-            # Write as 3 uint64_t values (24 bytes total)
-            f.write(struct.pack('<QQQ', start, length, ref))
 
 
-def validate_fasta_file(file_path: Path, logger: Optional[logging.Logger] = None) -> bool:
-    if logger is None:
-        logger = logging.getLogger(__name__)
-    
-    try:
-        # Use the existing C++ function to validate
-        result = process_nucleotide_fasta(str(file_path))
-        logger.debug(f"FASTA validation successful for {file_path}: "
-                    f"{result['num_sequences']} sequences")
-        return True
-    except Exception as e:
-        logger.warning(f"FASTA validation failed for {file_path}: {e}")
-        return False
+
+
 
 
 def get_output_paths(input_path: Path, output_dir: Path, mode: str) -> Dict[str, Path]:
@@ -279,9 +240,9 @@ def factorize_single_file(input_path: Path, output_paths: Dict[str, Path],
     return results
 
 
-def download_and_validate_file(file_info: Tuple[str, Path, int, logging.Logger]) -> Tuple[str, bool, Optional[Path]]:
+def download_file_worker(file_info: Tuple[str, Path, int, logging.Logger]) -> Tuple[str, bool, Optional[Path]]:
     """
-    Download and validate a single file. This function is used for parallel processing.
+    Download a single file. This function is used for parallel processing.
     
     Args:
         file_info: Tuple of (file_path_or_url, download_dir, max_retries, logger)
@@ -312,11 +273,6 @@ def download_and_validate_file(file_info: Tuple[str, Path, int, logging.Logger])
             logger.error(f"Local file not found: {file_path}")
             return file_path, False, None
     
-    # Validate FASTA file
-    if not validate_fasta_file(local_path, logger):
-        logger.error(f"Invalid FASTA file: {file_path}")
-        return file_path, False, None
-    
     return file_path, True, local_path
 
 
@@ -341,6 +297,8 @@ def factorize_file_worker(job_info: Tuple[str, Path, Dict[str, Path], bool, str]
     )
     
     return original_path, factorization_results
+
+
 def process_file_list(file_list: List[str], output_dir: Path, mode: str,
                      download_dir: Optional[Path] = None, skip_existing: bool = True,
                      max_retries: int = 3, max_workers: int = None, 
@@ -376,17 +334,17 @@ def process_file_list(file_list: List[str], output_dir: Path, mode: str,
         cleanup_temp = False
     
     try:
-        # Step 1: Parallel download and validation
-        logger.info(f"Starting parallel download and validation of {len(file_list)} files")
+        # Step 1: Parallel download
+        logger.info(f"Starting parallel download of {len(file_list)} files")
         
         download_jobs = []
         for file_path in file_list:
             download_jobs.append((file_path, download_dir, max_retries, logger.name))
         
-        validated_files = []
+        prepared_files = []
         
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            future_to_path = {executor.submit(download_and_validate_file, job): job[0] 
+            future_to_path = {executor.submit(download_file_worker, job): job[0] 
                             for job in download_jobs}
             
             for future in as_completed(future_to_path):
@@ -394,7 +352,7 @@ def process_file_list(file_list: List[str], output_dir: Path, mode: str,
                 try:
                     file_path, success, local_path = future.result()
                     if success and local_path:
-                        validated_files.append((file_path, local_path))
+                        prepared_files.append((file_path, local_path))
                         logger.info(f"Successfully prepared {file_path}")
                     else:
                         # Determine error type
@@ -403,21 +361,19 @@ def process_file_list(file_list: List[str], output_dir: Path, mode: str,
                                 results[file_path] = {"error": "download_failed"}
                             else:
                                 results[file_path] = {"error": "file_not_found"}
-                        else:
-                            results[file_path] = {"error": "invalid_fasta"}
                         
                 except Exception as e:
                     logger.error(f"Unexpected error processing {original_path}: {e}")
                     results[original_path] = {"error": "processing_error"}
         
-        logger.info(f"Download/validation complete: {len(validated_files)} files ready for factorization")
+        logger.info(f"Download complete: {len(prepared_files)} files ready for factorization")
         
         # Step 2: Parallel factorization
-        if validated_files:
-            logger.info(f"Starting parallel factorization of {len(validated_files)} files")
+        if prepared_files:
+            logger.info(f"Starting parallel factorization of {len(prepared_files)} files")
             
             factorization_jobs = []
-            for original_path, local_path in validated_files:
+            for original_path, local_path in prepared_files:
                 output_paths = get_output_paths(local_path, output_dir, mode)
                 factorization_jobs.append((original_path, local_path, output_paths, skip_existing, logger.name))
             
