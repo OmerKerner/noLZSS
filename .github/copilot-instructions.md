@@ -37,8 +37,8 @@ pip install -e .  # Triggers CMake build via scikit-build-core
 - **Run all tests**: `python tests/run_all_tests.py` or `python -m pytest tests/`
 
 ### Performance Testing
-- Benchmarks in `benchmarks/bench.py` with memory tracking
-- Plot generation via `benchmarks/plot_benchmarks.py`
+- Benchmarks in `benchmarks/fasta_benchmark.py` with memory tracking
+- Benchmark results saved in `benchmarks/fasta_results/`
 
 ## Project-Specific Conventions
 
