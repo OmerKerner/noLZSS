@@ -37,6 +37,11 @@ PYBIND11_MODULE(_noLZSS, m) {
         .def_property_readonly("ref", [](const noLZSS::Factor& f) { return f.ref & ~noLZSS::RC_MASK; }, "Reference position with RC_MASK stripped if it's a reverse complement match")
         .def_property_readonly("is_rc", [](const noLZSS::Factor& f) { return noLZSS::is_rc(f.ref); }, "Whether this factor is a reverse complement match");
 
+    // FastaFactorizationResult class documentation
+    py::class_<noLZSS::FastaFactorizationResult>(m, "FastaFactorizationResult", "Result of FASTA factorization containing factors and sentinel information")
+        .def_readonly("factors", &noLZSS::FastaFactorizationResult::factors, "List of factorization factors")
+        .def_readonly("sentinel_factor_indices", &noLZSS::FastaFactorizationResult::sentinel_factor_indices, "Indices of factors that are sentinels (sequence separators)");
+
     // factorize function documentation
     m.def("factorize", [](py::buffer b) {
         // Accept any bytes-like 1-byte-per-item contiguous buffer (e.g. bytes, bytearray, memoryview)
@@ -172,7 +177,7 @@ Note:
     }, py::arg("in_path"), py::arg("out_path"), R"doc(Write noLZSS factors from file to binary output file.
 
 Reads text from an input file, performs factorization, and writes the factors
-in binary format to an output file. Each factor is written as two uint64_t values.
+in binary format with metadata header to an output file.
 
 Args:
     in_path: Path to input file containing text
@@ -182,7 +187,7 @@ Returns:
     Number of factors written to the output file
 
 Note:
-    Binary format: each factor is 24 bytes (3 × uint64_t: start, length, ref).
+    Binary format: header with metadata + factors as 24 bytes each (3 × uint64_t: start, length, ref).
     This function overwrites the output file if it exists.
 )doc");
 
@@ -326,7 +331,7 @@ Note:
     }, py::arg("in_path"), py::arg("out_path"), R"doc(Write noLZSS factors from DNA file with reverse complement awareness to binary output file.
 
 Reads DNA text from an input file, performs factorization with reverse complement support,
-and writes the factors in binary format to an output file.
+and writes the factors in binary format with metadata header to an output file.
 
 Args:
     in_path: Path to input file containing DNA text
@@ -336,7 +341,7 @@ Returns:
     Number of factors written to the output file
 
 Note:
-    Binary format: each factor is 24 bytes (3 × uint64_t: start, length, ref).
+    Binary format: header with metadata + factors as 24 bytes each (3 × uint64_t: start, length, ref).
     Reverse complement factors have RC_MASK set in the ref field.
     This function overwrites the output file if it exists.
 )doc");
@@ -477,7 +482,7 @@ Note:
     }, py::arg("in_path"), py::arg("out_path"), R"doc(Write noLZSS factors from DNA file with multiple sequences and reverse complement awareness to binary output file.
 
 Reads DNA text from an input file, performs factorization with multiple sequences and reverse complement support,
-and writes the factors in binary format to an output file.
+and writes the factors in binary format with metadata header to an output file.
 
 Args:
     in_path: Path to input file containing DNA text with multiple sequences
@@ -487,7 +492,7 @@ Returns:
     Number of factors written to the output file
 
 Note:
-    Binary format: each factor is 24 bytes (3 × uint64_t: start, length, ref).
+    Binary format: header with metadata + factors as 24 bytes each (3 × uint64_t: start, length, ref).
     Reverse complement factors have RC_MASK set in the ref field.
     This function overwrites the output file if it exists.
 )doc");
@@ -578,12 +583,22 @@ Raises:
 m.def("factorize_fasta_multiple_dna_w_rc", [](const std::string& fasta_path) {
     // Release GIL while doing heavy C++ work
     py::gil_scoped_release release;
-    auto factors = noLZSS::factorize_fasta_multiple_dna_w_rc(fasta_path);
+    auto result = noLZSS::factorize_fasta_multiple_dna_w_rc(fasta_path);
     py::gil_scoped_acquire acquire;
 
-    py::list out;
-    for (auto &f : factors) out.append(py::make_tuple(f.start, f.length, f.ref & ~noLZSS::RC_MASK, noLZSS::is_rc(f.ref)));
-    return out;
+    // Convert factors to Python tuples
+    py::list factors_list;
+    for (auto &f : result.factors) {
+        factors_list.append(py::make_tuple(f.start, f.length, f.ref & ~noLZSS::RC_MASK, noLZSS::is_rc(f.ref)));
+    }
+    
+    // Convert sentinel indices to Python list
+    py::list sentinel_indices_list;
+    for (auto idx : result.sentinel_factor_indices) {
+        sentinel_indices_list.append(idx);
+    }
+    
+    return py::make_tuple(factors_list, sentinel_indices_list);
 }, py::arg("fasta_path"), R"doc(Factorize multiple DNA sequences from a FASTA file with reverse complement awareness.
 
 Reads a FASTA file containing DNA sequences, parses them into individual sequences,
@@ -594,7 +609,9 @@ Args:
 fasta_path: Path to the FASTA file containing DNA sequences
 
 Returns:
-List of (start, length, ref, is_rc) tuples representing the factorization
+Tuple of (factors, sentinel_factor_indices) where:
+- factors: List of (start, length, ref, is_rc) tuples representing the factorization
+- sentinel_factor_indices: List of factor indices that represent sequence separators
 
 Raises:
 RuntimeError: If FASTA file cannot be opened or contains no valid sequences
@@ -612,12 +629,22 @@ ref field has RC_MASK cleared. is_rc boolean indicates if this was a reverse com
 m.def("factorize_fasta_multiple_dna_no_rc", [](const std::string& fasta_path) {
     // Release GIL while doing heavy C++ work
     py::gil_scoped_release release;
-    auto factors = noLZSS::factorize_fasta_multiple_dna_no_rc(fasta_path);
+    auto result = noLZSS::factorize_fasta_multiple_dna_no_rc(fasta_path);
     py::gil_scoped_acquire acquire;
 
-    py::list out;
-    for (auto &f : factors) out.append(py::make_tuple(f.start, f.length, f.ref & ~noLZSS::RC_MASK, noLZSS::is_rc(f.ref)));
-    return out;
+    // Convert factors to Python tuples
+    py::list factors_list;
+    for (auto &f : result.factors) {
+        factors_list.append(py::make_tuple(f.start, f.length, f.ref & ~noLZSS::RC_MASK, noLZSS::is_rc(f.ref)));
+    }
+    
+    // Convert sentinel indices to Python list
+    py::list sentinel_indices_list;
+    for (auto idx : result.sentinel_factor_indices) {
+        sentinel_indices_list.append(idx);
+    }
+    
+    return py::make_tuple(factors_list, sentinel_indices_list);
 }, py::arg("fasta_path"), R"doc(Factorize multiple DNA sequences from a FASTA file without reverse complement awareness.
 
 Reads a FASTA file containing DNA sequences, parses them into individual sequences,
@@ -628,7 +655,9 @@ Args:
 fasta_path: Path to the FASTA file containing DNA sequences
 
 Returns:
-List of (start, length, ref, is_rc) tuples representing the factorization
+Tuple of (factors, sentinel_factor_indices) where:
+- factors: List of (start, length, ref, is_rc) tuples representing the factorization
+- sentinel_factor_indices: List of factor indices that represent sequence separators
 
 Raises:
 RuntimeError: If FASTA file cannot be opened or contains no valid sequences
@@ -652,9 +681,9 @@ m.def("write_factors_binary_file_fasta_multiple_dna_w_rc", [](const std::string&
 }, py::arg("fasta_path"), py::arg("out_path"), R"doc(Write noLZSS factors from multiple DNA sequences in a FASTA file with reverse complement awareness to a binary output file.
 
 This function reads DNA sequences from a FASTA file, parses them into individual sequences,
-prepares them for factorization using prepare_multiple_dna_sequences_w_rc(), performs 
-factorization with reverse complement awareness, and writes the resulting factors in 
-binary format to an output file. Each factor is written as three uint64_t values.
+prepares them for factorization, performs factorization with reverse complement awareness, 
+and writes the resulting factors in binary format with metadata including sequence IDs and 
+sentinel factor indices to an output file.
 
 Args:
     fasta_path: Path to input FASTA file containing DNA sequences
@@ -668,7 +697,8 @@ Raises:
     ValueError: If too many sequences (>125) in the FASTA file or invalid nucleotides found
 
 Note:
-    Binary format: each factor is 24 bytes (3 × uint64_t: start, length, ref)
+    Binary format: header with sequence metadata + factors as 24 bytes each (3 × uint64_t: start, length, ref)
+    Header includes sequence IDs, sentinel factor indices, and other metadata
     Only A, C, T, G nucleotides are allowed (case insensitive)
     This function overwrites the output file if it exists
     Reverse complement matches are supported during factorization
@@ -684,9 +714,9 @@ m.def("write_factors_binary_file_fasta_multiple_dna_no_rc", [](const std::string
 }, py::arg("fasta_path"), py::arg("out_path"), R"doc(Write noLZSS factors from multiple DNA sequences in a FASTA file without reverse complement awareness to a binary output file.
 
 This function reads DNA sequences from a FASTA file, parses them into individual sequences,
-prepares them for factorization using prepare_multiple_dna_sequences_no_rc(), performs 
-factorization without reverse complement awareness, and writes the resulting factors in 
-binary format to an output file. Each factor is written as three uint64_t values.
+prepares them for factorization, performs factorization without reverse complement awareness, 
+and writes the resulting factors in binary format with metadata including sequence IDs and 
+sentinel factor indices to an output file.
 
 Args:
     fasta_path: Path to input FASTA file containing DNA sequences
@@ -700,7 +730,8 @@ Raises:
     ValueError: If too many sequences (>250) in the FASTA file or invalid nucleotides found
 
 Note:
-    Binary format: each factor is 24 bytes (3 × uint64_t: start, length, ref)
+    Binary format: header with sequence metadata + factors as 24 bytes each (3 × uint64_t: start, length, ref)
+    Header includes sequence IDs, sentinel factor indices, and other metadata
     Only A, C, T, G nucleotides are allowed (case insensitive)
     This function overwrites the output file if it exists
     Reverse complement matches are NOT supported during factorization
@@ -713,8 +744,8 @@ Note:
         auto result = noLZSS::prepare_multiple_dna_sequences_w_rc(sequences);
         py::gil_scoped_acquire acquire;
 
-        // Return as Python tuple (concatenated_string, original_length)
-        return py::make_tuple(result.first, result.second);
+        // Return as Python tuple (concatenated_string, original_length, sentinel_positions)
+        return py::make_tuple(result.prepared_string, result.original_length, result.sentinel_positions);
     }, py::arg("sequences"), R"doc(Prepare multiple DNA sequences for factorization with reverse complement awareness.
 
 Takes multiple DNA sequences, concatenates them with unique sentinels, and appends
@@ -728,9 +759,10 @@ Returns:
     Tuple containing:
     - concatenated_string: The formatted string with sequences and reverse complements
     - original_length: Length of the original sequences part (before reverse complements)
+    - sentinel_positions: List of positions where sentinels are located
 
 Raises:
-    ValueError: If too many sequences (>251) or invalid nucleotides found
+    ValueError: If too many sequences (>125) or invalid nucleotides found
     RuntimeError: If sequences contain invalid characters
 
 Note:
@@ -746,8 +778,8 @@ Note:
         auto result = noLZSS::prepare_multiple_dna_sequences_no_rc(sequences);
         py::gil_scoped_acquire acquire;
 
-        // Return as Python tuple (concatenated_string, total_length)
-        return py::make_tuple(result.first, result.second);
+        // Return as Python tuple (concatenated_string, total_length, sentinel_positions)
+        return py::make_tuple(result.prepared_string, result.original_length, result.sentinel_positions);
     }, py::arg("sequences"), R"doc(Prepare multiple DNA sequences for factorization without reverse complement.
 
 Takes multiple DNA sequences and concatenates them with unique sentinels.
@@ -761,6 +793,7 @@ Returns:
     Tuple containing:
     - concatenated_string: The formatted string with sequences and sentinels
     - total_length: Total length of the concatenated string
+    - sentinel_positions: List of positions where sentinels are located
 
 Raises:
     ValueError: If too many sequences (>250) or invalid nucleotides found

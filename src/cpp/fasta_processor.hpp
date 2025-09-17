@@ -19,6 +19,22 @@ struct FastaProcessResult {
 };
 
 /**
+ * @brief Result of parsing FASTA file containing both sequences and IDs.
+ */
+struct FastaParseResult {
+    std::vector<std::string> sequences;    /**< Individual sequences from FASTA file */
+    std::vector<std::string> sequence_ids; /**< Sequence identifiers from headers */
+};
+
+/**
+ * @brief Result of FASTA factorization containing factors and sentinel information.
+ */
+struct FastaFactorizationResult {
+    std::vector<Factor> factors;                    /**< Factorization result */
+    std::vector<uint64_t> sentinel_factor_indices; /**< Indices of factors that are sentinels */
+};
+
+/**
  * @brief Processes a nucleotide FASTA file into a concatenated string with sentinels.
  *
  * Reads a FASTA file containing nucleotide sequences and creates a single concatenated
@@ -44,7 +60,7 @@ FastaProcessResult process_amino_acid_fasta(const std::string& fasta_path);
  * performs noLZSS factorization with reverse complement awareness.
  *
  * @param fasta_path Path to the FASTA file containing DNA sequences
- * @return Vector containing all factors from the factorization
+ * @return FastaFactorizationResult containing factors and sentinel factor indices
  *
  * @throws std::runtime_error If FASTA file cannot be opened or contains no valid sequences
  * @throws std::invalid_argument If too many sequences (>125) in the FASTA file or invalid nucleotides found
@@ -54,7 +70,7 @@ FastaProcessResult process_amino_acid_fasta(const std::string& fasta_path);
  * @note Reverse complement matches are supported during factorization
  * @note Nucleotide validation is performed by prepare_multiple_dna_sequences_w_rc()
  */
-std::vector<Factor> factorize_fasta_multiple_dna_w_rc(const std::string& fasta_path);
+FastaFactorizationResult factorize_fasta_multiple_dna_w_rc(const std::string& fasta_path);
 
 /**
  * @brief Factorizes multiple DNA sequences from a FASTA file without reverse complement awareness.
@@ -64,7 +80,7 @@ std::vector<Factor> factorize_fasta_multiple_dna_w_rc(const std::string& fasta_p
  * performs noLZSS factorization without reverse complement awareness.
  *
  * @param fasta_path Path to the FASTA file containing DNA sequences
- * @return Vector containing all factors from the factorization
+ * @return FastaFactorizationResult containing factors and sentinel factor indices
  *
  * @throws std::runtime_error If FASTA file cannot be opened or contains no valid sequences
  * @throws std::invalid_argument If too many sequences (>250) in the FASTA file or invalid nucleotides found
@@ -74,7 +90,7 @@ std::vector<Factor> factorize_fasta_multiple_dna_w_rc(const std::string& fasta_p
  * @note Reverse complement matches are NOT supported during factorization
  * @note Nucleotide validation is performed by prepare_multiple_dna_sequences_no_rc()
  */
-std::vector<Factor> factorize_fasta_multiple_dna_no_rc(const std::string& fasta_path);
+FastaFactorizationResult factorize_fasta_multiple_dna_no_rc(const std::string& fasta_path);
 
 /**
  * @brief Writes noLZSS factors from multiple DNA sequences in a FASTA file with reverse complement awareness to a binary output file.

@@ -2,19 +2,21 @@
 #include "factorizer.hpp"
 #include <iostream>
 #include <algorithm>
+#include <set>
 
 namespace noLZSS {
 
-// Helper function to parse FASTA file into individual sequences
-static std::vector<std::string> parse_fasta_sequences(const std::string& fasta_path) {
+// Helper function to parse FASTA file into individual sequences and IDs
+static FastaParseResult parse_fasta_sequences_and_ids(const std::string& fasta_path) {
     std::ifstream file(fasta_path);
     if (!file.is_open()) {
         throw std::runtime_error("Cannot open FASTA file: " + fasta_path);
     }
 
-    std::vector<std::string> sequences;
+    FastaParseResult result;
     std::string line;
     std::string current_sequence;
+    std::string current_id;
 
     while (std::getline(file, line)) {
         // Remove trailing whitespace
@@ -29,10 +31,26 @@ static std::vector<std::string> parse_fasta_sequences(const std::string& fasta_p
         if (line[0] == '>') {
             // Header line - finish previous sequence if exists
             if (!current_sequence.empty()) {
-                sequences.push_back(current_sequence);
+                result.sequences.push_back(current_sequence);
+                result.sequence_ids.push_back(current_id);
                 current_sequence.clear();
             }
-            // Skip header, continue to next line
+            
+            // Parse new header to extract ID
+            size_t start = 1; // Skip '>'
+            while (start < line.size() && std::isspace(line[start])) {
+                start++;
+            }
+            size_t end = start;
+            while (end < line.size() && !std::isspace(line[end])) {
+                end++;
+            }
+            
+            if (start < line.size()) {
+                current_id = line.substr(start, end - start);
+            } else {
+                throw std::runtime_error("Empty sequence header in FASTA file");
+            }
         } else {
             // Sequence line - append to current sequence
             for (char c : line) {
@@ -45,16 +63,52 @@ static std::vector<std::string> parse_fasta_sequences(const std::string& fasta_p
 
     // Add the last sequence if it exists
     if (!current_sequence.empty()) {
-        sequences.push_back(current_sequence);
+        result.sequences.push_back(current_sequence);
+        result.sequence_ids.push_back(current_id);
     }
 
     file.close();
 
-    if (sequences.empty()) {
+    if (result.sequences.empty()) {
         throw std::runtime_error("No valid sequences found in FASTA file");
     }
 
-    return sequences;
+    return result;
+}
+
+// Legacy helper function to maintain compatibility with existing code
+static std::vector<std::string> parse_fasta_sequences(const std::string& fasta_path) {
+    FastaParseResult result = parse_fasta_sequences_and_ids(fasta_path);
+    return result.sequences;
+}
+
+// Helper function to identify sentinel factors from factorization results
+static std::vector<uint64_t> identify_sentinel_factors(const std::vector<Factor>& factors, 
+                                                      const std::vector<size_t>& sentinel_positions) {
+    std::vector<uint64_t> sentinel_factor_indices;
+    size_t sentinel_idx = 0;  // Current index in sentinel_positions
+    
+    for (size_t i = 0; i < factors.size(); ++i) {
+        const Factor& f = factors[i];
+        
+        // Check if this factor's start position matches current sentinel position
+        if (sentinel_idx < sentinel_positions.size() && 
+            f.start == sentinel_positions[sentinel_idx]) {
+            
+            // Sanity checks for sentinel factors
+            if (f.length != 1) {
+                throw std::runtime_error("Sentinel factor has unexpected length: " + std::to_string(f.length));
+            }
+            if (f.ref != f.start) {
+                throw std::runtime_error("Sentinel factor reference mismatch: ref=" + 
+                                       std::to_string(f.ref) + ", pos=" + std::to_string(f.start));
+            }
+            sentinel_factor_indices.push_back(i);
+            sentinel_idx++;  // Move to next sentinel position
+        }
+    }
+    
+    return sentinel_factor_indices;
 }
 
 /**
@@ -307,15 +361,20 @@ FastaProcessResult process_amino_acid_fasta(const std::string& fasta_path) {
  * prepares them for factorization using prepare_multiple_dna_sequences_w_rc(), and then
  * performs noLZSS factorization with reverse complement awareness.
  */
-std::vector<Factor> factorize_fasta_multiple_dna_w_rc(const std::string& fasta_path) {
+FastaFactorizationResult factorize_fasta_multiple_dna_w_rc(const std::string& fasta_path) {
     // Parse FASTA file into individual sequences
     std::vector<std::string> sequences = parse_fasta_sequences(fasta_path);
 
     // Prepare sequences for factorization (this will validate nucleotides)
-    auto [prepared_string, original_length] = prepare_multiple_dna_sequences_w_rc(sequences);
+    PreparedSequenceResult prep_result = prepare_multiple_dna_sequences_w_rc(sequences);
     
     // Perform factorization
-    return factorize_multiple_dna_w_rc(prepared_string);
+    std::vector<Factor> factors = factorize_multiple_dna_w_rc(prep_result.prepared_string);
+    
+    // Identify sentinel factors using helper function
+    std::vector<uint64_t> sentinel_factor_indices = identify_sentinel_factors(factors, prep_result.sentinel_positions);
+    
+    return {factors, sentinel_factor_indices};
 }
 
 /**
@@ -325,15 +384,20 @@ std::vector<Factor> factorize_fasta_multiple_dna_w_rc(const std::string& fasta_p
  * prepares them for factorization using prepare_multiple_dna_sequences_no_rc(), and then
  * performs noLZSS factorization without reverse complement awareness.
  */
-std::vector<Factor> factorize_fasta_multiple_dna_no_rc(const std::string& fasta_path) {
+FastaFactorizationResult factorize_fasta_multiple_dna_no_rc(const std::string& fasta_path) {
     // Parse FASTA file into individual sequences
     std::vector<std::string> sequences = parse_fasta_sequences(fasta_path);
 
     // Prepare sequences for factorization (this will validate nucleotides)
-    auto [prepared_string, total_length] = prepare_multiple_dna_sequences_no_rc(sequences);
+    PreparedSequenceResult prep_result = prepare_multiple_dna_sequences_no_rc(sequences);
     
     // Perform factorization using regular factorize function
-    return factorize(prepared_string);
+    std::vector<Factor> factors = factorize(prep_result.prepared_string);
+    
+    // Identify sentinel factors using helper function
+    std::vector<uint64_t> sentinel_factor_indices = identify_sentinel_factors(factors, prep_result.sentinel_positions);
+    
+    return {factors, sentinel_factor_indices};
 }
 
 /**
@@ -342,60 +406,118 @@ std::vector<Factor> factorize_fasta_multiple_dna_no_rc(const std::string& fasta_
  * This function reads DNA sequences from a FASTA file, parses them into individual sequences,
  * prepares them for factorization using prepare_multiple_dna_sequences_w_rc(), performs 
  * factorization with reverse complement awareness, and writes the resulting factors in 
- * binary format to an output file. Each factor is written as three uint64_t values.
+ * binary format to an output file with metadata including sequence IDs and sentinel factor indices.
  */
 size_t write_factors_binary_file_fasta_multiple_dna_w_rc(const std::string& fasta_path, const std::string& out_path) {
-    // Parse FASTA file into individual sequences
-    std::vector<std::string> sequences = parse_fasta_sequences(fasta_path);
-
-    // Prepare sequences for factorization (this will validate nucleotides)
-    auto [prepared_string, original_length] = prepare_multiple_dna_sequences_w_rc(sequences);
+    // Parse FASTA file into sequences and IDs in one pass
+    FastaParseResult parse_result = parse_fasta_sequences_and_ids(fasta_path);
     
-    // Perform factorization with reverse complement awareness
-    std::vector<Factor> factors = factorize_multiple_dna_w_rc(prepared_string);
+    // Get factorization result with sentinel information
+    FastaFactorizationResult factorization_result = factorize_fasta_multiple_dna_w_rc(fasta_path);
     
-    // Set up binary output file with buffering
+    // Calculate header size
+    size_t names_size = 0;
+    for (const auto& name : parse_result.sequence_ids) {
+        names_size += name.length() + 1;  // +1 for null terminator
+    }
+    
+    size_t header_size = sizeof(FactorFileHeader) + names_size + 
+                        factorization_result.sentinel_factor_indices.size() * sizeof(uint64_t);
+    
+    // Write to file
     std::ofstream os(out_path, std::ios::binary);
+    if (!os) {
+        throw std::runtime_error("Cannot create output file: " + out_path);
+    }
+    
     std::vector<char> buf(1<<20); // 1 MB buffer for performance
     os.rdbuf()->pubsetbuf(buf.data(), static_cast<std::streamsize>(buf.size()));
     
-    // Write factors to file
-    for (const Factor& f : factors) {
+    // Write header
+    FactorFileHeader header;
+    header.num_factors = factorization_result.factors.size();
+    header.num_sequences = parse_result.sequence_ids.size();
+    header.num_sentinels = factorization_result.sentinel_factor_indices.size();
+    header.header_size = header_size;
+    
+    os.write(reinterpret_cast<const char*>(&header), sizeof(header));
+    
+    // Write sequence names
+    for (const auto& name : parse_result.sequence_ids) {
+        os.write(name.c_str(), name.length() + 1);  // Include null terminator
+    }
+    
+    // Write sentinel factor indices
+    for (uint64_t idx : factorization_result.sentinel_factor_indices) {
+        os.write(reinterpret_cast<const char*>(&idx), sizeof(idx));
+    }
+    
+    // Write factors (existing format)
+    for (const Factor& f : factorization_result.factors) {
         os.write(reinterpret_cast<const char*>(&f), sizeof(Factor));
     }
     
-    return factors.size();
+    return factorization_result.factors.size();
 }
 
 /**
  * @brief Writes noLZSS factors from multiple DNA sequences in a FASTA file without reverse complement awareness to a binary output file.
  *
  * This function reads DNA sequences from a FASTA file, parses them into individual sequences,
- * prepares them for factorization using prepare_multiple_dna_sequences_no_rc(), performs 
+ * prepares them for factorization using prepare_multiple_dna_sequences_no_rc_with_sentinels(), performs 
  * factorization without reverse complement awareness, and writes the resulting factors in 
- * binary format to an output file. Each factor is written as three uint64_t values.
+ * binary format to an output file with metadata including sequence IDs and sentinel factor indices.
  */
 size_t write_factors_binary_file_fasta_multiple_dna_no_rc(const std::string& fasta_path, const std::string& out_path) {
-    // Parse FASTA file into individual sequences
-    std::vector<std::string> sequences = parse_fasta_sequences(fasta_path);
-
-    // Prepare sequences for factorization (this will validate nucleotides)
-    auto [prepared_string, total_length] = prepare_multiple_dna_sequences_no_rc(sequences);
+    // Parse FASTA file into sequences and IDs in one pass
+    FastaParseResult parse_result = parse_fasta_sequences_and_ids(fasta_path);
     
-    // Set up binary output file with buffering
+    // Get factorization result with sentinel information
+    FastaFactorizationResult factorization_result = factorize_fasta_multiple_dna_no_rc(fasta_path);
+    
+    // Calculate header size
+    size_t names_size = 0;
+    for (const auto& name : parse_result.sequence_ids) {
+        names_size += name.length() + 1;  // +1 for null terminator
+    }
+    
+    size_t header_size = sizeof(FactorFileHeader) + names_size + 
+                        factorization_result.sentinel_factor_indices.size() * sizeof(uint64_t);
+    
+    // Write to file
     std::ofstream os(out_path, std::ios::binary);
+    if (!os) {
+        throw std::runtime_error("Cannot create output file: " + out_path);
+    }
+    
     std::vector<char> buf(1<<20); // 1 MB buffer for performance
     os.rdbuf()->pubsetbuf(buf.data(), static_cast<std::streamsize>(buf.size()));
     
-    // Perform factorization and write factors to file using the regular factorize
-    std::vector<Factor> factors = factorize(prepared_string);
+    // Write header
+    FactorFileHeader header;
+    header.num_factors = factorization_result.factors.size();
+    header.num_sequences = parse_result.sequence_ids.size();
+    header.num_sentinels = factorization_result.sentinel_factor_indices.size();
+    header.header_size = header_size;
     
-    // Write factors to file
-    for (const Factor& f : factors) {
+    os.write(reinterpret_cast<const char*>(&header), sizeof(header));
+    
+    // Write sequence names
+    for (const auto& name : parse_result.sequence_ids) {
+        os.write(name.c_str(), name.length() + 1);  // Include null terminator
+    }
+    
+    // Write sentinel factor indices
+    for (uint64_t idx : factorization_result.sentinel_factor_indices) {
+        os.write(reinterpret_cast<const char*>(&idx), sizeof(idx));
+    }
+    
+    // Write factors (existing format)
+    for (const Factor& f : factorization_result.factors) {
         os.write(reinterpret_cast<const char*>(&f), sizeof(Factor));
     }
     
-    return factors.size();
+    return factorization_result.factors.size();
 }
 
 } // namespace noLZSS

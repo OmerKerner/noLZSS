@@ -83,14 +83,32 @@ static std::string revcomp(std::string_view s) {
  * @note Sentinels range from 1-251, avoiding 0, A(65), C(67), G(71), T(84)
  * @note The function validates that all sequences contain only valid DNA nucleotides
  */
-std::pair<std::string, size_t> prepare_multiple_dna_sequences_w_rc(const std::vector<std::string>& sequences) {
+/**
+ * @brief Prepares multiple DNA sequences for factorization with reverse complement and tracks sentinel positions.
+ *
+ * Takes multiple DNA sequences, concatenates them with unique sentinels, appends
+ * their reverse complements with unique sentinels, and tracks sentinel positions.
+ * The output format is compatible with nolzss_multiple_dna_w_rc(): S = T1!T2@T3$rt(T3)%rt(T2)^rt(T1)&
+ *
+ * @param sequences Vector of DNA sequence strings (should contain only A, C, T, G)
+ * @return PreparedSequenceResult containing:
+ *         - prepared_string: The formatted string with sequences and reverse complements
+ *         - original_length: Length of the original sequences part (before reverse complements)
+ *         - sentinel_positions: Positions of all sentinels in the prepared string
+ *
+ * @throws std::invalid_argument If too many sequences (>125) or invalid nucleotides found
+ * @throws std::runtime_error If sequences contain invalid characters
+ *
+ * @note Sentinels avoid 0, A(65), C(67), G(71), T(84) - lowercase nucleotides are safe as sentinels
+ * @note The function validates that all sequences contain only valid DNA nucleotides
+ * @note Input sequences can be lowercase or uppercase, output is always uppercase
+ */
+PreparedSequenceResult prepare_multiple_dna_sequences_w_rc(const std::vector<std::string>& sequences) {
     if (sequences.empty()) {
-        return {"", 0};
+        return {"", 0, {}};
     }
     
     // Check if we have too many sequences
-    // Available characters: 1-255 minus 5 characters (0,A,C,G,T) = 250 characters  
-    // Need 2 sentinels per sequence (original + reverse complement) = max 125 sequences
     if (sequences.size() > 125) {
         throw std::invalid_argument("Too many sequences: maximum 125 sequences supported (due to sentinel character limitations)");
     }
@@ -106,7 +124,15 @@ std::pair<std::string, size_t> prepare_multiple_dna_sequences_w_rc(const std::ve
         }
     }
     
-    std::string result;
+    PreparedSequenceResult result;
+    
+    // Calculate total size for reservation
+    size_t total_size = 0;
+    for (const auto& seq : sequences) {
+        total_size += seq.length() * 2; // Original + reverse complement
+    }
+    total_size += sequences.size() * 2; // Add space for sentinels
+    result.prepared_string.reserve(total_size);
     
     // Generate sentinel characters avoiding 0 and uppercase DNA nucleotides A(65), C(67), G(71), T(84)
     auto get_sentinel = [](size_t index) -> char {
@@ -133,14 +159,16 @@ std::pair<std::string, size_t> prepare_multiple_dna_sequences_w_rc(const std::ve
         for (char& c : seq) {
             if (c >= 'a' && c <= 'z') c = c - 'a' + 'A';
         }
-        result += seq;
+        result.prepared_string += seq;
         
-        // Add sentinel (avoiding DNA nucleotides)
+        // Add sentinel and track its position
+        size_t sentinel_pos = result.prepared_string.length();
         char sentinel = get_sentinel(i);
-        result += sentinel;
+        result.prepared_string += sentinel;
+        result.sentinel_positions.push_back(sentinel_pos);
     }
     
-    size_t original_length = result.length();
+    result.original_length = result.prepared_string.length();
     
     // Then, add reverse complements with different sentinels
     for (int i = static_cast<int>(sequences.size()) - 1; i >= 0; --i) {
@@ -152,14 +180,16 @@ std::pair<std::string, size_t> prepare_multiple_dna_sequences_w_rc(const std::ve
         
         // Add reverse complement
         std::string rc = revcomp(seq);
-        result += rc;
+        result.prepared_string += rc;
         
-        // Add sentinel (offset by sequences.size() to make them unique)
+        // Add sentinel and track its position (offset by sequences.size() to make them unique)
+        size_t sentinel_pos = result.prepared_string.length();
         char sentinel = get_sentinel(sequences.size() + (sequences.size() - 1 - i));
-        result += sentinel;
+        result.prepared_string += sentinel;
+        result.sentinel_positions.push_back(sentinel_pos);
     }
     
-    return {result, original_length};
+    return result;
 }
 
 /**
@@ -181,14 +211,32 @@ std::pair<std::string, size_t> prepare_multiple_dna_sequences_w_rc(const std::ve
  * @note The function validates that all sequences contain only valid DNA nucleotides
  * @note Input sequences can be lowercase or uppercase, output is always uppercase
  */
-std::pair<std::string, size_t> prepare_multiple_dna_sequences_no_rc(const std::vector<std::string>& sequences) {
+/**
+ * @brief Prepares multiple DNA sequences for factorization without reverse complement and tracks sentinel positions.
+ *
+ * Takes multiple DNA sequences, concatenates them with unique sentinels, and tracks sentinel positions.
+ * Unlike prepare_multiple_dna_sequences_w_rc(), this function does not append
+ * reverse complements. The output format is: S = T1!T2@T3$
+ *
+ * @param sequences Vector of DNA sequence strings (should contain only A, C, T, G)
+ * @return PreparedSequenceResult containing:
+ *         - prepared_string: The formatted string with sequences and sentinels
+ *         - original_length: Total length of the concatenated string (same as prepared_string.length())
+ *         - sentinel_positions: Positions of all sentinels in the prepared string
+ *
+ * @throws std::invalid_argument If too many sequences (>250) or invalid nucleotides found
+ * @throws std::runtime_error If sequences contain invalid characters
+ *
+ * @note Sentinels range from 1-251, avoiding 0, A(65), C(67), G(71), T(84)
+ * @note The function validates that all sequences contain only valid DNA nucleotides
+ * @note Input sequences can be lowercase or uppercase, output is always uppercase
+ */
+PreparedSequenceResult prepare_multiple_dna_sequences_no_rc(const std::vector<std::string>& sequences) {
     if (sequences.empty()) {
-        return {"", 0};
+        return {"", 0, {}};
     }
     
     // Check if we have too many sequences
-    // Available characters: 1-255 minus 5 characters (0,A,C,G,T) = 250 characters  
-    // Need 1 sentinel per sequence = max 250 sequences
     if (sequences.size() > 250) {
         throw std::invalid_argument("Too many sequences: maximum 250 sequences supported (due to sentinel character limitations)");
     }
@@ -204,7 +252,15 @@ std::pair<std::string, size_t> prepare_multiple_dna_sequences_no_rc(const std::v
         }
     }
     
-    std::string result;
+    PreparedSequenceResult result;
+    
+    // Calculate total size for reservation
+    size_t total_size = 0;
+    for (const auto& seq : sequences) {
+        total_size += seq.length();
+    }
+    total_size += sequences.size(); // Add space for sentinels
+    result.prepared_string.reserve(total_size);
     
     // Generate sentinel characters avoiding 0 and uppercase DNA nucleotides A(65), C(67), G(71), T(84)
     auto get_sentinel = [](size_t index) -> char {
@@ -231,16 +287,20 @@ std::pair<std::string, size_t> prepare_multiple_dna_sequences_no_rc(const std::v
         for (char& c : seq) {
             if (c >= 'a' && c <= 'z') c = c - 'a' + 'A';
         }
-        result += seq;
+        result.prepared_string += seq;
         
-        // Add sentinel (avoiding DNA nucleotides)
-        char sentinel = get_sentinel(i);
-        result += sentinel;
+        // Add sentinel and track its position (only between sequences, not after the last one)
+        if (i < sequences.size() - 1) {
+            size_t sentinel_pos = result.prepared_string.length();
+            char sentinel = get_sentinel(i);
+            result.prepared_string += sentinel;
+            result.sentinel_positions.push_back(sentinel_pos);
+        }
     }
     
-    size_t total_length = result.length();
+    result.original_length = result.prepared_string.length();
     
-    return {result, total_length};
+    return result;
 }
 
 
@@ -357,7 +417,9 @@ static size_t nolzss_dna_w_rc(const std::string& T, Sink&& sink) {
     if (n == 0) return 0;
 
     // Use prepare_multiple_dna_sequences_w_rc with a single sequence
-    auto [S, original_length] = prepare_multiple_dna_sequences_w_rc({T});
+    PreparedSequenceResult prep_result = prepare_multiple_dna_sequences_w_rc({T});
+    std::string S = prep_result.prepared_string;
+    size_t original_length = prep_result.original_length;
 
     // Use the multiple sequence algorithm
     return nolzss_multiple_dna_w_rc(S, std::forward<Sink>(sink));
@@ -665,12 +727,36 @@ std::vector<Factor> factorize_file(const std::string& path, size_t reserve_hint)
  * @warning Ensure sufficient disk space for the output file
  */
 size_t write_factors_binary_file(const std::string& in_path, const std::string& out_path) {
+    // Set up binary output file with buffering
     std::ofstream os(out_path, std::ios::binary);
-    std::vector<char> buf(1<<20);
+    if (!os) {
+        throw std::runtime_error("Cannot create output file: " + out_path);
+    }
+    
+    std::vector<char> buf(1<<20); // 1 MB buffer for performance
     os.rdbuf()->pubsetbuf(buf.data(), static_cast<std::streamsize>(buf.size()));
+    
+    // Collect factors in memory to write header
+    std::vector<Factor> factors;
     size_t n = factorize_file_stream(in_path, [&](const Factor& f){
-        os.write(reinterpret_cast<const char*>(&f), sizeof(Factor));
+        factors.push_back(f);
     });
+    
+    // For non-FASTA files, create minimal header with no sequence names or sentinels
+    FactorFileHeader header;
+    header.num_factors = factors.size();
+    header.num_sequences = 0;  // Unknown for raw text files
+    header.num_sentinels = 0;  // No sentinels for raw text files
+    header.header_size = sizeof(FactorFileHeader);
+    
+    // Write header
+    os.write(reinterpret_cast<const char*>(&header), sizeof(header));
+    
+    // Write factors
+    for (const Factor& f : factors) {
+        os.write(reinterpret_cast<const char*>(&f), sizeof(Factor));
+    }
+    
     return n;
 }
 
@@ -810,12 +896,39 @@ size_t count_factors_file_dna_w_rc(const std::string& path) {
  * @warning Ensure sufficient disk space for the output file
  */
 size_t write_factors_binary_file_dna_w_rc(const std::string& in_path, const std::string& out_path) {
+    // Set up binary output file with buffering
     std::ofstream os(out_path, std::ios::binary);
-    std::vector<char> buf(1<<20);
+    if (!os) {
+        throw std::runtime_error("Cannot create output file: " + out_path);
+    }
+    
+    std::vector<char> buf(1<<20); // 1 MB buffer for performance
     os.rdbuf()->pubsetbuf(buf.data(), static_cast<std::streamsize>(buf.size()));
+    
+    // Collect factors in memory to write header
+    std::vector<Factor> factors;
     size_t n = factorize_file_stream_dna_w_rc(in_path, [&](const Factor& f){
-        os.write(reinterpret_cast<const char*>(&f), sizeof(Factor));
+        factors.push_back(f);
     });
+    
+    // For single DNA sequence files, create minimal header
+    FactorFileHeader header;
+    header.num_factors = factors.size();
+    header.num_sequences = 1;  // Single DNA sequence
+    header.num_sentinels = 0;  // No sentinels for single sequence
+    header.header_size = sizeof(FactorFileHeader) + 1; // Empty sequence name
+    
+    // Write header
+    os.write(reinterpret_cast<const char*>(&header), sizeof(header));
+    
+    // Write empty sequence name (single null terminator)
+    os.write("\0", 1);
+    
+    // Write factors
+    for (const Factor& f : factors) {
+        os.write(reinterpret_cast<const char*>(&f), sizeof(Factor));
+    }
+    
     return n;
 }
 
@@ -955,12 +1068,36 @@ size_t count_factors_file_multiple_dna_w_rc(const std::string& path) {
  * @warning Ensure sufficient disk space for the output file
  */
 size_t write_factors_binary_file_multiple_dna_w_rc(const std::string& in_path, const std::string& out_path) {
+    // Set up binary output file with buffering
     std::ofstream os(out_path, std::ios::binary);
-    std::vector<char> buf(1<<20);
+    if (!os) {
+        throw std::runtime_error("Cannot create output file: " + out_path);
+    }
+    
+    std::vector<char> buf(1<<20); // 1 MB buffer for performance
     os.rdbuf()->pubsetbuf(buf.data(), static_cast<std::streamsize>(buf.size()));
+    
+    // Collect factors in memory to write header
+    std::vector<Factor> factors;
     size_t n = factorize_file_stream_multiple_dna_w_rc(in_path, [&](const Factor& f){
-        os.write(reinterpret_cast<const char*>(&f), sizeof(Factor));
+        factors.push_back(f);
     });
+    
+    // For multiple DNA sequences from text file, we don't know sequence names or sentinels
+    FactorFileHeader header;
+    header.num_factors = factors.size();
+    header.num_sequences = 0;  // Unknown for raw text files with multiple sequences
+    header.num_sentinels = 0;  // Cannot identify sentinels without preparation function
+    header.header_size = sizeof(FactorFileHeader);
+    
+    // Write header
+    os.write(reinterpret_cast<const char*>(&header), sizeof(header));
+    
+    // Write factors
+    for (const Factor& f : factors) {
+        os.write(reinterpret_cast<const char*>(&f), sizeof(Factor));
+    }
+    
     return n;
 }
 

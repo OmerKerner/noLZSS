@@ -123,14 +123,16 @@ def test_write_factors_binary_file():
         with open(out_path, 'rb') as f:
             binary_data = f.read()
         
-        # Each factor is 24 bytes (3 uint64_t)
-        actual_count = len(binary_data) // 24
+        # Binary file has 40-byte header + factors (24 bytes each)
+        header_size = 40
+        factor_data = binary_data[header_size:]
+        actual_count = len(factor_data) // 24
         assert actual_count == expected_count
         
-        # Parse binary data
+        # Parse binary data (skip header)
         binary_factors = []
         for i in range(actual_count):
-            start, length, ref = struct.unpack('<QQQ', binary_data[i*24:(i+1)*24])
+            start, length, ref = struct.unpack('<QQQ', factor_data[i*24:(i+1)*24])
             binary_factors.append((start, length, ref))
         
         assert binary_factors == factors_memory
@@ -139,7 +141,8 @@ def test_write_factors_binary_file():
         noLZSS.write_factors_binary_file(in_path, out_path)
         with open(out_path, 'rb') as f:
             binary_data2 = f.read()
-        actual_count2 = len(binary_data2) // 24
+        factor_data2 = binary_data2[header_size:]
+        actual_count2 = len(factor_data2) // 24
         assert actual_count2 == expected_count
         
     finally:
@@ -188,7 +191,7 @@ def test_consistency_across_functions():
                 # Verify binary file was created and has correct size
                 with open(bin_path, 'rb') as f:
                     binary_data = f.read()
-                expected_size = len(factors) * 24  # 24 bytes per factor
+                expected_size = 40 + len(factors) * 24  # 40-byte header + 24 bytes per factor
                 assert len(binary_data) == expected_size
             finally:
                 os.unlink(bin_path)
@@ -205,23 +208,25 @@ def test_prepare_multiple_dna_sequences_w_rc():
     result = cpp.prepare_multiple_dna_sequences_w_rc(sequences)
     
     assert isinstance(result, tuple)
-    assert len(result) == 2
-    concatenated, original_length = result
+    assert len(result) == 3
+    concatenated, original_length, sentinel_positions = result
     assert isinstance(concatenated, str)
     assert isinstance(original_length, int)
+    assert isinstance(sentinel_positions, list)
     
     # Should contain original sequences + sentinels + reverse complements + sentinels
     assert len(concatenated) > len("ATCGGCTA")  # At least original sequences
     assert original_length < len(concatenated)  # Original length should be less than total
+    assert len(sentinel_positions) > 0  # Should have sentinel positions
     
     # Test with single sequence
     single_result = cpp.prepare_multiple_dna_sequences_w_rc(["ATCG"])
     assert isinstance(single_result, tuple)
-    assert len(single_result) == 2
+    assert len(single_result) == 3
     
     # Test with mixed case (should be converted to uppercase)
     mixed_result = cpp.prepare_multiple_dna_sequences_w_rc(["atcg", "GCTA"])
-    mixed_concatenated, _ = mixed_result
+    mixed_concatenated, _, _ = mixed_result
     # Should not contain lowercase letters
     assert 'a' not in mixed_concatenated
     assert 'c' not in mixed_concatenated
@@ -234,7 +239,7 @@ def test_prepare_multiple_dna_sequences_w_rc_validation():
     
     # Test empty sequences list
     result = cpp.prepare_multiple_dna_sequences_w_rc([])
-    assert result == ("", 0)
+    assert result == ("", 0, [])
     
     # Test invalid nucleotides
     try:
@@ -267,14 +272,15 @@ def test_prepare_multiple_dna_sequences_no_rc():
     result = cpp.prepare_multiple_dna_sequences_no_rc(sequences)
     
     assert isinstance(result, tuple)
-    assert len(result) == 2
-    concatenated, total_length = result
+    assert len(result) == 3
+    concatenated, total_length, sentinel_positions = result
     assert isinstance(concatenated, str)
     assert isinstance(total_length, int)
+    assert isinstance(sentinel_positions, list)
     assert total_length == len(concatenated)  # Total length should equal string length
     
     # Should contain original sequences + sentinels (no reverse complements)
-    assert len(concatenated) == len("ATCG") + len("GCTA") + 2  # 2 sentinels
+    assert len(concatenated) == len("ATCG") + len("GCTA") + 1  # 1 sentinel between sequences
     assert concatenated.startswith("ATCG")
     assert "GCTA" in concatenated
     assert total_length == len(concatenated)
@@ -282,11 +288,11 @@ def test_prepare_multiple_dna_sequences_no_rc():
     # Test with single sequence
     single_result = cpp.prepare_multiple_dna_sequences_no_rc(["ATCG"])
     assert isinstance(single_result, tuple)
-    assert len(single_result) == 2
+    assert len(single_result) == 3
     
     # Test with mixed case (should be converted to uppercase)
     mixed_result = cpp.prepare_multiple_dna_sequences_no_rc(["atcg", "GCTA"])
-    mixed_concatenated, _ = mixed_result
+    mixed_concatenated, _, _ = mixed_result
     # Should not contain lowercase letters
     assert 'a' not in mixed_concatenated
     assert 'c' not in mixed_concatenated
@@ -299,7 +305,7 @@ def test_prepare_multiple_dna_sequences_no_rc_validation():
     
     # Test empty sequences list
     result = cpp.prepare_multiple_dna_sequences_no_rc([])
-    assert result == ("", 0)
+    assert result == ("", 0, [])
     
     # Test invalid nucleotides
     try:
@@ -329,7 +335,7 @@ def test_factorize_multiple_dna_w_rc():
     
     # Test basic functionality
     sequences = ["ATCG", "CGTA"]
-    prepared, _ = cpp.prepare_multiple_dna_sequences_w_rc(sequences)
+    prepared, _, _ = cpp.prepare_multiple_dna_sequences_w_rc(sequences)
     # Convert string to bytes for the factorization function
     prepared_bytes = prepared.encode('latin-1')
     factors = cpp.factorize_multiple_dna_w_rc(prepared_bytes)
@@ -354,7 +360,7 @@ def test_count_factors_multiple_dna_w_rc():
     
     # Test basic functionality
     sequences = ["ATCG", "CGTA"]
-    prepared, _ = cpp.prepare_multiple_dna_sequences_w_rc(sequences)
+    prepared, _, _ = cpp.prepare_multiple_dna_sequences_w_rc(sequences)
     prepared_bytes = prepared.encode('latin-1')
     
     # Get factors and count
@@ -366,7 +372,7 @@ def test_count_factors_multiple_dna_w_rc():
     
     # Test with single sequence
     single_seq = ["ATCG"]
-    single_prepared, _ = cpp.prepare_multiple_dna_sequences_w_rc(single_seq)
+    single_prepared, _, _ = cpp.prepare_multiple_dna_sequences_w_rc(single_seq)
     single_prepared_bytes = single_prepared.encode('latin-1')
     single_count = cpp.count_factors_multiple_dna_w_rc(single_prepared_bytes)
     assert single_count > 0
@@ -390,9 +396,14 @@ TTTTAAAA
     
     try:
         # Test factorization
-        factors = cpp.factorize_fasta_multiple_dna_w_rc(temp_path)
+        result = cpp.factorize_fasta_multiple_dna_w_rc(temp_path)
         
+        assert isinstance(result, tuple)
+        assert len(result) == 2
+        
+        factors, sentinel_indices = result
         assert isinstance(factors, list)
+        assert isinstance(sentinel_indices, list)
         assert len(factors) > 0
         
         # Each factor should be a tuple (start, length, ref, is_rc)
@@ -469,9 +480,14 @@ TTTTAAAA
     
     try:
         # Test factorization
-        factors = cpp.factorize_fasta_multiple_dna_no_rc(temp_path)
+        result = cpp.factorize_fasta_multiple_dna_no_rc(temp_path)
         
+        assert isinstance(result, tuple)
+        assert len(result) == 2
+        
+        factors, sentinel_indices = result
         assert isinstance(factors, list)
+        assert isinstance(sentinel_indices, list)
         assert len(factors) > 0
         
         # Each factor should be a tuple (start, length, ref, is_rc)
@@ -545,7 +561,7 @@ def test_dna_w_rc_functions_integration():
     
     # Test multiple DNA functions with single sequence
     sequences = [dna_text]
-    prepared, _ = cpp.prepare_multiple_dna_sequences_w_rc(sequences)
+    prepared, _, _ = cpp.prepare_multiple_dna_sequences_w_rc(sequences)
     prepared_bytes = prepared.encode('latin-1')
     multi_factors = cpp.factorize_multiple_dna_w_rc(prepared_bytes)
     multi_count = cpp.count_factors_multiple_dna_w_rc(prepared_bytes)
@@ -563,7 +579,7 @@ def test_reverse_complement_awareness():
     # Create sequences where reverse complement matches should occur
     # ATCG reverse complement is CGAT
     sequences = ["ATCG", "CGAT", "ATCG"]  # Third sequence should match first
-    prepared, _ = cpp.prepare_multiple_dna_sequences_w_rc(sequences)
+    prepared, _, _ = cpp.prepare_multiple_dna_sequences_w_rc(sequences)
     prepared_bytes = prepared.encode('latin-1')
     factors = cpp.factorize_multiple_dna_w_rc(prepared_bytes)
     
@@ -607,11 +623,11 @@ GCTAGCTA
         with open(binary_path, 'rb') as f:
             binary_data = f.read()
         
-        expected_size = num_factors * 24  # 24 bytes per factor (3 * 8 bytes)
+        expected_size = 40 + num_factors * 24  # 40-byte header + 24 bytes per factor (3 * 8 bytes)
         assert len(binary_data) == expected_size
         
         # Compare with regular factorization
-        factors = cpp.factorize_fasta_multiple_dna_w_rc(fasta_path)
+        factors, _ = cpp.factorize_fasta_multiple_dna_w_rc(fasta_path)
         assert len(factors) == num_factors
         
         # Verify factors are tuples with valid data
@@ -641,7 +657,7 @@ def test_comprehensive_dna_functionality():
     ]
     
     # Test preparation
-    prepared, original_length = cpp.prepare_multiple_dna_sequences_w_rc(sequences)
+    prepared, original_length, _ = cpp.prepare_multiple_dna_sequences_w_rc(sequences)
     assert isinstance(prepared, str)
     assert original_length > 0
     assert len(prepared) > original_length  # Should include RC parts
@@ -703,11 +719,13 @@ TTTTAAAA
         with open(binary_path, 'rb') as f:
             binary_data = f.read()
         
-        expected_size = num_factors * 24  # 24 bytes per factor (3 * 8 bytes)
+        # Read header size from the file (stored at offset 32-40)
+        header_size = int.from_bytes(binary_data[32:40], byteorder='little')
+        expected_size = header_size + num_factors * 24  # header + 24 bytes per factor
         assert len(binary_data) == expected_size
         
         # Compare with regular factorization
-        factors = cpp.factorize_fasta_multiple_dna_w_rc(fasta_path)
+        factors, _ = cpp.factorize_fasta_multiple_dna_w_rc(fasta_path)
         assert len(factors) == num_factors
         
         # Verify factors are tuples with valid data
@@ -756,11 +774,13 @@ TTTTAAAA
         with open(binary_path, 'rb') as f:
             binary_data = f.read()
         
-        expected_size = num_factors * 24  # 24 bytes per factor (3 * 8 bytes)
+        # Read header size from the file (stored at offset 32-40)
+        header_size = int.from_bytes(binary_data[32:40], byteorder='little')
+        expected_size = header_size + num_factors * 24  # header + 24 bytes per factor
         assert len(binary_data) == expected_size
         
         # Compare with regular factorization
-        factors = cpp.factorize_fasta_multiple_dna_no_rc(fasta_path)
+        factors, _ = cpp.factorize_fasta_multiple_dna_no_rc(fasta_path)
         assert len(factors) == num_factors
         
         # Verify factors are tuples with valid data
