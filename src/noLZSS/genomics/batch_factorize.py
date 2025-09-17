@@ -255,14 +255,14 @@ def factorize_single_file(input_path: Path, output_paths: Dict[str, Path],
     
     results = {}
     
-    for mode, output_path in output_paths.items():
+    # Define a helper function for factorizing a single mode
+    def factorize_mode(mode: str, output_path: Path) -> Tuple[str, bool]:
         try:
             # Check if output already exists and skip if requested
             if skip_existing and output_path.exists():
                 logger.info(f"Skipping {mode} factorization for {input_path.name} "
                            f"(output already exists: {output_path})")
-                results[mode] = True
-                continue
+                return mode, True
             
             logger.info(f"Starting {mode} factorization for {input_path.name}")
             
@@ -282,12 +282,10 @@ def factorize_single_file(input_path: Path, output_paths: Dict[str, Path],
             
             logger.info(f"Successfully completed {mode} factorization for {input_path.name} "
                        f"({factor_count} factors)")
-            results[mode] = True
+            return mode, True
             
         except Exception as e:
             logger.error(f"Failed {mode} factorization for {input_path.name}: {e}")
-            results[mode] = False
-            
             # Clean up partial output file
             if output_path.exists():
                 try:
@@ -295,6 +293,21 @@ def factorize_single_file(input_path: Path, output_paths: Dict[str, Path],
                     logger.debug(f"Cleaned up partial output file: {output_path}")
                 except OSError:
                     pass
+            return mode, False
+    
+    # Use ThreadPoolExecutor to parallelize mode processing
+    with ThreadPoolExecutor(max_workers=len(output_paths)) as executor:
+        futures = {executor.submit(factorize_mode, mode, output_path): mode 
+                  for mode, output_path in output_paths.items()}
+        
+        for future in as_completed(futures):
+            mode = futures[future]
+            try:
+                mode_name, success = future.result()
+                results[mode_name] = success
+            except Exception as e:
+                logger.error(f"Unexpected error in {mode} factorization: {e}")
+                results[mode] = False
     
     return results
 
@@ -386,7 +399,7 @@ def factorize_file_worker(job_info: Tuple[str, Path, Dict[str, Path], bool, str]
 
 def process_file_list(file_list: List[str], output_dir: Path, mode: str,
                      download_dir: Optional[Path] = None, skip_existing: bool = True,
-                     max_retries: int = 3, max_workers: int = None, 
+                     max_retries: int = 3, max_workers: Optional[int] = None, 
                      logger: Optional[logging.Logger] = None) -> Dict[str, Dict[str, bool]]:
     """
     Process a list of FASTA files (local or remote) with parallel download and factorization.
