@@ -805,6 +805,74 @@ Note:
     The function validates that all sequences contain only valid DNA nucleotides.
 )doc");
 
+    // Reference sequence factorization functions
+    m.def("factorize_w_reference_seq", [](const std::string& reference_seq, const std::string& target_seq) {
+        // Release GIL while doing heavy C++ work
+        py::gil_scoped_release release;
+        auto factors = noLZSS::factorize_w_reference_seq(reference_seq, target_seq);
+        py::gil_scoped_acquire acquire;
+
+        // Convert factors to Python tuples
+        py::list out;
+        for (auto &f : factors) {
+            out.append(py::make_tuple(f.start, f.length, f.ref & ~noLZSS::RC_MASK, noLZSS::is_rc(f.ref)));
+        }
+        return out;
+    }, py::arg("reference_seq"), py::arg("target_seq"), R"doc(Factorize target DNA sequence using a reference sequence with reverse complement awareness.
+
+Concatenates a reference sequence and target sequence, then performs noLZSS factorization
+with reverse complement awareness starting from where the target sequence begins. This allows
+the target sequence to reference patterns in the reference sequence without factorizing the
+reference itself.
+
+Args:
+    reference_seq: Reference DNA sequence string (A, C, T, G - case insensitive)
+    target_seq: Target DNA sequence string to be factorized (A, C, T, G - case insensitive)
+
+Returns:
+    List of (start, length, ref, is_rc) tuples representing the factorization of target sequence
+
+Raises:
+    ValueError: If sequences contain invalid nucleotides or are empty
+    RuntimeError: If too many sequences or other processing errors
+
+Note:
+    Factor start positions are relative to the beginning of the target sequence.
+    Both sequences are converted to uppercase before factorization.
+    Reverse complement matches are supported during factorization.
+    ref field has RC_MASK cleared. is_rc boolean indicates if this was a reverse complement match.
+)doc");
+
+    m.def("factorize_w_reference_seq_file", [](const std::string& reference_seq, const std::string& target_seq, const std::string& out_path) {
+        // Release GIL while doing heavy C++ work
+        py::gil_scoped_release release;
+        auto num_factors = noLZSS::factorize_w_reference_seq_file(reference_seq, target_seq, out_path);
+        py::gil_scoped_acquire acquire;
+        return num_factors;
+    }, py::arg("reference_seq"), py::arg("target_seq"), py::arg("out_path"), R"doc(Factorize target DNA sequence using a reference sequence and write factors to binary file.
+
+Concatenates a reference sequence and target sequence, then performs noLZSS factorization
+with reverse complement awareness starting from where the target sequence begins, and writes
+the resulting factors to a binary file.
+
+Args:
+    reference_seq: Reference DNA sequence string (A, C, T, G - case insensitive)
+    target_seq: Target DNA sequence string to be factorized (A, C, T, G - case insensitive)
+    out_path: Path to output file where binary factors will be written
+
+Returns:
+    Number of factors written to the output file
+
+Raises:
+    ValueError: If sequences contain invalid nucleotides or are empty
+    RuntimeError: If unable to create output file or other processing errors
+
+Note:
+    Factor start positions are relative to the beginning of the target sequence.
+    Binary format follows the same structure as other DNA factorization binary outputs.
+    This function overwrites the output file if it exists.
+)doc");
+
     // Version information
     m.attr("__version__") = std::to_string(noLZSS::VERSION_MAJOR) + "." + std::to_string(noLZSS::VERSION_MINOR) + "." + std::to_string(noLZSS::VERSION_PATCH);
 }
