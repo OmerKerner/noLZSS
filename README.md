@@ -77,6 +77,35 @@ result = noLZSS.genomics.process_nucleotide_fasta("large_genome.fasta")
 factors = noLZSS.factorize(result["sequence"])
 ```
 
+## Algorithm Details
+
+The library implements the **Non-overlapping Lempel-Ziv-Storer-Szymanski (LZSS)** factorization algorithm using:
+
+- **Compressed Suffix Trees**: Built using the SDSL (Succinct Data Structure Library)
+- **Range Minimum Queries**: For efficient lowest common ancestor computations
+- **Sink-based Processing**: Memory-efficient processing using callback functions
+
+## Performance
+
+- **Time Complexity**: 𝒪(𝑛 lg<sup>ϵ</sup> 𝑛) for factorization, where n is input length, and 𝜖 ∈ (0,1]
+- **Space Complexity**: 𝒪(𝑛lg𝜎) for suffix tree construction, where 𝜎 is the alphabet size
+- **Memory Usage**: File-based processing uses minimal memory for large files
+- **C++ Extensions**: Specialized high-performance functions for memory-intensive genomics operations
+
+### Performance Tips
+
+```python
+# For large files, use file-based functions
+factors = noLZSS.factorize_file("large_file.txt", reserve_hint=1000000)
+
+# For genomics, use C++ implementation for large FASTA files
+import noLZSS.genomics
+result = noLZSS.genomics.process_nucleotide_fasta("genome.fasta")  # Memory efficient
+
+# Use reserve_hint for better performance when you know factor count
+factors = noLZSS.factorize_file("data.txt", reserve_hint=50000)
+```
+
 ## Documentation
 
 Complete documentation is available at **[omerkerner.github.io/noLZSS](https://omerkerner.github.io/noLZSS/)**
