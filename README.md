@@ -92,20 +92,6 @@ The library implements the **Non-overlapping Lempel-Ziv-Storer-Szymanski (LZSS)*
 - **Memory Usage**: File-based processing uses minimal memory for large files
 - **C++ Extensions**: Specialized high-performance functions for memory-intensive genomics operations
 
-### Performance Tips
-
-```python
-# For large files, use file-based functions
-factors = noLZSS.factorize_file("large_file.txt", reserve_hint=1000000)
-
-# For genomics, use C++ implementation for large FASTA files
-import noLZSS.genomics
-result = noLZSS.genomics.process_nucleotide_fasta("genome.fasta")  # Memory efficient
-
-# Use reserve_hint for better performance when you know factor count
-factors = noLZSS.factorize_file("data.txt", reserve_hint=50000)
-```
-
 ## Documentation
 
 Complete documentation is available at **[omerkerner.github.io/noLZSS](https://omerkerner.github.io/noLZSS/)**
@@ -150,3 +136,4 @@ If you use this library in your research, please cite:
   year = {2024}
 }
 ```
+
