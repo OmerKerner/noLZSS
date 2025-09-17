@@ -774,4 +774,141 @@ Note:
 
     // Version information
     m.attr("__version__") = std::to_string(noLZSS::VERSION_MAJOR) + "." + std::to_string(noLZSS::VERSION_MINOR) + "." + std::to_string(noLZSS::VERSION_PATCH);
+
+    // Enhanced factorization functions with metadata
+    m.def("factorize_fasta_multiple_dna_w_rc_with_metadata", [](const std::string& fasta_path) {
+        // Release GIL while doing heavy C++ work
+        py::gil_scoped_release release;
+        auto result = noLZSS::factorize_fasta_multiple_dna_w_rc_with_metadata(fasta_path);
+        py::gil_scoped_acquire acquire;
+
+        // Convert to Python objects
+        py::list factors;
+        for (const auto& f : result.factors) {
+            factors.append(py::make_tuple(f.start, f.length, f.ref));
+        }
+
+        py::dict py_result;
+        py_result["factors"] = factors;
+        py_result["sentinel_factor_indices"] = result.sentinel_factor_indices;
+        py_result["sequence_ids"] = result.sequence_ids;
+        py_result["sequence_lengths"] = result.sequence_lengths;
+        py_result["sequence_positions"] = result.sequence_positions;
+        
+        return py_result;
+    }, py::arg("fasta_path"), R"doc(Factorize multiple DNA sequences with reverse complement awareness and return metadata.
+
+Enhanced factorization that returns both factors and metadata about sequences and sentinels.
+Useful for identifying which factors correspond to sentinels vs. actual sequence data.
+
+Args:
+    fasta_path: Path to the FASTA file containing DNA sequences
+
+Returns:
+    Dictionary containing:
+    - 'factors': List of (start_pos, length, reference) tuples  
+    - 'sentinel_factor_indices': List of factor indices that are sentinels
+    - 'sequence_ids': List of sequence identifiers from FASTA headers
+    - 'sequence_lengths': List of sequence lengths (excluding sentinels)
+    - 'sequence_positions': List of start positions in concatenated string
+
+Raises:
+    RuntimeError: If FASTA file cannot be opened or contains no valid sequences
+    ValueError: If too many sequences (>125) or invalid nucleotides found
+
+Note:
+    Only A, C, T, G nucleotides are allowed (case insensitive)
+    Reverse complement matches are supported during factorization
+    Sentinel factors have length 1 and correspond to sequence separators
+)doc");
+
+    m.def("factorize_fasta_multiple_dna_no_rc_with_metadata", [](const std::string& fasta_path) {
+        // Release GIL while doing heavy C++ work
+        py::gil_scoped_release release;
+        auto result = noLZSS::factorize_fasta_multiple_dna_no_rc_with_metadata(fasta_path);
+        py::gil_scoped_acquire acquire;
+
+        // Convert to Python objects
+        py::list factors;
+        for (const auto& f : result.factors) {
+            factors.append(py::make_tuple(f.start, f.length, f.ref));
+        }
+
+        py::dict py_result;
+        py_result["factors"] = factors;
+        py_result["sentinel_factor_indices"] = result.sentinel_factor_indices;
+        py_result["sequence_ids"] = result.sequence_ids;
+        py_result["sequence_lengths"] = result.sequence_lengths;
+        py_result["sequence_positions"] = result.sequence_positions;
+        
+        return py_result;
+    }, py::arg("fasta_path"), R"doc(Factorize multiple DNA sequences without reverse complement awareness and return metadata.
+
+Enhanced factorization that returns both factors and metadata about sequences and sentinels.
+Useful for identifying which factors correspond to sentinels vs. actual sequence data.
+
+Args:
+    fasta_path: Path to the FASTA file containing DNA sequences
+
+Returns:
+    Dictionary containing:
+    - 'factors': List of (start_pos, length, reference) tuples  
+    - 'sentinel_factor_indices': List of factor indices that are sentinels
+    - 'sequence_ids': List of sequence identifiers from FASTA headers
+    - 'sequence_lengths': List of sequence lengths (excluding sentinels)
+    - 'sequence_positions': List of start positions in concatenated string
+
+Raises:
+    RuntimeError: If FASTA file cannot be opened or contains no valid sequences
+    ValueError: If too many sequences (>250) or invalid nucleotides found
+
+Note:
+    Only A, C, T, G nucleotides are allowed (case insensitive)
+    Reverse complement matches are NOT supported during factorization
+    Sentinel factors have length 1 and correspond to sequence separators
+)doc");
+
+    m.def("write_factorization_result_binary", [](py::dict result_dict, const std::string& out_path) {
+        // Release GIL while doing heavy C++ work
+        py::gil_scoped_release release;
+        
+        // Convert Python dict to C++ FactorizationResult
+        noLZSS::FactorizationResult result;
+        
+        // Convert factors
+        py::list factors = result_dict["factors"];
+        for (auto factor : factors) {
+            py::tuple factor_tuple = factor.cast<py::tuple>();
+            noLZSS::Factor f;
+            f.start = factor_tuple[0].cast<uint64_t>();
+            f.length = factor_tuple[1].cast<uint64_t>();
+            f.ref = factor_tuple[2].cast<uint64_t>();
+            result.factors.push_back(f);
+        }
+        
+        // Convert metadata
+        result.sentinel_factor_indices = result_dict["sentinel_factor_indices"].cast<std::vector<uint64_t>>();
+        result.sequence_ids = result_dict["sequence_ids"].cast<std::vector<std::string>>();
+        result.sequence_lengths = result_dict["sequence_lengths"].cast<std::vector<size_t>>();
+        result.sequence_positions = result_dict["sequence_positions"].cast<std::vector<size_t>>();
+        
+        size_t count = noLZSS::write_factorization_result_binary(result, out_path);
+        py::gil_scoped_acquire acquire;
+        return count;
+    }, py::arg("result"), py::arg("out_path"), R"doc(Write factorization result with metadata to extended binary format.
+
+Writes factors along with sequence metadata (IDs, lengths, sentinel indices) to a binary file
+using the extended noLZSS format with header information.
+
+Args:
+    result: Dictionary containing factorization result with metadata (from *_with_metadata functions)
+    out_path: Path to output file where binary data will be written
+
+Returns:
+    Number of factors written to the output file
+
+Note:
+    Extended binary format includes header with metadata followed by factor data
+    This function overwrites the output file if it exists
+)doc");
 }
