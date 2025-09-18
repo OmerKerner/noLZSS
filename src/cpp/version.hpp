@@ -14,5 +14,5 @@ namespace noLZSS {
     /** Minor version number - incremented for new features */
     static constexpr int VERSION_MINOR = 2;
     /** Patch version number - incremented for bug fixes */
-    static constexpr int VERSION_PATCH = 0;
+    static constexpr int VERSION_PATCH = 1;
 }

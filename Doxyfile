@@ -1,7 +1,7 @@
 # Doxyfile for noLZSS C++ API documentation
 
 PROJECT_NAME           = "noLZSS"
-PROJECT_NUMBER         = "0.2.0"
+PROJECT_NUMBER         = "0.2.1"
 PROJECT_BRIEF          = "Non-overlapping Lempel-Ziv-Storer-Szymanski factorization"
 
 OUTPUT_DIRECTORY       = docs/_build/doxygen
