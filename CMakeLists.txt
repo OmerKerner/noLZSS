@@ -1,5 +1,13 @@
 cmake_minimum_required(VERSION 3.20)
-project(noLZSS LANGUAGES CXX)
+
+# Get version from scikit-build-core variable
+if(DEFINED SKBUILD_PROJECT_VERSION)
+    set(PROJECT_VER ${SKBUILD_PROJECT_VERSION})
+else()
+    set(PROJECT_VER 0.0.0)  # Fallback for manual builds
+endif()
+
+project(noLZSS VERSION ${PROJECT_VER} LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -72,6 +80,12 @@ pybind11_add_module(_noLZSS src/cpp/bindings.cpp)
 target_include_directories(_noLZSS PRIVATE src/cpp)
 add_dependencies(_noLZSS noLZSS_core)
 target_link_libraries(_noLZSS PRIVATE noLZSS_core)
+
+# Add version definition for C++ code
+target_compile_definitions(_noLZSS PRIVATE NOLZSS_VERSION="${PROJECT_VERSION}")
+
+# Configure Doxyfile from template to ensure version consistency
+configure_file(Doxyfile.in Doxyfile @ONLY)
 
 install(TARGETS _noLZSS
   LIBRARY DESTINATION noLZSS
