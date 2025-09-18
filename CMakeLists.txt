@@ -1,8 +1,8 @@
 cmake_minimum_required(VERSION 3.20)
 
-# Get version from scikit-build-core environment variable
-if(DEFINED ENV{SKBUILD_PROJECT_VERSION})
-    set(PROJECT_VER $ENV{SKBUILD_PROJECT_VERSION})
+# Get version from scikit-build-core variable
+if(DEFINED SKBUILD_PROJECT_VERSION)
+    set(PROJECT_VER ${SKBUILD_PROJECT_VERSION})
 else()
     set(PROJECT_VER 0.0.0)  # Fallback for manual builds
 endif()
