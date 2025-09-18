@@ -60,9 +60,18 @@ def test_version_fallback():
         
         # Check that version is still available via fallback
         assert hasattr(noLZSS, '__version__')
-        # In development mode without installed package, fallback is "0.0.0"
-        print(f"Fallback version: {noLZSS.__version__}")
-        assert noLZSS.__version__ == "0.0.0", f"Expected fallback version 0.0.0, got {noLZSS.__version__}"
+        
+        # Determine expected fallback version based on package installation
+        from importlib.metadata import version as pkg_version, PackageNotFoundError
+        try:
+            expected_version = pkg_version("noLZSS")
+            print(f"Fallback version: {noLZSS.__version__} (from package metadata)")
+            assert noLZSS.__version__ == expected_version, f"Expected fallback to package metadata version {expected_version}, got {noLZSS.__version__}"
+        except PackageNotFoundError:
+            # Package not installed, should fallback to "0.0.0"
+            print(f"Fallback version: {noLZSS.__version__} (package not installed)")
+            assert noLZSS.__version__ == "0.0.0", f"Expected fallback version 0.0.0, got {noLZSS.__version__}"
+        
         print("✓ Version fallback mechanism works")
         
     finally:
