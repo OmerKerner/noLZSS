@@ -137,6 +137,110 @@ def read_factors_binary_file(filepath: Union[str, Path]) -> List[Tuple[int, int,
     return factors
 
 
+def read_factors_binary_file_with_metadata(filepath: Union[str, Path]) -> Dict[str, Any]:
+    """
+    Read factors from an enhanced binary file with metadata (sequence names and sentinel indices).
+    
+    This function reads binary files written by write_factors_binary_file_fasta_multiple_dna_*
+    functions that contain metadata including sequence names and sentinel factor indices.
+    
+    Args:
+        filepath: Path to the binary factors file with metadata
+        
+    Returns:
+        Dictionary containing:
+        - 'factors': List of (start, length, ref, is_rc) tuples 
+        - 'sentinel_factor_indices': List of factor indices that are sentinels
+        - 'sequence_names': List of sequence names from FASTA headers
+        - 'num_sequences': Number of sequences
+        - 'num_sentinels': Number of sentinel factors
+        
+    Raises:
+        NoLZSSError: If file cannot be read or has invalid format
+    """
+    # RC_MASK is the MSB of uint64_t (defined in C++ as 1ULL << 63)
+    RC_MASK = 1 << 63
+    
+    filepath = Path(filepath)
+    if not filepath.exists():
+        raise NoLZSSError(f"File not found: {filepath}")
+    
+    try:
+        with open(filepath, 'rb') as f:
+            # Read header
+            header_data = f.read(48)  # FactorFileHeader is 8+8+8+8+8 = 40 bytes + padding
+            if len(header_data) < 40:
+                raise NoLZSSError("File too small to contain valid header")
+            
+            # Unpack header (magic is 8 chars, then 4 uint64_t)
+            magic = header_data[:8]
+            if magic != b'noLZSSv1':
+                raise NoLZSSError("Invalid file format: missing noLZSS magic header")
+            
+            num_factors, num_sequences, num_sentinels, header_size = struct.unpack('<QQQQ', header_data[8:40])
+            
+            # Seek to beginning of header to read the full header
+            f.seek(0)
+            full_header = f.read(header_size)
+            if len(full_header) != header_size:
+                raise NoLZSSError(f"Could not read full header: expected {header_size}, got {len(full_header)}")
+            
+            # Skip the basic header structure
+            offset = 40
+            
+            # Read sequence names
+            sequence_names = []
+            for i in range(num_sequences):
+                # Find null terminator
+                name_start = offset
+                while offset < len(full_header) and full_header[offset] != 0:
+                    offset += 1
+                if offset >= len(full_header):
+                    raise NoLZSSError("Invalid sequence name format")
+                
+                name = full_header[name_start:offset].decode('utf-8')
+                sequence_names.append(name)
+                offset += 1  # Skip null terminator
+            
+            # Read sentinel factor indices
+            sentinel_indices = []
+            for i in range(num_sentinels):
+                if offset + 8 > len(full_header):
+                    raise NoLZSSError("Insufficient data for sentinel indices")
+                
+                idx = struct.unpack('<Q', full_header[offset:offset+8])[0]
+                sentinel_indices.append(idx)
+                offset += 8
+            
+            # Read factors
+            factors = []
+            for i in range(num_factors):
+                factor_data = f.read(24)  # Each factor is 3 * uint64_t = 24 bytes
+                if len(factor_data) != 24:
+                    raise NoLZSSError(f"Insufficient data for factor {i}")
+                
+                start, length, ref = struct.unpack('<QQQ', factor_data)
+                
+                # Extract is_rc flag and clean ref
+                is_rc_flag = bool(ref & RC_MASK)
+                clean_ref = ref & ~RC_MASK
+                
+                factors.append((start, length, clean_ref, is_rc_flag))
+    
+    except IOError as e:
+        raise NoLZSSError(f"Error reading file {filepath}: {e}")
+    except struct.error as e:
+        raise NoLZSSError(f"Error unpacking binary data: {e}")
+    
+    return {
+        'factors': factors,
+        'sentinel_factor_indices': sentinel_indices,
+        'sequence_names': sequence_names,
+        'num_sequences': num_sequences,
+        'num_sentinels': num_sentinels
+    }
+
+
 def plot_factor_lengths(
     factors_or_file: Union[List[Tuple[int, int, int]], str, Path],
     save_path: Optional[Union[str, Path]] = None,

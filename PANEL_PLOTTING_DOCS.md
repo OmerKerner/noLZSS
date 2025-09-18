@@ -114,19 +114,6 @@ def plot_multiple_seq_self_lz_factor_plot_from_fasta(
 **Returns:**
 - Panel app if `return_panel=True`, otherwise `None`
 
-### Backward Compatibility
-
-The original Matplotlib function remains available:
-
-```python
-from noLZSS.genomics.plots import plot_multiple_seq_self_weizmann_factor_plot_from_fasta
-
-plot_multiple_seq_self_weizmann_factor_plot_from_fasta(
-    fasta_filepath="sequences.fasta",
-    show_plot=True
-)
-```
-
 ## Error Handling
 
 The function provides comprehensive error handling:

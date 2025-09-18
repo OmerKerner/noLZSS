@@ -179,24 +179,25 @@ def plot_single_seq_accum_factors_from_fasta(
 
 
 def plot_multiple_seq_self_lz_factor_plot_from_fasta(
-    fasta_filepath: Union[str, Path],
+    fasta_filepath: Union[str, Path] = None,
+    factors_filepath: Union[str, Path] = None,
     name: Optional[str] = None,
     save_path: Optional[Union[str, Path]] = None,
     show_plot: bool = True,
     return_panel: bool = False
 ) -> Optional["panel.viewable.Viewable"]:
     """
-    Create an interactive Datashader/Panel factor plot for multiple DNA sequences from a FASTA file.
+    Create an interactive Datashader/Panel factor plot for multiple DNA sequences from a FASTA file or binary factors file.
 
-    This function reads a FASTA file containing multiple DNA sequences, factorizes them
-    using the multiple DNA with reverse complement algorithm, and creates a high-performance
-    interactive plot using Datashader and Panel. The visualization can handle millions of
-    factors with level-of-detail (LOD) rendering and includes zoom/pan-aware decimation
-    with hover functionality.
+    This function reads factors either from a FASTA file (by factorizing multiple DNA sequences)
+    or from an enhanced binary factors file with metadata. It creates a high-performance
+    interactive plot using Datashader and Panel with level-of-detail rendering, zoom/pan-aware 
+    decimation, hover functionality, and sequence boundaries visualization.
 
     Args:
-        fasta_filepath: Path to the FASTA file containing DNA sequences
-        name: Optional name for the plot title (defaults to FASTA filename)
+        fasta_filepath: Path to the FASTA file containing DNA sequences (mutually exclusive with factors_filepath)
+        factors_filepath: Path to binary factors file with metadata (mutually exclusive with fasta_filepath)
+        name: Optional name for the plot title (defaults to input filename)
         save_path: Optional path to save the plot image (PNG export)
         show_plot: Whether to display/serve the plot
         return_panel: Whether to return the Panel app for embedding
@@ -205,9 +206,10 @@ def plot_multiple_seq_self_lz_factor_plot_from_fasta(
         Panel app if return_panel=True, otherwise None
 
     Raises:
-        PlotError: If plotting fails or FASTA file cannot be processed
-        FileNotFoundError: If FASTA file doesn't exist
+        PlotError: If plotting fails or input files cannot be processed
+        FileNotFoundError: If input file doesn't exist
         ImportError: If required dependencies are missing
+        ValueError: If both or neither input files are provided
     """
     # Check for required dependencies
     try:
@@ -233,24 +235,57 @@ def plot_multiple_seq_self_lz_factor_plot_from_fasta(
     pn.extension()
 
     from .._noLZSS import factorize_fasta_multiple_dna_w_rc
+    from ..utils import read_factors_binary_file_with_metadata
 
-    fasta_filepath = Path(fasta_filepath)
+    # Validate input arguments
+    if (fasta_filepath is None) == (factors_filepath is None):
+        raise ValueError("Exactly one of fasta_filepath or factors_filepath must be provided")
 
-    if not fasta_filepath.exists():
-        raise FileNotFoundError(f"FASTA file not found: {fasta_filepath}")
+    # Determine input type and file path
+    if fasta_filepath is not None:
+        input_filepath = Path(fasta_filepath)
+        input_type = "fasta"
+    else:
+        input_filepath = Path(factors_filepath)
+        input_type = "binary"
+
+    if not input_filepath.exists():
+        raise FileNotFoundError(f"Input file not found: {input_filepath}")
 
     # Determine plot title
     if name is None:
-        name = fasta_filepath.stem
+        name = input_filepath.stem
 
     try:
-        # Get factors from FASTA file
-        print(f"Reading and factorizing sequences from {fasta_filepath}...")
-        factors = factorize_fasta_multiple_dna_w_rc(str(fasta_filepath))
+        # Get factors and metadata based on input type
+        if input_type == "fasta":
+            print(f"Reading and factorizing sequences from {input_filepath}...")
+            factors, sentinel_factor_indices = factorize_fasta_multiple_dna_w_rc(str(input_filepath))
+            # For FASTA input, we need to get sequence names separately
+            sequence_names = []
+            # Parse FASTA headers to get sequence names  
+            try:
+                with open(input_filepath, 'r') as f:
+                    for line in f:
+                        if line.startswith('>'):
+                            # Extract sequence name from header
+                            name_part = line[1:].strip().split()[0]  # Remove '>' and take first word
+                            sequence_names.append(name_part)
+            except Exception as e:
+                print(f"Warning: Could not parse sequence names from FASTA: {e}")
+                sequence_names = [f"seq_{i}" for i in range(len(sentinel_factor_indices) + 1)]
+        else:
+            print(f"Reading factors from binary file {input_filepath}...")
+            metadata = read_factors_binary_file_with_metadata(input_filepath)
+            factors = metadata['factors']
+            sentinel_factor_indices = metadata['sentinel_factor_indices']
+            sequence_names = metadata['sequence_names']
 
-        print(f"Preparing interactive plot for {len(factors)} factors...")
+        print(f"Loaded {len(factors)} factors with {len(sentinel_factor_indices)} sentinels")
+        print(f"Sequence names: {sequence_names}")
+        
         if not factors:
-            raise PlotError("No factors found in FASTA file")
+            raise PlotError("No factors found in input file")
 
         # Build DataFrame with plot coordinates
         print("Building factor DataFrame...")
@@ -309,6 +344,42 @@ def plot_multiple_seq_self_lz_factor_plot_from_fasta(
         })
 
         print(f"DataFrame created with {len(df)} factors")
+
+        # Calculate sentinel positions for lines and labels
+        sentinel_positions = []
+        sequence_boundaries = []  # (start_pos, end_pos, sequence_name)
+        
+        if sentinel_factor_indices:
+            # Get positions of sentinel factors
+            for idx in sentinel_factor_indices:
+                if idx < len(factors):
+                    sentinel_start = factors[idx][0]  # start position of sentinel factor
+                    sentinel_positions.append(sentinel_start)
+            
+            # Calculate sequence boundaries
+            prev_pos = 0
+            for i, pos in enumerate(sentinel_positions):
+                seq_name = sequence_names[i] if i < len(sequence_names) else f"seq_{i}"
+                sequence_boundaries.append((prev_pos, pos, seq_name))
+                prev_pos = pos + 1  # Skip the sentinel itself
+            
+            # Add the last sequence
+            if len(sequence_names) > len(sentinel_positions):
+                last_name = sequence_names[len(sentinel_positions)]
+            else:
+                last_name = f"seq_{len(sentinel_positions)}"
+            
+            # Find the maximum position for the last sequence
+            max_pos = max(max(df['x1']), max(df['y1'])) if len(df) > 0 else prev_pos
+            sequence_boundaries.append((prev_pos, max_pos, last_name))
+        else:
+            # No sentinels - single sequence
+            seq_name = sequence_names[0] if sequence_names else "sequence"
+            max_pos = max(max(df['x1']), max(df['y1'])) if len(df) > 0 else 1000
+            sequence_boundaries.append((0, max_pos, seq_name))
+
+        print(f"Sequence boundaries: {sequence_boundaries}")
+        print(f"Sentinel positions: {sentinel_positions}")
 
         # Define color mapping
         def create_base_layers(df_filtered):
@@ -472,7 +543,61 @@ def plot_multiple_seq_self_lz_factor_plot_from_fasta(
                 alpha=0.5
             )
             
+            # Add sentinel lines and sequence labels
+            sentinel_elements = []
+            
+            for pos in sentinel_positions:
+                if min_val <= pos <= max_val:
+                    # Vertical line at sentinel position
+                    v_line = hv.VLine(pos).opts(
+                        line_color='red',
+                        line_width=2,
+                        alpha=0.7,
+                        line_dash='solid'
+                    )
+                    sentinel_elements.append(v_line)
+                    
+                    # Horizontal line at sentinel position  
+                    h_line = hv.HLine(pos).opts(
+                        line_color='red',
+                        line_width=2,
+                        alpha=0.7,
+                        line_dash='solid'
+                    )
+                    sentinel_elements.append(h_line)
+            
+            # Add sequence name labels
+            label_elements = []
+            for start_pos, end_pos, seq_name in sequence_boundaries:
+                mid_pos = (start_pos + end_pos) / 2
+                if min_val <= mid_pos <= max_val:
+                    # X-axis label (bottom)
+                    x_label = hv.Text(mid_pos, min_val - (max_val - min_val) * 0.05, seq_name).opts(
+                        text_color='blue',
+                        text_font_size='10pt',
+                        text_align='center'
+                    )
+                    label_elements.append(x_label)
+                    
+                    # Y-axis label (left side)  
+                    y_label = hv.Text(min_val - (max_val - min_val) * 0.05, mid_pos, seq_name).opts(
+                        text_color='blue', 
+                        text_font_size='10pt',
+                        text_align='center',
+                        angle=90
+                    )
+                    label_elements.append(y_label)
+            
+            # Combine all plot elements
             plot = base_plot * diagonal
+            
+            # Add sentinel lines
+            for element in sentinel_elements:
+                plot = plot * element
+                
+            # Add sequence labels
+            for element in label_elements:
+                plot = plot * element
             
             # Add hover overlay if requested
             if show_overlay:
@@ -488,9 +613,9 @@ def plot_multiple_seq_self_lz_factor_plot_from_fasta(
                 width=800,
                 height=800,
                 aspect='equal',
-                xlabel=f'Position in concatenated sequence ({name})',
-                ylabel=f'Reference position ({name})',
-                title=f'LZ Factor Plot - {name}',
+                xlabel=f'Position in concatenated sequence ({name}) - Sequences: {", ".join([b[2] for b in sequence_boundaries])}',
+                ylabel=f'Reference position ({name}) - Sequences: {", ".join([b[2] for b in sequence_boundaries])}',
+                title=f'LZ Factor Plot - {name} ({len(sequence_boundaries)} sequences)',
                 toolbar='above'
             )
             
@@ -563,164 +688,164 @@ def plot_multiple_seq_self_lz_factor_plot_from_fasta(
 
 # Keep old function for backward compatibility
 
-def plot_multiple_seq_self_weizmann_factor_plot_from_fasta(
-    fasta_filepath: Union[str, Path],
-    name: Optional[str] = None,
-    save_path: Optional[Union[str, Path]] = None,
-    show_plot: bool = True
-) -> None:
-    """
-    Create a Weizmann factor plot for multiple DNA sequences from a FASTA file.
+# def plot_multiple_seq_self_weizmann_factor_plot_from_fasta(
+#     fasta_filepath: Union[str, Path],
+#     name: Optional[str] = None,
+#     save_path: Optional[Union[str, Path]] = None,
+#     show_plot: bool = True
+# ) -> None:
+#     """
+#     Create a Weizmann factor plot for multiple DNA sequences from a FASTA file.
 
-    This function reads a FASTA file containing multiple DNA sequences, factorizes them
-    using the multiple DNA with reverse complement algorithm, and creates a specialized
-    plot where each factor is represented as a line. The plot shows the relationship
-    between factor positions and their reference positions.
+#     This function reads a FASTA file containing multiple DNA sequences, factorizes them
+#     using the multiple DNA with reverse complement algorithm, and creates a specialized
+#     plot where each factor is represented as a line. The plot shows the relationship
+#     between factor positions and their reference positions.
 
-    Args:
-        fasta_filepath: Path to the FASTA file containing DNA sequences
-        name: Optional name for the plot title (defaults to FASTA filename)
-        save_path: Optional path to save the plot image
-        show_plot: Whether to display the plot
+#     Args:
+#         fasta_filepath: Path to the FASTA file containing DNA sequences
+#         name: Optional name for the plot title (defaults to FASTA filename)
+#         save_path: Optional path to save the plot image
+#         show_plot: Whether to display the plot
 
-    Raises:
-        PlotError: If plotting fails or FASTA file cannot be processed
-        FileNotFoundError: If FASTA file doesn't exist
-    """
-    try:
-        import matplotlib.pyplot as plt
-        import matplotlib.colors as mcolors
-        import numpy as np
-    except ImportError:
-        warnings.warn("matplotlib is required for plotting. Install with: pip install matplotlib", UserWarning)
-        return
+#     Raises:
+#         PlotError: If plotting fails or FASTA file cannot be processed
+#         FileNotFoundError: If FASTA file doesn't exist
+#     """
+#     try:
+#         import matplotlib.pyplot as plt
+#         import matplotlib.colors as mcolors
+#         import numpy as np
+#     except ImportError:
+#         warnings.warn("matplotlib is required for plotting. Install with: pip install matplotlib", UserWarning)
+#         return
 
-    from .._noLZSS import factorize_fasta_multiple_dna_w_rc
+#     from .._noLZSS import factorize_fasta_multiple_dna_w_rc
 
-    fasta_filepath = Path(fasta_filepath)
+#     fasta_filepath = Path(fasta_filepath)
 
-    if not fasta_filepath.exists():
-        raise FileNotFoundError(f"FASTA file not found: {fasta_filepath}")
+#     if not fasta_filepath.exists():
+#         raise FileNotFoundError(f"FASTA file not found: {fasta_filepath}")
 
-    # Determine plot title
-    if name is None:
-        name = fasta_filepath.stem
+#     # Determine plot title
+#     if name is None:
+#         name = fasta_filepath.stem
 
-    try:
-        # Get factors from FASTA file
-        print(f"Reading and factorizing sequences from {fasta_filepath}...")
-        factors = factorize_fasta_multiple_dna_w_rc(str(fasta_filepath))
+#     try:
+#         # Get factors from FASTA file
+#         print(f"Reading and factorizing sequences from {fasta_filepath}...")
+#         factors = factorize_fasta_multiple_dna_w_rc(str(fasta_filepath))
 
-        print(f"Preparing plot for {len(factors)} factors...")
-        if not factors:
-            raise PlotError("No factors found in FASTA file")
+#         print(f"Preparing plot for {len(factors)} factors...")
+#         if not factors:
+#             raise PlotError("No factors found in FASTA file")
 
-        # Extract factor data
-        positions = []
-        lengths = []
-        refs = []
-        is_rcs = []
+#         # Extract factor data
+#         positions = []
+#         lengths = []
+#         refs = []
+#         is_rcs = []
 
-        for factor in factors:
-            if len(factor) == 4:  # (start, length, ref, is_rc) tuple
-                start, length, ref, is_rc = factor
-            else:  # Assume (start, length, ref) format, default is_rc to False
-                start, length, ref = factor
-                is_rc = False
+#         for factor in factors:
+#             if len(factor) == 4:  # (start, length, ref, is_rc) tuple
+#                 start, length, ref, is_rc = factor
+#             else:  # Assume (start, length, ref) format, default is_rc to False
+#                 start, length, ref = factor
+#                 is_rc = False
 
-            positions.append(start)
-            lengths.append(length)
-            refs.append(ref)
-            is_rcs.append(is_rc)
+#             positions.append(start)
+#             lengths.append(length)
+#             refs.append(ref)
+#             is_rcs.append(is_rc)
 
-        # Convert to numpy arrays for easier processing
-        positions = np.array(positions)
-        lengths = np.array(lengths)
-        refs = np.array(refs)
-        is_rcs = np.array(is_rcs)
+#         # Convert to numpy arrays for easier processing
+#         positions = np.array(positions)
+#         lengths = np.array(lengths)
+#         refs = np.array(refs)
+#         is_rcs = np.array(is_rcs)
 
-        # Create the plot
-        fig, ax = plt.subplots(figsize=(12, 12))
+#         # Create the plot
+#         fig, ax = plt.subplots(figsize=(12, 12))
 
-        # Calculate color intensities based on factor lengths
-        # Normalize lengths to [0, 1] for color scaling
-        if len(lengths) > 1:
-            # Use log scale for better visualization of length distribution
-            log_lengths = np.log(lengths + 1)  # +1 to avoid log(0)
-            norm_lengths = (log_lengths - log_lengths.min()) / (log_lengths.max() - log_lengths.min())
-        else:
-            norm_lengths = np.array([0.5])  # Default for single factor
+#         # Calculate color intensities based on factor lengths
+#         # Normalize lengths to [0, 1] for color scaling
+#         if len(lengths) > 1:
+#             # Use log scale for better visualization of length distribution
+#             log_lengths = np.log(lengths + 1)  # +1 to avoid log(0)
+#             norm_lengths = (log_lengths - log_lengths.min()) / (log_lengths.max() - log_lengths.min())
+#         else:
+#             norm_lengths = np.array([0.5])  # Default for single factor
 
-        # Additionally consider position to vary color intensity
-        if len(positions) > 1:
-            norm_positions = (positions - positions.min()) / (positions.max() - positions.min())
-        else:
-            norm_positions = np.array([0.5])  # Default for single factor
+#         # Additionally consider position to vary color intensity
+#         if len(positions) > 1:
+#             norm_positions = (positions - positions.min()) / (positions.max() - positions.min())
+#         else:
+#             norm_positions = np.array([0.5])  # Default for single factor
 
-        # Plot each factor as a line
-        for i, (pos, length, ref, is_rc, norm_len, norm_pos) in enumerate(zip(positions, lengths, refs, is_rcs, norm_lengths, norm_positions)):
-            if is_rc:
-                # Reverse complement: red line
-                # x_init = pos, x_final = pos + length
-                # y_init = ref + length, y_final = ref
-                x_coords = [pos, pos + length]
-                y_coords = [ref + length, ref]
+#         # Plot each factor as a line
+#         for i, (pos, length, ref, is_rc, norm_len, norm_pos) in enumerate(zip(positions, lengths, refs, is_rcs, norm_lengths, norm_positions)):
+#             if is_rc:
+#                 # Reverse complement: red line
+#                 # x_init = pos, x_final = pos + length
+#                 # y_init = ref + length, y_final = ref
+#                 x_coords = [pos, pos + length]
+#                 y_coords = [ref + length, ref]
 
-                # Red color with intensity based on length (more opaque for longer factors)
-                alpha = min((norm_len * 0.5 + norm_pos * 0.5), 1.0)  # Combine length and position for alpha
-                color = (1.0, 0.0, 0.0, alpha)  # Red with variable alpha
-            else:
-                # Forward: blue line
-                # x_init = pos, x_final = pos + length
-                # y_init = ref, y_final = ref + length
-                x_coords = [pos, pos + length]
-                y_coords = [ref, ref + length]
+#                 # Red color with intensity based on length (more opaque for longer factors)
+#                 alpha = min((norm_len * 0.5 + norm_pos * 0.5), 1.0)  # Combine length and position for alpha
+#                 color = (1.0, 0.0, 0.0, alpha)  # Red with variable alpha
+#             else:
+#                 # Forward: blue line
+#                 # x_init = pos, x_final = pos + length
+#                 # y_init = ref, y_final = ref + length
+#                 x_coords = [pos, pos + length]
+#                 y_coords = [ref, ref + length]
 
-                # Blue color with intensity based on length (more opaque for longer factors)
-                alpha = min((norm_len * 0.5 + norm_pos * 0.5), 1.0)  # Combine length and position for alpha
-                color = (0.0, 0.0, 1.0, alpha)  # Blue with variable alpha
+#                 # Blue color with intensity based on length (more opaque for longer factors)
+#                 alpha = min((norm_len * 0.5 + norm_pos * 0.5), 1.0)  # Combine length and position for alpha
+#                 color = (0.0, 0.0, 1.0, alpha)  # Blue with variable alpha
 
-            # Plot the line
-            ax.plot(x_coords, y_coords, color=color, linewidth=1.5, alpha=alpha)
+#             # Plot the line
+#             ax.plot(x_coords, y_coords, color=color, linewidth=1.5, alpha=alpha)
 
-        # Add diagonal line y=x for reference
-        max_val = max(positions.max() + lengths.max(), refs.max() + lengths.max())
-        ax.plot([0, max_val], [0, max_val], color='gray', linestyle='--', linewidth=1, alpha=0.5)
+#         # Add diagonal line y=x for reference
+#         max_val = max(positions.max() + lengths.max(), refs.max() + lengths.max())
+#         ax.plot([0, max_val], [0, max_val], color='gray', linestyle='--', linewidth=1, alpha=0.5)
 
-        # Set axis labels and title
-        ax.set_xlabel(f'Position in concatenated sequence ({name})')
-        ax.set_ylabel(f'Reference position ({name})')
-        ax.set_title(f'Weizmann Factor Plot - {name}')
+#         # Set axis labels and title
+#         ax.set_xlabel(f'Position in concatenated sequence ({name})')
+#         ax.set_ylabel(f'Reference position ({name})')
+#         ax.set_title(f'Weizmann Factor Plot - {name}')
 
-        # Make axes equal for better visualization
-        ax.set_aspect('equal', adjustable='box')
+#         # Make axes equal for better visualization
+#         ax.set_aspect('equal', adjustable='box')
 
-        # Add grid
-        ax.grid(True, alpha=0.3)
+#         # Add grid
+#         ax.grid(True, alpha=0.3)
 
-        # Add legend
-        from matplotlib.patches import Patch
-        legend_elements = [
-            Patch(facecolor='blue', alpha=0.8, label='Forward factors'),
-            Patch(facecolor='red', alpha=0.8, label='Reverse complement factors')
-        ]
-        ax.legend(handles=legend_elements, loc='upper right')
+#         # Add legend
+#         from matplotlib.patches import Patch
+#         legend_elements = [
+#             Patch(facecolor='blue', alpha=0.8, label='Forward factors'),
+#             Patch(facecolor='red', alpha=0.8, label='Reverse complement factors')
+#         ]
+#         ax.legend(handles=legend_elements, loc='upper right')
 
-        # Adjust layout
-        plt.tight_layout()
+#         # Adjust layout
+#         plt.tight_layout()
 
-        # Save plot if requested
-        if save_path:
-            save_path = Path(save_path)
-            save_path.parent.mkdir(parents=True, exist_ok=True)
-            plt.savefig(save_path, dpi=300, bbox_inches='tight')
-            print(f"Plot saved to {save_path}")
+#         # Save plot if requested
+#         if save_path:
+#             save_path = Path(save_path)
+#             save_path.parent.mkdir(parents=True, exist_ok=True)
+#             plt.savefig(save_path, dpi=300, bbox_inches='tight')
+#             print(f"Plot saved to {save_path}")
 
-        # Show plot
-        if show_plot:
-            plt.show()
-        else:
-            plt.close(fig)
+#         # Show plot
+#         if show_plot:
+#             plt.show()
+#         else:
+#             plt.close(fig)
 
-    except Exception as e:
-        raise PlotError(f"Failed to create Weizmann factor plot: {e}")
+#     except Exception as e:
+#         raise PlotError(f"Failed to create Weizmann factor plot: {e}")
