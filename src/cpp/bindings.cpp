@@ -22,7 +22,6 @@
 #include <stdexcept>
 #include "factorizer.hpp"
 #include "fasta_processor.hpp"
-#include "version.hpp"
 
 namespace py = pybind11;
 
@@ -874,5 +873,9 @@ Note:
 )doc");
 
     // Version information
-    m.attr("__version__") = std::to_string(noLZSS::VERSION_MAJOR) + "." + std::to_string(noLZSS::VERSION_MINOR) + "." + std::to_string(noLZSS::VERSION_PATCH);
+#ifdef NOLZSS_VERSION
+    m.attr("__version__") = NOLZSS_VERSION;
+#else
+    m.attr("__version__") = "0.0.0";
+#endif
 }
