@@ -399,12 +399,19 @@ TTTTAAAA
         result = cpp.factorize_fasta_multiple_dna_w_rc(temp_path)
         
         assert isinstance(result, tuple)
-        assert len(result) == 2
+        assert len(result) == 3
         
-        factors, sentinel_indices = result
+        factors, sentinel_indices, sequence_ids = result
         assert isinstance(factors, list)
         assert isinstance(sentinel_indices, list)
+        assert isinstance(sequence_ids, list)
         assert len(factors) > 0
+        assert len(sequence_ids) == 3  # Three sequences in the test FASTA
+        
+        # Check sequence IDs
+        assert sequence_ids[0] == "seq1"
+        assert sequence_ids[1] == "seq2"
+        assert sequence_ids[2] == "seq3"
         
         # Each factor should be a tuple (start, length, ref, is_rc)
         for factor in factors:
@@ -483,12 +490,19 @@ TTTTAAAA
         result = cpp.factorize_fasta_multiple_dna_no_rc(temp_path)
         
         assert isinstance(result, tuple)
-        assert len(result) == 2
+        assert len(result) == 3
         
-        factors, sentinel_indices = result
+        factors, sentinel_indices, sequence_ids = result
         assert isinstance(factors, list)
         assert isinstance(sentinel_indices, list)
+        assert isinstance(sequence_ids, list)
         assert len(factors) > 0
+        assert len(sequence_ids) == 3  # Three sequences in the test FASTA
+        
+        # Check sequence IDs
+        assert sequence_ids[0] == "seq1"
+        assert sequence_ids[1] == "seq2"
+        assert sequence_ids[2] == "seq3"
         
         # Each factor should be a tuple (start, length, ref, is_rc)
         for factor in factors:
@@ -627,7 +641,7 @@ GCTAGCTA
         assert len(binary_data) == expected_size
         
         # Compare with regular factorization
-        factors, _ = cpp.factorize_fasta_multiple_dna_w_rc(fasta_path)
+        factors, _, _ = cpp.factorize_fasta_multiple_dna_w_rc(fasta_path)
         assert len(factors) == num_factors
         
         # Verify factors are tuples with valid data
@@ -725,7 +739,7 @@ TTTTAAAA
         assert len(binary_data) == expected_size
         
         # Compare with regular factorization
-        factors, _ = cpp.factorize_fasta_multiple_dna_w_rc(fasta_path)
+        factors, _, _ = cpp.factorize_fasta_multiple_dna_w_rc(fasta_path)
         assert len(factors) == num_factors
         
         # Verify factors are tuples with valid data
@@ -780,7 +794,7 @@ TTTTAAAA
         assert len(binary_data) == expected_size
         
         # Compare with regular factorization
-        factors, _ = cpp.factorize_fasta_multiple_dna_no_rc(fasta_path)
+        factors, _, _ = cpp.factorize_fasta_multiple_dna_no_rc(fasta_path)
         assert len(factors) == num_factors
         
         # Verify factors are tuples with valid data

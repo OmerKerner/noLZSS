@@ -260,20 +260,7 @@ def plot_multiple_seq_self_lz_factor_plot_from_fasta(
         # Get factors and metadata based on input type
         if input_type == "fasta":
             print(f"Reading and factorizing sequences from {input_filepath}...")
-            factors, sentinel_factor_indices = factorize_fasta_multiple_dna_w_rc(str(input_filepath))
-            # For FASTA input, we need to get sequence names separately
-            sequence_names = []
-            # Parse FASTA headers to get sequence names  
-            try:
-                with open(input_filepath, 'r') as f:
-                    for line in f:
-                        if line.startswith('>'):
-                            # Extract sequence name from header
-                            name_part = line[1:].strip().split()[0]  # Remove '>' and take first word
-                            sequence_names.append(name_part)
-            except Exception as e:
-                print(f"Warning: Could not parse sequence names from FASTA: {e}")
-                sequence_names = [f"seq_{i}" for i in range(len(sentinel_factor_indices) + 1)]
+            factors, sentinel_factor_indices, sequence_names = factorize_fasta_multiple_dna_w_rc(str(input_filepath))
         else:
             print(f"Reading factors from binary file {input_filepath}...")
             metadata = read_factors_binary_file_with_metadata(input_filepath)

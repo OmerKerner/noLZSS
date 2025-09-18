@@ -32,6 +32,7 @@ struct FastaParseResult {
 struct FastaFactorizationResult {
     std::vector<Factor> factors;                    /**< Factorization result */
     std::vector<uint64_t> sentinel_factor_indices; /**< Indices of factors that are sentinels */
+    std::vector<std::string> sequence_ids;          /**< Sequence identifiers from FASTA headers */
 };
 
 /**

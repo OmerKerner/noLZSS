@@ -597,7 +597,13 @@ m.def("factorize_fasta_multiple_dna_w_rc", [](const std::string& fasta_path) {
         sentinel_indices_list.append(idx);
     }
     
-    return py::make_tuple(factors_list, sentinel_indices_list);
+    // Convert sequence IDs to Python list
+    py::list sequence_ids_list;
+    for (const auto& seq_id : result.sequence_ids) {
+        sequence_ids_list.append(seq_id);
+    }
+    
+    return py::make_tuple(factors_list, sentinel_indices_list, sequence_ids_list);
 }, py::arg("fasta_path"), R"doc(Factorize multiple DNA sequences from a FASTA file with reverse complement awareness.
 
 Reads a FASTA file containing DNA sequences, parses them into individual sequences,
@@ -608,9 +614,10 @@ Args:
 fasta_path: Path to the FASTA file containing DNA sequences
 
 Returns:
-Tuple of (factors, sentinel_factor_indices) where:
+Tuple of (factors, sentinel_factor_indices, sequence_ids) where:
 - factors: List of (start, length, ref, is_rc) tuples representing the factorization
 - sentinel_factor_indices: List of factor indices that represent sequence separators
+- sequence_ids: List of sequence identifiers from FASTA headers
 
 Raises:
 RuntimeError: If FASTA file cannot be opened or contains no valid sequences
@@ -643,7 +650,13 @@ m.def("factorize_fasta_multiple_dna_no_rc", [](const std::string& fasta_path) {
         sentinel_indices_list.append(idx);
     }
     
-    return py::make_tuple(factors_list, sentinel_indices_list);
+    // Convert sequence IDs to Python list
+    py::list sequence_ids_list;
+    for (const auto& seq_id : result.sequence_ids) {
+        sequence_ids_list.append(seq_id);
+    }
+    
+    return py::make_tuple(factors_list, sentinel_indices_list, sequence_ids_list);
 }, py::arg("fasta_path"), R"doc(Factorize multiple DNA sequences from a FASTA file without reverse complement awareness.
 
 Reads a FASTA file containing DNA sequences, parses them into individual sequences,
@@ -654,9 +667,10 @@ Args:
 fasta_path: Path to the FASTA file containing DNA sequences
 
 Returns:
-Tuple of (factors, sentinel_factor_indices) where:
+Tuple of (factors, sentinel_factor_indices, sequence_ids) where:
 - factors: List of (start, length, ref, is_rc) tuples representing the factorization
 - sentinel_factor_indices: List of factor indices that represent sequence separators
+- sequence_ids: List of sequence identifiers from FASTA headers
 
 Raises:
 RuntimeError: If FASTA file cannot be opened or contains no valid sequences

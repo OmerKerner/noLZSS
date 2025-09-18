@@ -77,11 +77,6 @@ static FastaParseResult parse_fasta_sequences_and_ids(const std::string& fasta_p
 }
 
 // Legacy helper function to maintain compatibility with existing code
-static std::vector<std::string> parse_fasta_sequences(const std::string& fasta_path) {
-    FastaParseResult result = parse_fasta_sequences_and_ids(fasta_path);
-    return result.sequences;
-}
-
 // Helper function to identify sentinel factors from factorization results
 static std::vector<uint64_t> identify_sentinel_factors(const std::vector<Factor>& factors, 
                                                       const std::vector<size_t>& sentinel_positions) {
@@ -362,11 +357,11 @@ FastaProcessResult process_amino_acid_fasta(const std::string& fasta_path) {
  * performs noLZSS factorization with reverse complement awareness.
  */
 FastaFactorizationResult factorize_fasta_multiple_dna_w_rc(const std::string& fasta_path) {
-    // Parse FASTA file into individual sequences
-    std::vector<std::string> sequences = parse_fasta_sequences(fasta_path);
+    // Parse FASTA file into individual sequences with IDs
+    FastaParseResult parse_result = parse_fasta_sequences_and_ids(fasta_path);
 
     // Prepare sequences for factorization (this will validate nucleotides)
-    PreparedSequenceResult prep_result = prepare_multiple_dna_sequences_w_rc(sequences);
+    PreparedSequenceResult prep_result = prepare_multiple_dna_sequences_w_rc(parse_result.sequences);
     
     // Perform factorization
     std::vector<Factor> factors = factorize_multiple_dna_w_rc(prep_result.prepared_string);
@@ -374,7 +369,7 @@ FastaFactorizationResult factorize_fasta_multiple_dna_w_rc(const std::string& fa
     // Identify sentinel factors using helper function
     std::vector<uint64_t> sentinel_factor_indices = identify_sentinel_factors(factors, prep_result.sentinel_positions);
     
-    return {factors, sentinel_factor_indices};
+    return {factors, sentinel_factor_indices, parse_result.sequence_ids};
 }
 
 /**
@@ -385,11 +380,11 @@ FastaFactorizationResult factorize_fasta_multiple_dna_w_rc(const std::string& fa
  * performs noLZSS factorization without reverse complement awareness.
  */
 FastaFactorizationResult factorize_fasta_multiple_dna_no_rc(const std::string& fasta_path) {
-    // Parse FASTA file into individual sequences
-    std::vector<std::string> sequences = parse_fasta_sequences(fasta_path);
+    // Parse FASTA file into individual sequences with IDs
+    FastaParseResult parse_result = parse_fasta_sequences_and_ids(fasta_path);
 
     // Prepare sequences for factorization (this will validate nucleotides)
-    PreparedSequenceResult prep_result = prepare_multiple_dna_sequences_no_rc(sequences);
+    PreparedSequenceResult prep_result = prepare_multiple_dna_sequences_no_rc(parse_result.sequences);
     
     // Perform factorization using regular factorize function
     std::vector<Factor> factors = factorize(prep_result.prepared_string);
@@ -397,7 +392,7 @@ FastaFactorizationResult factorize_fasta_multiple_dna_no_rc(const std::string& f
     // Identify sentinel factors using helper function
     std::vector<uint64_t> sentinel_factor_indices = identify_sentinel_factors(factors, prep_result.sentinel_positions);
     
-    return {factors, sentinel_factor_indices};
+    return {factors, sentinel_factor_indices, parse_result.sequence_ids};
 }
 
 /**
