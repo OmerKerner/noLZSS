@@ -409,7 +409,7 @@ size_t factorize_file_stream_multiple_dna_w_rc(const std::string& path, Sink&& s
  * @param target_seq Target DNA sequence string to be factorized
  * @return Vector of Factor objects representing the factorization of the target sequence
  *
- * @note Factors start positions are relative to the beginning of the target sequence (not the combined string)
+ * @note Factors start positions are absolute positions in the combined reference+target string
  * @note Both sequences should contain only A, C, T, G nucleotides (case insensitive)
  * @note Reverse complement matches are encoded with RC_MASK in the ref field
  * @throws std::invalid_argument If sequences contain invalid nucleotides
@@ -428,7 +428,7 @@ std::vector<Factor> factorize_w_reference_seq(const std::string& reference_seq, 
  * @param out_path Path to output file where binary factors will be written
  * @return Number of factors written to the output file
  *
- * @note Factors start positions are relative to the beginning of the target sequence
+ * @note Factors start positions are absolute positions in the combined reference+target string
  * @note Both sequences should contain only A, C, T, G nucleotides (case insensitive)
  * @note Binary format follows the same structure as other DNA factorization binary outputs
  * @throws std::invalid_argument If sequences contain invalid nucleotides

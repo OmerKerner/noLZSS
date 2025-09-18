@@ -1123,10 +1123,7 @@ std::vector<Factor> factorize_w_reference_seq(const std::string& reference_seq, 
     // Perform factorization starting from target sequence
     std::vector<Factor> factors;
     nolzss_multiple_dna_w_rc(prep_result.prepared_string, [&](const Factor& f) {
-        // Adjust factor start position to be relative to target sequence start
-        Factor adjusted_factor = f;
-        adjusted_factor.start = f.start - target_start_pos;
-        factors.push_back(adjusted_factor);
+        factors.push_back(f);
     }, target_start_pos);
     
     return factors;
