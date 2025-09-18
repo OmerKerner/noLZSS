@@ -438,17 +438,24 @@ static size_t nolzss_dna_w_rc(const std::string& T, Sink&& sink) {
  * @tparam Sink Callable type that accepts Factor objects (e.g., lambda, function)
  * @param S Input concatenated DNA text string with sentinels and reverse complements
  * @param sink Callable that receives each computed factor
+ * @param start_pos Starting position for factorization (default: 0)
  * @return Number of factors emitted
  *
  * @note This is the core algorithm for multiple DNA sequences factorization that all multiple DNA public functions use
  * @note The sink pattern allows for memory-efficient processing
  * @note All factors are emitted, including the last one
  * @note Reverse complement matches are encoded with the RC_MASK in the ref field
+ * @note start_pos allows factorization to begin from a specific position, useful for reference+target factorization
  */
 template<class Sink>
-static size_t nolzss_multiple_dna_w_rc(const std::string& S, Sink&& sink) {
+static size_t nolzss_multiple_dna_w_rc(const std::string& S, Sink&& sink, size_t start_pos = 0) {
     const size_t N = (S.size() / 2) - 1;
     if (N == 0) return 0;
+    
+    // Validate start_pos
+    if (start_pos >= N) {
+        throw std::invalid_argument("start_pos must be less than the original sequence length");
+    }
 
     // Build CST over S
     cst_t cst; construct_im(cst, S, 1);
@@ -478,10 +485,10 @@ static size_t nolzss_multiple_dna_w_rc(const std::string& S, Sink&& sink) {
     sdsl::rmq_succinct_sct<> rmqF(&fwd_starts);
     sdsl::rmq_succinct_sct<> rmqRcEnd(&rc_ends);
 
-    // Initialize to the leaf of suffix starting at S position 0 (i.e., T[0])
-    auto lambda = cst.select_leaf(cst.csa.isa[0] + 1);
+    // Initialize to the leaf of suffix starting at S position start_pos (i.e., T[start_pos])
+    auto lambda = cst.select_leaf(cst.csa.isa[start_pos] + 1);
     size_t lambda_node_depth = cst.node_depth(lambda);
-    size_t i = cst.sn(lambda); // suffix start in S, begins at 0
+    size_t i = cst.sn(lambda); // suffix start in S, begins at start_pos
 
     size_t factors = 0;
 
@@ -1099,6 +1106,61 @@ size_t write_factors_binary_file_multiple_dna_w_rc(const std::string& in_path, c
     }
     
     return n;
+}
+
+// Reference sequence factorization functions
+
+std::vector<Factor> factorize_w_reference_seq(const std::string& reference_seq, const std::string& target_seq) {
+    // Prepare reference and target sequences together
+    std::vector<std::string> sequences = {reference_seq, target_seq};
+    PreparedSequenceResult prep_result = prepare_multiple_dna_sequences_w_rc(sequences);
+    
+    // Calculate the starting position of the target sequence in the prepared string
+    // The format is: REF[sentinel]TARGET[sentinel]RC(TARGET)[sentinel]RC(REF)[sentinel]
+    // We want to start factorization from where TARGET begins
+    size_t target_start_pos = reference_seq.length() + 1; // +1 for the sentinel between ref and target
+    
+    // Perform factorization starting from target sequence
+    std::vector<Factor> factors;
+    nolzss_multiple_dna_w_rc(prep_result.prepared_string, [&](const Factor& f) {
+        // Adjust factor start position to be relative to target sequence start
+        Factor adjusted_factor = f;
+        adjusted_factor.start = f.start - target_start_pos;
+        factors.push_back(adjusted_factor);
+    }, target_start_pos);
+    
+    return factors;
+}
+
+size_t factorize_w_reference_seq_file(const std::string& reference_seq, const std::string& target_seq, const std::string& out_path) {
+    // Set up binary output file with buffering
+    std::ofstream os(out_path, std::ios::binary);
+    if (!os) {
+        throw std::runtime_error("Cannot create output file: " + out_path);
+    }
+    
+    std::vector<char> buf(1<<20); // 1 MB buffer for performance
+    os.rdbuf()->pubsetbuf(buf.data(), static_cast<std::streamsize>(buf.size()));
+    
+    // Get factors using the in-memory function
+    std::vector<Factor> factors = factorize_w_reference_seq(reference_seq, target_seq);
+    
+    // Create header for reference+target factorization
+    FactorFileHeader header;
+    header.num_factors = factors.size();
+    header.num_sequences = 2;  // Reference + target sequences
+    header.num_sentinels = 1;  // One sentinel between ref and target (in factorized region)
+    header.header_size = sizeof(FactorFileHeader);
+    
+    // Write header
+    os.write(reinterpret_cast<const char*>(&header), sizeof(header));
+    
+    // Write factors
+    for (const Factor& f : factors) {
+        os.write(reinterpret_cast<const char*>(&f), sizeof(Factor));
+    }
+    
+    return factors.size();
 }
 
 } // namespace noLZSS

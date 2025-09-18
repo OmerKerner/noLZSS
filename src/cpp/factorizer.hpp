@@ -395,5 +395,46 @@ size_t factorize_stream_multiple_dna_w_rc(std::string_view text, Sink&& sink);
 template<class Sink>
 size_t factorize_file_stream_multiple_dna_w_rc(const std::string& path, Sink&& sink);
 
+// Reference sequence factorization functions
+
+/**
+ * @brief Factorizes a target DNA sequence with reverse complement awareness using a reference sequence.
+ *
+ * Concatenates a reference sequence and target sequence (ref@target), then performs
+ * noLZSS factorization with reverse complement awareness starting from where the target
+ * sequence begins. This allows the target sequence to reference patterns in the reference
+ * sequence without factorizing the reference itself.
+ *
+ * @param reference_seq Reference DNA sequence string
+ * @param target_seq Target DNA sequence string to be factorized
+ * @return Vector of Factor objects representing the factorization of the target sequence
+ *
+ * @note Factors start positions are relative to the beginning of the target sequence (not the combined string)
+ * @note Both sequences should contain only A, C, T, G nucleotides (case insensitive)
+ * @note Reverse complement matches are encoded with RC_MASK in the ref field
+ * @throws std::invalid_argument If sequences contain invalid nucleotides
+ */
+std::vector<Factor> factorize_w_reference_seq(const std::string& reference_seq, const std::string& target_seq);
+
+/**
+ * @brief Factorizes a target DNA sequence using a reference sequence and writes factors to a binary file.
+ *
+ * Concatenates a reference sequence and target sequence (ref@target), then performs
+ * noLZSS factorization with reverse complement awareness starting from where the target
+ * sequence begins, and writes the resulting factors to a binary file.
+ *
+ * @param reference_seq Reference DNA sequence string
+ * @param target_seq Target DNA sequence string to be factorized
+ * @param out_path Path to output file where binary factors will be written
+ * @return Number of factors written to the output file
+ *
+ * @note Factors start positions are relative to the beginning of the target sequence
+ * @note Both sequences should contain only A, C, T, G nucleotides (case insensitive)
+ * @note Binary format follows the same structure as other DNA factorization binary outputs
+ * @throws std::invalid_argument If sequences contain invalid nucleotides
+ * @warning This function overwrites the output file if it exists
+ */
+size_t factorize_w_reference_seq_file(const std::string& reference_seq, const std::string& target_seq, const std::string& out_path);
+
 
 } // namespace noLZSS

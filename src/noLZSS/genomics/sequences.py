@@ -115,3 +115,107 @@ def detect_sequence_type(data: Union[str, bytes]) -> str:
         return 'protein'
     else:
         return 'text'
+
+
+def factorize_w_reference_seq(reference_seq: Union[str, bytes], target_seq: Union[str, bytes], validate: bool = True):
+    """
+    Factorize target DNA sequence using a reference sequence with reverse complement awareness.
+    
+    Concatenates a reference sequence and target sequence, then performs noLZSS factorization
+    with reverse complement awareness starting from where the target sequence begins. This allows
+    the target sequence to reference patterns in the reference sequence without factorizing the
+    reference itself.
+    
+    Args:
+        reference_seq: Reference DNA sequence (A, C, T, G - case insensitive)
+        target_seq: Target DNA sequence to be factorized (A, C, T, G - case insensitive)
+        validate: Whether to perform input validation (default: True)
+        
+    Returns:
+        List of (start, length, ref, is_rc) tuples representing the factorization of target sequence
+        
+    Raises:
+        ValueError: If sequences contain invalid nucleotides or are empty
+        TypeError: If input types are not supported
+        RuntimeError: If processing errors occur
+        
+    Note:
+        Factor start positions are relative to the beginning of the target sequence.
+        Both sequences are converted to uppercase before factorization.
+        ref field has RC_MASK cleared. is_rc boolean indicates reverse complement matches.
+    """
+    from .._noLZSS import factorize_w_reference_seq as _factorize_w_reference_seq
+    from ..utils import validate_input
+    
+    if validate:
+        reference_seq = validate_input(reference_seq)
+        target_seq = validate_input(target_seq)
+        
+        # Additional validation for DNA sequences
+        if not is_dna_sequence(reference_seq):
+            raise ValueError("Reference sequence must contain only DNA nucleotides (A, C, T, G)")
+        if not is_dna_sequence(target_seq):
+            raise ValueError("Target sequence must contain only DNA nucleotides (A, C, T, G)")
+    
+    # Convert to strings if they're bytes
+    if isinstance(reference_seq, bytes):
+        reference_seq = reference_seq.decode('ascii')
+    if isinstance(target_seq, bytes):
+        target_seq = target_seq.decode('ascii')
+    
+    return _factorize_w_reference_seq(reference_seq, target_seq)
+
+
+def factorize_w_reference_seq_file(reference_seq: Union[str, bytes], target_seq: Union[str, bytes], 
+                                   output_path: Union[str, 'Path'], validate: bool = True) -> int:
+    """
+    Factorize target DNA sequence using a reference sequence and write factors to binary file.
+    
+    Concatenates a reference sequence and target sequence, then performs noLZSS factorization
+    with reverse complement awareness starting from where the target sequence begins, and writes
+    the resulting factors to a binary file.
+    
+    Args:
+        reference_seq: Reference DNA sequence (A, C, T, G - case insensitive)
+        target_seq: Target DNA sequence to be factorized (A, C, T, G - case insensitive)
+        output_path: Path to output file where binary factors will be written
+        validate: Whether to perform input validation (default: True)
+        
+    Returns:
+        Number of factors written to the output file
+        
+    Raises:
+        ValueError: If sequences contain invalid nucleotides or are empty
+        TypeError: If input types are not supported
+        RuntimeError: If unable to create output file or processing errors occur
+        
+    Note:
+        Factor start positions are relative to the beginning of the target sequence.
+        Binary format follows the same structure as other DNA factorization binary outputs.
+        This function overwrites the output file if it exists.
+    """
+    from .._noLZSS import factorize_w_reference_seq_file as _factorize_w_reference_seq_file
+    from ..utils import validate_input
+    from pathlib import Path
+    
+    if validate:
+        reference_seq = validate_input(reference_seq)
+        target_seq = validate_input(target_seq)
+        
+        # Additional validation for DNA sequences
+        if not is_dna_sequence(reference_seq):
+            raise ValueError("Reference sequence must contain only DNA nucleotides (A, C, T, G)")
+        if not is_dna_sequence(target_seq):
+            raise ValueError("Target sequence must contain only DNA nucleotides (A, C, T, G)")
+    
+    # Convert to strings if they're bytes
+    if isinstance(reference_seq, bytes):
+        reference_seq = reference_seq.decode('ascii')
+    if isinstance(target_seq, bytes):
+        target_seq = target_seq.decode('ascii')
+    
+    # Ensure output directory exists
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    
+    return _factorize_w_reference_seq_file(reference_seq, target_seq, str(output_path))
