@@ -8,6 +8,7 @@ from FASTA files and their factorizations.
 from typing import Union, Optional, Dict, Any
 from pathlib import Path
 import warnings
+import argparse
 
 from ..utils import NoLZSSError
 from .fasta import _parse_fasta_content
@@ -19,27 +20,28 @@ class PlotError(NoLZSSError):
     pass
 
 
-def plot_single_seq_accum_factors_from_fasta(
-    fasta_filepath: Union[str, Path],
-    output_dir: Union[str, Path],
+def plot_single_seq_accum_factors_from_file(
+    fasta_filepath: Optional[Union[str, Path]] = None,
+    factors_filepath: Optional[Union[str, Path]] = None,
+    output_dir: Optional[Union[str, Path]] = None,
     max_sequences: Optional[int] = None,
     save_factors_text: bool = True,
     save_factors_binary: bool = False
 ) -> Dict[str, Dict[str, Any]]:
     """
-    Process a FASTA file, factorize all sequences, create plots, and save results.
+    Process a FASTA file or binary factors file, factorize sequences (if needed), create plots, and save results.
 
-    For each sequence in the FASTA file:
-    - Factorizes the sequence
-    - Saves factor data (text and/or binary format)
-    - Creates and saves a plot of factor lengths
+    For each sequence:
+    - If FASTA file: reads sequences, factorizes them, and saves factor data and plots
+    - If binary factors file: reads existing factors and creates plots
 
     Args:
-        fasta_filepath: Path to input FASTA file
-        output_dir: Directory to save all output files
+        fasta_filepath: Path to input FASTA file (mutually exclusive with factors_filepath)
+        factors_filepath: Path to binary factors file (mutually exclusive with fasta_filepath)
+        output_dir: Directory to save all output files (required for FASTA, optional for binary)
         max_sequences: Maximum number of sequences to process (None for all)
-        save_factors_text: Whether to save factors as text files
-        save_factors_binary: Whether to save factors as binary files
+        save_factors_text: Whether to save factors as text files (only for FASTA input)
+        save_factors_binary: Whether to save factors as binary files (only for FASTA input)
 
     Returns:
         Dictionary with processing results for each sequence:
@@ -54,133 +56,273 @@ def plot_single_seq_accum_factors_from_fasta(
         }
 
     Raises:
-        PlotError: If FASTA processing fails
+        PlotError: If file processing fails
         FileNotFoundError: If input file doesn't exist
+        ValueError: If both or neither input files are provided, or if output_dir is missing for FASTA input
     """
     from ..core import factorize, write_factors_binary_file
+    from ..utils import read_factors_binary_file_with_metadata
     import matplotlib
     matplotlib.use('Agg')  # Use non-interactive backend for batch processing
     import re
 
-    fasta_filepath = Path(fasta_filepath)
-    output_dir = Path(output_dir)
+    # Validate input arguments
+    if (fasta_filepath is None) == (factors_filepath is None):
+        raise ValueError("Exactly one of fasta_filepath or factors_filepath must be provided")
 
-    if not fasta_filepath.exists():
-        raise FileNotFoundError(f"FASTA file not found: {fasta_filepath}")
+    # Determine input type and file path
+    if fasta_filepath is not None:
+        input_filepath = Path(fasta_filepath)
+        input_type = "fasta"
+        if output_dir is None:
+            raise ValueError("output_dir is required when processing FASTA files")
+        output_dir = Path(output_dir)
+    else:
+        if factors_filepath is None:
+            raise ValueError("Either fasta_filepath or factors_filepath must be provided")
+        input_filepath = Path(factors_filepath)
+        input_type = "binary"
+        if output_dir is None:
+            output_dir = input_filepath.parent  # Default to same directory as binary file
+        else:
+            output_dir = Path(output_dir)
+
+    if not input_filepath.exists():
+        raise FileNotFoundError(f"Input file not found: {input_filepath}")
 
     # Create output directory
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # Read FASTA file
-    sequences = _parse_fasta_content(fasta_filepath.read_text())
-
-    if not sequences:
-        raise PlotError("No sequences found in FASTA file")
-
     results = {}
-    processed_count = 0
 
-    for seq_id, sequence in sequences.items():
-        if max_sequences is not None and processed_count >= max_sequences:
-            break
+    if input_type == "fasta":
+        # Process FASTA file (original logic)
+        # Read FASTA file
+        sequences = _parse_fasta_content(input_filepath.read_text())
 
-        print(f"Processing sequence {seq_id} ({len(sequence)} bp)...")
+        if not sequences:
+            raise PlotError("No sequences found in FASTA file")
 
-        # Detect sequence type and validate
-        seq_type = detect_sequence_type(sequence)
+        processed_count = 0
 
-        if seq_type == 'dna':
-            # Validate as nucleotide
-            if not re.match(r'^[ACGT]+$', sequence.upper()):
-                invalid_chars = set(sequence.upper()) - set('ACGT')
-                print(f"  Warning: Skipping {seq_id} - contains invalid nucleotides: {invalid_chars}")
+        for seq_id, sequence in sequences.items():
+            if max_sequences is not None and processed_count >= max_sequences:
+                break
+
+            print(f"Processing sequence {seq_id} ({len(sequence)} bp)...")
+
+            # Detect sequence type and validate
+            seq_type = detect_sequence_type(sequence)
+
+            if seq_type == 'dna':
+                # Validate as nucleotide
+                if not re.match(r'^[ACGT]+$', sequence.upper()):
+                    invalid_chars = set(sequence.upper()) - set('ACGT')
+                    print(f"  Warning: Skipping {seq_id} - contains invalid nucleotides: {invalid_chars}")
+                    continue
+                sequence = sequence.upper()
+                print("  Detected nucleotide sequence")
+
+            elif seq_type == 'protein':
+                # Validate as amino acid
+                valid_aa = set('ACDEFGHIKLMNPQRSTVWY')
+                if not all(c in valid_aa for c in sequence.upper()):
+                    invalid_chars = set(sequence.upper()) - valid_aa
+                    print(f"  Warning: Skipping {seq_id} - contains invalid amino acids: {invalid_chars}")
+                    continue
+                sequence = sequence.upper()
+                print("  Detected amino acid sequence")
+
+            else:
+                print(f"  Warning: Skipping {seq_id} - unknown sequence type: {seq_type}")
                 continue
-            sequence = sequence.upper()
-            print("  Detected nucleotide sequence")
 
-        elif seq_type == 'protein':
-            # Validate as amino acid
-            valid_aa = set('ACDEFGHIKLMNPQRSTVWY')
-            if not all(c in valid_aa for c in sequence.upper()):
-                invalid_chars = set(sequence.upper()) - valid_aa
-                print(f"  Warning: Skipping {seq_id} - contains invalid amino acids: {invalid_chars}")
+            # Factorize
+            try:
+                factors = factorize(sequence.encode('ascii'))
+                print(f"  Factorized into {len(factors)} factors")
+            except Exception as e:
+                print(f"  Warning: Failed to factorize {seq_id}: {e}")
                 continue
-            sequence = sequence.upper()
-            print("  Detected amino acid sequence")
 
-        else:
-            print(f"  Warning: Skipping {seq_id} - unknown sequence type: {seq_type}")
-            continue
+            # Save factors as text
+            factors_text_file = None
+            if save_factors_text:
+                factors_text_file = output_dir / f"factors_{seq_id}.txt"
+                try:
+                    with open(factors_text_file, 'w') as f:
+                        f.write(f"Sequence: {seq_id}\n")
+                        f.write(f"Length: {len(sequence)}\n")
+                        f.write(f"Number of factors: {len(factors)}\n")
+                        f.write("Factors (position, length, reference):\n")
+                        for i, (pos, length, ref) in enumerate(factors):
+                            f.write(f"{i+1:4d}: ({pos:6d}, {length:4d}, {ref:6d})\n")
+                    print(f"  Saved factors to {factors_text_file}")
+                except Exception as e:
+                    print(f"  Warning: Failed to save text factors for {seq_id}: {e}")
 
-        # Factorize
-        try:
-            factors = factorize(sequence.encode('ascii'))
-            print(f"  Factorized into {len(factors)} factors")
-        except Exception as e:
-            print(f"  Warning: Failed to factorize {seq_id}: {e}")
-            continue
+            # Save factors as binary
+            factors_binary_file = None
+            if save_factors_binary:
+                factors_binary_file = output_dir / f"factors_{seq_id}.bin"
+                try:
+                    # Create a temporary file with just this sequence
+                    temp_fasta = output_dir / f"temp_{seq_id}.fasta"
+                    with open(temp_fasta, 'w') as f:
+                        f.write(f">{seq_id}\n{sequence}\n")
 
-        # Save factors as text
-        factors_text_file = None
-        if save_factors_text:
-            factors_text_file = output_dir / f"factors_{seq_id}.txt"
+                    write_factors_binary_file(str(temp_fasta), str(factors_binary_file))
+                    temp_fasta.unlink()  # Clean up temp file
+                    print(f"  Saved binary factors to {factors_binary_file}")
+                except Exception as e:
+                    print(f"  Warning: Failed to save binary factors for {seq_id}: {e}")
+
+            # Create plot
+            plot_file = output_dir / f"plot_{seq_id}.png"
             try:
-                with open(factors_text_file, 'w') as f:
-                    f.write(f"Sequence: {seq_id}\n")
-                    f.write(f"Length: {len(sequence)}\n")
-                    f.write(f"Number of factors: {len(factors)}\n")
-                    f.write("Factors (position, length, reference):\n")
-                    for i, (pos, length, ref) in enumerate(factors):
-                        f.write(f"{i+1:4d}: ({pos:6d}, {length:4d}, {ref:6d})\n")
-                print(f"  Saved factors to {factors_text_file}")
+                from ..utils import plot_factor_lengths
+                plot_factor_lengths(factors, save_path=plot_file, show_plot=False)
+                print(f"  Saved plot to {plot_file}")
             except Exception as e:
-                print(f"  Warning: Failed to save text factors for {seq_id}: {e}")
+                print(f"  Warning: Failed to create plot for {seq_id}: {e}")
+                plot_file = None
 
-        # Save factors as binary
-        factors_binary_file = None
-        if save_factors_binary:
-            factors_binary_file = output_dir / f"factors_{seq_id}.bin"
-            try:
-                # Create a temporary file with just this sequence
-                temp_fasta = output_dir / f"temp_{seq_id}.fasta"
-                with open(temp_fasta, 'w') as f:
-                    f.write(f">{seq_id}\n{sequence}\n")
+            # Store results
+            results[seq_id] = {
+                'sequence_length': len(sequence),
+                'num_factors': len(factors),
+                'factors_file': str(factors_text_file) if factors_text_file else None,
+                'binary_file': str(factors_binary_file) if factors_binary_file else None,
+                'plot_file': str(plot_file) if plot_file else None,
+                'factors': factors
+            }
 
-                write_factors_binary_file(str(temp_fasta), str(factors_binary_file))
-                temp_fasta.unlink()  # Clean up temp file
-                print(f"  Saved binary factors to {factors_binary_file}")
-            except Exception as e:
-                print(f"  Warning: Failed to save binary factors for {seq_id}: {e}")
+            processed_count += 1
 
-        # Create plot
-        plot_file = output_dir / f"plot_{seq_id}.png"
+        print(f"\nProcessed {len(results)} sequences from FASTA successfully")
+
+    else:
+        # Process binary factors file
+        print(f"Reading factors from binary file {input_filepath}...")
+        
         try:
-            from ..utils import plot_factor_lengths
-            plot_factor_lengths(factors, save_path=plot_file, show_plot=False)
-            print(f"  Saved plot to {plot_file}")
+            # Try to read with metadata first (for multi-sequence files)
+            metadata = read_factors_binary_file_with_metadata(input_filepath)
+            factors = metadata['factors']
+            sequence_names = metadata.get('sequence_names', ['sequence'])
+            sequence_lengths = metadata.get('sequence_lengths', [])
+            sentinel_factor_indices = metadata.get('sentinel_factor_indices', [])
+            
+            print(f"Loaded {len(factors)} factors with metadata for {len(sequence_names)} sequences")
+            
+            # For binary files with multiple sequences, we need to split factors by sequence
+            if len(sequence_names) > 1 and sentinel_factor_indices:
+                # Split factors by sequence using sentinel indices
+                factor_groups = []
+                start_idx = 0
+                
+                for sentinel_idx in sentinel_factor_indices:
+                    factor_groups.append(factors[start_idx:sentinel_idx])
+                    start_idx = sentinel_idx + 1  # Skip the sentinel factor
+                
+                # Add the last group (after the last sentinel)
+                if start_idx < len(factors):
+                    factor_groups.append(factors[start_idx:])
+                
+                # Process each sequence
+                for i, (seq_id, seq_factors) in enumerate(zip(sequence_names, factor_groups)):
+                    if max_sequences is not None and i >= max_sequences:
+                        break
+                        
+                    print(f"Processing sequence {seq_id} ({len(seq_factors)} factors)...")
+                    
+                    # Create plot
+                    plot_file = output_dir / f"plot_{seq_id}.png"
+                    try:
+                        from ..utils import plot_factor_lengths
+                        plot_factor_lengths(seq_factors, save_path=plot_file, show_plot=False)
+                        print(f"  Saved plot to {plot_file}")
+                    except Exception as e:
+                        print(f"  Warning: Failed to create plot for {seq_id}: {e}")
+                        plot_file = None
+                    
+                    # Store results
+                    seq_length = sequence_lengths[i] if i < len(sequence_lengths) else None
+                    results[seq_id] = {
+                        'sequence_length': seq_length,
+                        'num_factors': len(seq_factors),
+                        'factors_file': None,  # No text file created from binary input
+                        'binary_file': str(input_filepath),  # Original binary file
+                        'plot_file': str(plot_file) if plot_file else None,
+                        'factors': seq_factors
+                    }
+            else:
+                # Single sequence binary file
+                seq_id = sequence_names[0] if sequence_names else input_filepath.stem
+                print(f"Processing single sequence {seq_id} ({len(factors)} factors)...")
+                
+                # Create plot
+                plot_file = output_dir / f"plot_{seq_id}.png"
+                try:
+                    from ..utils import plot_factor_lengths
+                    plot_factor_lengths(factors, save_path=plot_file, show_plot=False)
+                    print(f"  Saved plot to {plot_file}")
+                except Exception as e:
+                    print(f"  Warning: Failed to create plot for {seq_id}: {e}")
+                    plot_file = None
+                
+                # Store results
+                seq_length = sequence_lengths[0] if sequence_lengths else None
+                results[seq_id] = {
+                    'sequence_length': seq_length,
+                    'num_factors': len(factors),
+                    'factors_file': None,  # No text file created from binary input
+                    'binary_file': str(input_filepath),  # Original binary file
+                    'plot_file': str(plot_file) if plot_file else None,
+                    'factors': factors
+                }
+                
         except Exception as e:
-            print(f"  Warning: Failed to create plot for {seq_id}: {e}")
-            plot_file = None
+            # Fallback: try to read as simple binary file without metadata
+            try:
+                from ..utils import read_factors_binary_file
+                factors = read_factors_binary_file(input_filepath)
+                seq_id = input_filepath.stem
+                
+                print(f"Loaded {len(factors)} factors from simple binary file")
+                print(f"Processing sequence {seq_id} ({len(factors)} factors)...")
+                
+                # Create plot
+                plot_file = output_dir / f"plot_{seq_id}.png"
+                try:
+                    from ..utils import plot_factor_lengths
+                    plot_factor_lengths(factors, save_path=plot_file, show_plot=False)
+                    print(f"  Saved plot to {plot_file}")
+                except Exception as e:
+                    print(f"  Warning: Failed to create plot for {seq_id}: {e}")
+                    plot_file = None
+                
+                # Store results
+                results[seq_id] = {
+                    'sequence_length': None,  # Unknown from simple binary file
+                    'num_factors': len(factors),
+                    'factors_file': None,  # No text file created from binary input
+                    'binary_file': str(input_filepath),  # Original binary file
+                    'plot_file': str(plot_file) if plot_file else None,
+                    'factors': factors
+                }
+                
+            except Exception as e2:
+                raise PlotError(f"Failed to read binary factors file: {e2}")
 
-        # Store results
-        results[seq_id] = {
-            'sequence_length': len(sequence),
-            'num_factors': len(factors),
-            'factors_file': str(factors_text_file) if factors_text_file else None,
-            'binary_file': str(factors_binary_file) if factors_binary_file else None,
-            'plot_file': str(plot_file) if plot_file else None,
-            'factors': factors
-        }
+        print(f"\nProcessed {len(results)} sequences from binary file successfully")
 
-        processed_count += 1
-
-    print(f"\nProcessed {len(results)} sequences successfully")
     return results
 
 
-def plot_multiple_seq_self_lz_factor_plot_from_fasta(
-    fasta_filepath: Union[str, Path] = None,
-    factors_filepath: Union[str, Path] = None,
+def plot_multiple_seq_self_lz_factor_plot_from_file(
+    fasta_filepath: Optional[Union[str, Path]] = None,
+    factors_filepath: Optional[Union[str, Path]] = None,
     name: Optional[str] = None,
     save_path: Optional[Union[str, Path]] = None,
     show_plot: bool = True,
@@ -246,6 +388,8 @@ def plot_multiple_seq_self_lz_factor_plot_from_fasta(
         input_filepath = Path(fasta_filepath)
         input_type = "fasta"
     else:
+        if factors_filepath is None:
+            raise ValueError("Either fasta_filepath or factors_filepath must be provided")
         input_filepath = Path(factors_filepath)
         input_type = "binary"
 
@@ -836,3 +980,45 @@ def plot_multiple_seq_self_lz_factor_plot_from_fasta(
 
 #     except Exception as e:
 #         raise PlotError(f"Failed to create Weizmann factor plot: {e}")
+
+if __name__ == "__main__":
+
+    parser = argparse.ArgumentParser(description="Run LZSS plots")
+    subparsers = parser.add_subparsers(dest='command', required=True)
+
+    # Subparser for cumulative plot
+    cumulative_parser = subparsers.add_parser('cumulative', help='Plot cumulative factors')
+    cumulative_parser.add_argument('fasta_filepath', help='Path to FASTA file')
+    cumulative_parser.add_argument('output_dir', help='Output directory')
+    cumulative_parser.add_argument('--max_sequences', type=int, default=None, help='Maximum number of sequences to process')
+    cumulative_parser.add_argument('--save_factors_text', action='store_true', help='Save factors as text files')
+    cumulative_parser.add_argument('--save_factors_binary', action='store_true', help='Save factors as binary files')
+
+    # Subparser for self-factors-plot
+    self_factors_parser = subparsers.add_parser('self-factors-plot', help='Plot self-factors')
+    self_factors_parser.add_argument('--fasta_filepath', help='Path to FASTA file')
+    self_factors_parser.add_argument('--factors_filepath', help='Path to binary factors file')
+    self_factors_parser.add_argument('--name', default=None, help='Name for the plot title')
+    self_factors_parser.add_argument('--save_path', default=None, help='Path to save the plot image')
+    self_factors_parser.add_argument('--show_plot', action='store_true', default=True, help='Whether to display the plot')
+    self_factors_parser.add_argument('--return_panel', action='store_true', help='Whether to return the Panel app')
+
+    args = parser.parse_args()
+
+    if args.command == 'cumulative':
+        plot_single_seq_accum_factors_from_file(
+            fasta_filepath=args.fasta_filepath,
+            output_dir=args.output_dir,
+            max_sequences=args.max_sequences,
+            save_factors_text=args.save_factors_text,
+            save_factors_binary=args.save_factors_binary
+        )
+    elif args.command == 'self-factors-plot':
+        plot_multiple_seq_self_lz_factor_plot_from_file(
+            fasta_filepath=args.fasta_filepath,
+            factors_filepath=args.factors_filepath,
+            name=args.name,
+            save_path=args.save_path,
+            show_plot=args.show_plot,
+            return_panel=args.return_panel
+        )
