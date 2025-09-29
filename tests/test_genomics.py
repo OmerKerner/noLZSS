@@ -87,7 +87,7 @@ from pathlib import Path
 import pytest
 
 from noLZSS.genomics.fasta import read_nucleotide_fasta, read_protein_fasta, read_fasta_auto, FASTAError
-from noLZSS.genomics.plots import plot_single_seq_accum_factors_from_fasta, PlotError
+from noLZSS.genomics.plots import plot_single_seq_accum_factors_from_file, PlotError
 from noLZSS._noLZSS import process_nucleotide_fasta, process_amino_acid_fasta  # C++ functions
 from noLZSS._noLZSS import process_nucleotide_fasta  # C++ function
 

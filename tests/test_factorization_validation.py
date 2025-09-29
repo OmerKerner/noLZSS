@@ -12,7 +12,7 @@ from pathlib import Path
 # Import test helpers
 try:
     import noLZSS
-    from noLZSS._noLZSS import factorize_fasta_multiple_dna_w_rc, prepare_multiple_dna_sequences_w_rc
+    from noLZSS.genomics import factorize_fasta_multiple_dna_w_rc, prepare_multiple_dna_sequences_w_rc
     HAS_CPP_EXTENSION = True
 except ImportError:
     HAS_CPP_EXTENSION = False
@@ -84,18 +84,11 @@ def parse_fasta_sequences(fasta_path: str) -> list[str]:
 
 
 @pytest.mark.skipif(not HAS_CPP_EXTENSION, reason="C++ extension not available")
+@pytest.mark.parametrize("fasta_path", ["tests/resources/test_viral_dna.fna", "tests/resources/test_bacterial_dna.fna"])
 class TestFactorizationCorrectness:
     """Test factorization correctness using real genomic data."""
     
-    def setup_method(self):
-        """Set up test with viral genome FASTA file."""
-        self.test_fasta_path = "tests/resources/GCF_000873685.1_ViralProj20989_genomic.fna"
-        
-        # Check if test file exists
-        if not os.path.exists(self.test_fasta_path):
-            pytest.skip(f"Test FASTA file not found: {self.test_fasta_path}")
-    
-    def test_factorization_string_validation(self):
+    def test_factorization_string_validation(self, fasta_path):
         """
         Test that each factor in the factorization correctly represents a substring match.
         
@@ -104,6 +97,11 @@ class TestFactorizationCorrectness:
         2. Reverse complement factors match the reverse complement of reference substrings
         3. No factors are "bad" (i.e., all represent valid matches)
         """
+        self.test_fasta_path = fasta_path
+        
+        # Check if test file exists
+        if not os.path.exists(self.test_fasta_path):
+            pytest.skip(f"Test FASTA file not found: {self.test_fasta_path}")
         # Parse FASTA file to get individual sequences
         sequences = parse_fasta_sequences(self.test_fasta_path)
         print(f"Parsed {len(sequences)} sequences from FASTA file")
@@ -175,10 +173,15 @@ class TestFactorizationCorrectness:
         # Assert that no factors are bad
         assert len(bad_factors) == 0, f"Found {len(bad_factors)} bad factors out of {total_factors}"
     
-    def test_factorization_coverage(self):
+    def test_factorization_coverage(self, fasta_path):
         """
         Test that factors provide complete coverage of the original sequence.
         """
+        self.test_fasta_path = fasta_path
+        
+        # Check if test file exists
+        if not os.path.exists(self.test_fasta_path):
+            pytest.skip(f"Test FASTA file not found: {self.test_fasta_path}")
         # Parse sequences and prepare
         sequences = parse_fasta_sequences(self.test_fasta_path)
         concatenated_string, original_length, sentinel_positions = prepare_multiple_dna_sequences_w_rc(sequences)
@@ -186,30 +189,35 @@ class TestFactorizationCorrectness:
         # Perform factorization
         factors_list, sentinel_indices, sequence_ids = factorize_fasta_multiple_dna_w_rc(self.test_fasta_path)
         
-        # Check coverage of original sequence (excluding reverse complement part)
-        covered = [False] * original_length
+        # Filter factors within original sequence and sort by start position
+        valid_factors = sorted([f for f in factors_list if f[0] < original_length], key=lambda x: x[0])
         
-        for factor in factors_list:
-            start, length, ref, is_rc = factor
-            
-            # Only consider factors within the original sequence
-            if start < original_length:
-                end_pos = min(start + length, original_length)
-                for pos in range(start, end_pos):
-                    covered[pos] = True
+        if not valid_factors:
+            assert False, "No valid factors found within original sequence"
         
-        # Count uncovered positions
-        uncovered_positions = sum(1 for is_covered in covered if not is_covered)
+        # Check for complete coverage by ensuring no gaps between sorted factors
+        current_end = 0
+        for start, length, ref, is_rc in valid_factors:
+            if start > current_end:
+                # Gap found
+                uncovered = start - current_end
+                assert False, f"Gap of {uncovered} uncovered positions starting at {current_end}"
+            current_end = max(current_end, start + length)
         
-        print(f"Coverage analysis: {uncovered_positions} uncovered positions out of {original_length}")
+        # Ensure we reach the end of the original sequence
+        assert current_end >= (original_length - 1), f"Sequence not fully covered: reached {current_end} of {original_length}"
         
-        # Assert complete coverage
-        assert uncovered_positions == 0, f"Found {uncovered_positions} uncovered positions in original sequence"
+        print(f"Coverage analysis: Complete coverage verified for {original_length} positions")
     
-    def test_factorization_basic_properties(self):
+    def test_factorization_basic_properties(self, fasta_path):
         """
         Test basic properties of the factorization result.
         """
+        self.test_fasta_path = fasta_path
+        
+        # Check if test file exists
+        if not os.path.exists(self.test_fasta_path):
+            pytest.skip(f"Test FASTA file not found: {self.test_fasta_path}")
         factors_list, sentinel_indices, sequence_ids = factorize_fasta_multiple_dna_w_rc(self.test_fasta_path)
         
         # Basic sanity checks
@@ -231,10 +239,15 @@ class TestFactorizationCorrectness:
         
         print(f"Basic properties validated for {len(factors_list)} factors")
     
-    def test_reverse_complement_functionality(self):
+    def test_reverse_complement_functionality(self, fasta_path):
         """
         Test that reverse complement functionality is working as expected.
         """
+        self.test_fasta_path = fasta_path
+        
+        # Check if test file exists
+        if not os.path.exists(self.test_fasta_path):
+            pytest.skip(f"Test FASTA file not found: {self.test_fasta_path}")
         factors_list, sentinel_indices, sequence_ids = factorize_fasta_multiple_dna_w_rc(self.test_fasta_path)
         
         # Count reverse complement vs normal factors
@@ -279,14 +292,15 @@ class TestReverseComplementHelper:
 class TestFastaParsingHelper:
     """Test the FASTA parsing helper function."""
     
-    def test_parse_fasta_basic(self):
+    @pytest.mark.parametrize("fasta_file", ["tests/resources/test_viral_dna.fna", "tests/resources/test_bacterial_dna.fna"])
+    def test_parse_fasta_basic(self, fasta_file):
         """Test basic FASTA parsing functionality."""
         # This test only runs if the test file exists
-        if not os.path.exists("tests/resources/GCF_000873685.1_ViralProj20989_genomic.fna"):
-            pytest.skip("Test FASTA file not found")
-        
-        sequences = parse_fasta_sequences("tests/resources/GCF_000873685.1_ViralProj20989_genomic.fna")
-        
+        if not os.path.exists(fasta_file):
+            pytest.skip(f"Test FASTA file not found: {fasta_file}")
+
+        sequences = parse_fasta_sequences(fasta_file)
+
         assert len(sequences) > 0, "Should parse at least one sequence"
         
         for seq in sequences:

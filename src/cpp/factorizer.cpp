@@ -65,24 +65,8 @@ static std::string revcomp(std::string_view s) {
     return r;
 }
 
-/**
- * @brief Prepares multiple DNA sequences for factorization with reverse complement awareness.
- *
- * Takes multiple DNA sequences, concatenates them with unique sentinels, and appends
- * their reverse complements with unique sentinels. The output format is compatible
- * with nolzss_multiple_dna_w_rc(): S = T1!T2@T3$rt(T3)%rt(T2)^rt(T1)&
- *
- * @param sequences Vector of DNA sequence strings (should contain only A, C, T, G)
- * @return Pair containing: (concatenated_string, original_length)
- *         - concatenated_string: The formatted string with sequences and reverse complements
- *         - original_length: Length of the original sequences part with sentinels (before reverse complements)
- *
- * @throws std::invalid_argument If too many sequences (>251) or invalid nucleotides found
- * @throws std::runtime_error If sequences contain invalid characters
- *
- * @note Sentinels range from 1-251, avoiding 0, A(65), C(67), G(71), T(84)
- * @note The function validates that all sequences contain only valid DNA nucleotides
- */
+
+// ---------- factorization utilities ----------
 /**
  * @brief Prepares multiple DNA sequences for factorization with reverse complement and tracks sentinel positions.
  *
@@ -192,25 +176,6 @@ PreparedSequenceResult prepare_multiple_dna_sequences_w_rc(const std::vector<std
     return result;
 }
 
-/**
- * @brief Prepares multiple DNA sequences for factorization without reverse complement.
- *
- * Takes multiple DNA sequences, concatenates them with unique sentinels.
- * Unlike prepare_multiple_dna_sequences_w_rc(), this function does not append
- * reverse complements. The output format is: S = T1!T2@T3$
- *
- * @param sequences Vector of DNA sequence strings (should contain only A, C, T, G)
- * @return Pair containing: (concatenated_string, total_length)
- *         - concatenated_string: The formatted string with sequences and sentinels
- *         - total_length: Total length of the concatenated string (same as concatenated_string.length())
- *
- * @throws std::invalid_argument If too many sequences (>251) or invalid nucleotides found
- * @throws std::runtime_error If sequences contain invalid characters
- *
- * @note Sentinels range from 1-251, avoiding 0, A(65), C(67), G(71), T(84)
- * @note The function validates that all sequences contain only valid DNA nucleotides
- * @note Input sequences can be lowercase or uppercase, output is always uppercase
- */
 /**
  * @brief Prepares multiple DNA sequences for factorization without reverse complement and tracks sentinel positions.
  *
@@ -570,7 +535,8 @@ static size_t nolzss_multiple_dna_w_rc(const std::string& S, Sink&& sink, size_t
             // Finalize RC with true LCP (against suffix in R) 
             size_t L   = lcp(cst, i, best_rc_posS);
             emit_len   = L;
-            emit_ref   = RC_MASK | static_cast<uint64_t>(best_rc_end); // end-anchored + RC flag
+            size_t start_pos = best_rc_end - L + 2;
+            emit_ref   = RC_MASK | static_cast<uint64_t>(start_pos); // start-anchored + RC flag
         }
         
         // Safety: ensure progress
