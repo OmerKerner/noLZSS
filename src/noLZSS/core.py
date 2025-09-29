@@ -15,6 +15,8 @@ from ._noLZSS import (
     count_factors as _count_factors,
     count_factors_file as _count_factors_file,
     write_factors_binary_file as _write_factors_binary_file,
+    factorize_w_reference as _factorize_w_reference,
+    factorize_w_reference_file as _factorize_w_reference_file,
 )
 
 from .utils import validate_input, analyze_alphabet
@@ -157,3 +159,91 @@ def factorize_with_info(data: Union[str, bytes], validate: bool = True) -> dict:
         'input_size': len(data),
         'num_factors': len(factors)
     }
+
+
+def factorize_w_reference(reference_seq: Union[str, bytes], target_seq: Union[str, bytes], validate: bool = True) -> List[Tuple[int, int, int]]:
+    """
+    Factorize target sequence using a reference sequence without reverse complement.
+    
+    Concatenates a reference sequence and target sequence, then performs noLZSS factorization
+    starting from where the target sequence begins. This allows the target sequence to reference
+    patterns in the reference sequence without factorizing the reference itself. Suitable for
+    general text or amino acid sequences.
+    
+    Args:
+        reference_seq: Reference sequence (any text)
+        target_seq: Target sequence to be factorized (any text)
+        validate: Whether to perform input validation (default: True)
+        
+    Returns:
+        List of (start, length, ref) tuples representing the factorization of target sequence
+        
+    Raises:
+        ValueError: If sequences are empty
+        TypeError: If input types are not supported
+        RuntimeError: If processing errors occur
+        
+    Note:
+        Factor start positions are absolute positions in the combined reference+target string.
+        No reverse complement matching is performed - suitable for text or amino acid sequences.
+    """
+    from .utils import validate_input
+    
+    if validate:
+        reference_seq = validate_input(reference_seq)
+        target_seq = validate_input(target_seq)
+    
+    # Convert to strings if they're bytes
+    if isinstance(reference_seq, bytes):
+        reference_seq = reference_seq.decode('ascii')
+    if isinstance(target_seq, bytes):
+        target_seq = target_seq.decode('ascii')
+    
+    return _factorize_w_reference(reference_seq, target_seq)
+
+
+def factorize_w_reference_file(reference_seq: Union[str, bytes], target_seq: Union[str, bytes], 
+                               output_path: Union[str, Path], validate: bool = True) -> int:
+    """
+    Factorize target sequence using a reference sequence and write factors to binary file.
+    
+    Concatenates a reference sequence and target sequence, then performs noLZSS factorization
+    starting from where the target sequence begins, and writes the resulting factors to a binary file.
+    Suitable for general text or amino acid sequences.
+    
+    Args:
+        reference_seq: Reference sequence (any text)
+        target_seq: Target sequence to be factorized (any text)
+        output_path: Path to output file where binary factors will be written
+        validate: Whether to perform input validation (default: True)
+        
+    Returns:
+        Number of factors written to the output file
+        
+    Raises:
+        ValueError: If sequences are empty
+        TypeError: If input types are not supported
+        RuntimeError: If unable to create output file or processing errors occur
+        
+    Note:
+        Factor start positions are absolute positions in the combined reference+target string.
+        No reverse complement matching is performed - suitable for text or amino acid sequences.
+        This function overwrites the output file if it exists.
+    """
+    from .utils import validate_input
+    
+    if validate:
+        reference_seq = validate_input(reference_seq)
+        target_seq = validate_input(target_seq)
+    
+    # Convert to strings if they're bytes
+    if isinstance(reference_seq, bytes):
+        reference_seq = reference_seq.decode('ascii')
+    if isinstance(target_seq, bytes):
+        target_seq = target_seq.decode('ascii')
+    
+    # Ensure output directory exists
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    
+    return _factorize_w_reference_file(reference_seq, target_seq, str(output_path))

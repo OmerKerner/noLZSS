@@ -414,7 +414,7 @@ size_t factorize_file_stream_multiple_dna_w_rc(const std::string& path, Sink&& s
  * @note Reverse complement matches are encoded with RC_MASK in the ref field
  * @throws std::invalid_argument If sequences contain invalid nucleotides
  */
-std::vector<Factor> factorize_w_reference_seq(const std::string& reference_seq, const std::string& target_seq);
+std::vector<Factor> factorize_dna_w_reference_seq(const std::string& reference_seq, const std::string& target_seq);
 
 /**
  * @brief Factorizes a target DNA sequence using a reference sequence and writes factors to a binary file.
@@ -434,7 +434,46 @@ std::vector<Factor> factorize_w_reference_seq(const std::string& reference_seq, 
  * @throws std::invalid_argument If sequences contain invalid nucleotides
  * @warning This function overwrites the output file if it exists
  */
-size_t factorize_w_reference_seq_file(const std::string& reference_seq, const std::string& target_seq, const std::string& out_path);
+size_t factorize_dna_w_reference_seq_file(const std::string& reference_seq, const std::string& target_seq, const std::string& out_path);
+
+// General reference sequence factorization functions (no reverse complement)
+
+/**
+ * @brief Factorizes a target sequence using a reference sequence without reverse complement.
+ *
+ * Concatenates a reference sequence and target sequence (ref@target), then performs
+ * noLZSS factorization starting from where the target sequence begins. This allows
+ * the target sequence to reference patterns in the reference sequence without 
+ * factorizing the reference itself. Suitable for general text or amino acid sequences.
+ *
+ * @param reference_seq Reference sequence string (any text)
+ * @param target_seq Target sequence string to be factorized (any text)
+ * @return Vector of Factor objects representing the factorization of the target sequence
+ *
+ * @note Factors start positions are absolute positions in the combined reference+target string
+ * @note No reverse complement matching is performed - suitable for text or amino acid sequences
+ * @note Sequences can contain any ASCII characters
+ */
+std::vector<Factor> factorize_w_reference(const std::string& reference_seq, const std::string& target_seq);
+
+/**
+ * @brief Factorizes a target sequence using a reference sequence and writes factors to a binary file.
+ *
+ * Concatenates a reference sequence and target sequence (ref@target), then performs
+ * noLZSS factorization starting from where the target sequence begins, and writes
+ * the resulting factors to a binary file. Suitable for general text or amino acid sequences.
+ *
+ * @param reference_seq Reference sequence string (any text)
+ * @param target_seq Target sequence string to be factorized (any text)
+ * @param out_path Path to output file where binary factors will be written
+ * @return Number of factors written to the output file
+ *
+ * @note Factors start positions are absolute positions in the combined reference+target string
+ * @note No reverse complement matching is performed - suitable for text or amino acid sequences
+ * @note Binary format follows the same structure as other factorization binary outputs
+ * @warning This function overwrites the output file if it exists
+ */
+size_t factorize_w_reference_file(const std::string& reference_seq, const std::string& target_seq, const std::string& out_path);
 
 
 } // namespace noLZSS
