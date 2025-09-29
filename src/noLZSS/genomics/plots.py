@@ -5,7 +5,7 @@ This module provides functions for creating plots and visualizations
 from FASTA files and their factorizations.
 """
 
-from typing import Union, Optional, Dict, Any
+from typing import Union, Optional, Dict, Any, List, Tuple
 from pathlib import Path
 import warnings
 import argparse
@@ -980,6 +980,576 @@ def plot_multiple_seq_self_lz_factor_plot_from_file(
 
 #     except Exception as e:
 #         raise PlotError(f"Failed to create Weizmann factor plot: {e}")
+
+
+def plot_reference_seq_lz_factor_plot_simple(
+    reference_seq: Union[str, bytes],
+    target_seq: Union[str, bytes],
+    factors: Optional[List[Tuple[int, int, int, bool]]] = None,
+    factors_filepath: Optional[Union[str, Path]] = None,
+    reference_name: str = "Reference",
+    target_name: str = "Target",
+    save_path: Optional[Union[str, Path]] = None,
+    show_plot: bool = True
+) -> None:
+    """
+    Create a simple matplotlib factor plot for a DNA sequence factorized with a reference sequence.
+    
+    This function creates a plot compatible with the output of factorize_w_reference_seq().
+    The plot shows the reference sequence at the beginning, concatenated with the target sequence,
+    and uses distinct colors for reference vs target regions.
+    
+    Args:
+        reference_seq: Reference DNA sequence (A, C, T, G - case insensitive)
+        target_seq: Target DNA sequence (A, C, T, G - case insensitive)
+        factors: Optional list of (start, length, ref, is_rc) tuples from factorize_w_reference_seq().
+                If None, will compute factors automatically.
+        factors_filepath: Optional path to binary factors file (mutually exclusive with factors)
+        reference_name: Name for the reference sequence (default: "Reference")
+        target_name: Name for the target sequence (default: "Target")
+        save_path: Optional path to save the plot image
+        show_plot: Whether to display the plot
+        
+    Raises:
+        PlotError: If plotting fails or input sequences are invalid
+        ValueError: If both factors and factors_filepath are provided
+        ImportError: If matplotlib is not available
+    """
+    try:
+        import matplotlib.pyplot as plt
+        import matplotlib.patches as patches
+        import numpy as np
+    except ImportError as e:
+        missing_dep = str(e).split("'")[1] if "'" in str(e) else str(e)
+        raise ImportError(
+            f"Missing required dependency: {missing_dep}. "
+            f"Install with: pip install matplotlib"
+        )
+
+    # Validate input arguments
+    if factors is not None and factors_filepath is not None:
+        raise ValueError("Cannot provide both factors and factors_filepath")
+    
+    # Convert sequences to strings if they're bytes
+    if isinstance(reference_seq, bytes):
+        reference_seq = reference_seq.decode('ascii')
+    if isinstance(target_seq, bytes):
+        target_seq = target_seq.decode('ascii')
+    
+    # Get factors if not provided
+    if factors is None:
+        if factors_filepath is not None:
+            from ..utils import read_factors_binary_file_with_metadata
+            metadata = read_factors_binary_file_with_metadata(factors_filepath)
+            factors = metadata['factors']
+        else:
+            from .sequences import factorize_w_reference_seq
+            factors = factorize_w_reference_seq(reference_seq, target_seq)
+    
+    if not factors:
+        raise PlotError("No factors available for plotting")
+    
+    # Calculate sequence boundaries
+    ref_length = len(reference_seq)
+    target_start = ref_length + 1  # +1 for sentinel
+    target_length = len(target_seq)
+    total_length = target_start + target_length
+    
+    # Create the plot
+    fig, ax = plt.subplots(figsize=(10, 10))
+    
+    # Plot factors with different colors for forward/reverse and reference/target
+    for start, length, ref_pos, is_rc in factors:
+        end = start + length
+        ref_end = ref_pos + length
+        
+        # Determine color based on region and orientation
+        if start >= target_start:
+            # Target region
+            color = 'red' if not is_rc else 'darkorange'
+            alpha = 0.7
+        else:
+            # Reference region (shouldn't happen with factorize_w_reference_seq)
+            color = 'blue' if not is_rc else 'darkblue'
+            alpha = 0.7
+        
+        # Draw line segment from (start, ref_pos) to (end, ref_end)
+        ax.plot([start, end], [ref_pos, ref_end], color=color, alpha=alpha, linewidth=2)
+    
+    # Add diagonal reference line
+    max_pos = max(total_length, max(ref_pos + length for _, length, ref_pos, _ in factors))
+    ax.plot([0, max_pos], [0, max_pos], 'gray', linestyle='--', alpha=0.5, linewidth=1)
+    
+    # Add sequence boundary lines
+    ax.axvline(x=target_start - 0.5, color='green', linewidth=3, alpha=0.8, 
+               label=f'Boundary: {reference_name}|{target_name}')
+    ax.axhline(y=target_start - 0.5, color='green', linewidth=3, alpha=0.8)
+    
+    # Add sequence region backgrounds
+    ax.axvspan(0, ref_length, alpha=0.1, color='blue', label=f'{reference_name} region')
+    ax.axvspan(target_start, total_length, alpha=0.1, color='red', label=f'{target_name} region')
+    
+    # Set labels and title
+    ax.set_xlabel(f'Position in concatenated sequence ({reference_name} + {target_name})')
+    ax.set_ylabel(f'Reference position')
+    ax.set_title(f'Reference Sequence LZ Factor Plot\n{reference_name} vs {target_name}')
+    
+    # Add legend
+    legend_elements = [
+        patches.Patch(color='red', alpha=0.7, label=f'{target_name} forward factors'),
+        patches.Patch(color='darkorange', alpha=0.7, label=f'{target_name} reverse complement factors'),
+        patches.Patch(color='blue', alpha=0.1, label=f'{reference_name} region'),
+        patches.Patch(color='red', alpha=0.1, label=f'{target_name} region'),
+        patches.Patch(color='green', alpha=0.8, label='Sequence boundary')
+    ]
+    ax.legend(handles=legend_elements, loc='upper right', bbox_to_anchor=(1, 1))
+    
+    # Set equal aspect ratio and grid
+    ax.set_aspect('equal', adjustable='box')
+    ax.grid(True, alpha=0.3)
+    
+    # Add text annotations for sequence regions
+    ax.text(ref_length/2, -max_pos*0.05, reference_name, ha='center', va='top', 
+            fontsize=12, color='blue', weight='bold')
+    ax.text((target_start + total_length)/2, -max_pos*0.05, target_name, ha='center', va='top',
+            fontsize=12, color='red', weight='bold')
+    ax.text(-max_pos*0.05, ref_length/2, reference_name, ha='right', va='center',
+            fontsize=12, color='blue', weight='bold', rotation=90)
+    ax.text(-max_pos*0.05, (target_start + total_length)/2, target_name, ha='right', va='center',
+            fontsize=12, color='red', weight='bold', rotation=90)
+    
+    plt.tight_layout()
+    
+    # Save plot if requested
+    if save_path:
+        save_path = Path(save_path)
+        save_path.parent.mkdir(parents=True, exist_ok=True)
+        plt.savefig(save_path, dpi=300, bbox_inches='tight')
+        print(f"Plot saved to {save_path}")
+    
+    # Show plot
+    if show_plot:
+        plt.show()
+    else:
+        plt.close(fig)
+
+
+def plot_reference_seq_lz_factor_plot(
+    reference_seq: Union[str, bytes],
+    target_seq: Union[str, bytes],
+    factors: Optional[List[Tuple[int, int, int, bool]]] = None,
+    factors_filepath: Optional[Union[str, Path]] = None,
+    reference_name: str = "Reference",
+    target_name: str = "Target",
+    save_path: Optional[Union[str, Path]] = None,
+    show_plot: bool = True,
+    return_panel: bool = False
+) -> Optional["panel.viewable.Viewable"]:
+    """
+    Create an interactive Datashader/Panel factor plot for a DNA sequence factorized with a reference sequence.
+    
+    This function creates a plot compatible with the output of factorize_w_reference_seq().
+    The plot shows the reference sequence at the beginning, concatenated with the target sequence,
+    and uses distinct colors for reference vs target regions.
+    
+    Args:
+        reference_seq: Reference DNA sequence (A, C, T, G - case insensitive)
+        target_seq: Target DNA sequence (A, C, T, G - case insensitive)
+        factors: Optional list of (start, length, ref, is_rc) tuples from factorize_w_reference_seq().
+                If None, will compute factors automatically.
+        factors_filepath: Optional path to binary factors file (mutually exclusive with factors)
+        reference_name: Name for the reference sequence (default: "Reference")
+        target_name: Name for the target sequence (default: "Target")
+        save_path: Optional path to save the plot image (PNG export)
+        show_plot: Whether to display/serve the plot
+        return_panel: Whether to return the Panel app for embedding
+        
+    Returns:
+        Panel app if return_panel=True, otherwise None
+        
+    Raises:
+        PlotError: If plotting fails or input sequences are invalid
+        ValueError: If both factors and factors_filepath are provided
+        ImportError: If required dependencies are missing
+    """
+    # Check for required dependencies
+    try:
+        import numpy as np
+        import pandas as pd
+        import holoviews as hv
+        import datashader as ds
+        import panel as pn
+        import colorcet as cc
+        from holoviews.operation.datashader import datashade, dynspread
+        from holoviews import streams
+        import bokeh
+    except ImportError as e:
+        missing_dep = str(e).split("'")[1] if "'" in str(e) else str(e)
+        raise ImportError(
+            f"Missing required dependency: {missing_dep}. "
+            f"Install with: pip install 'noLZSS[panel]' or "
+            f"pip install numpy pandas holoviews bokeh panel datashader colorcet"
+        )
+
+    # Initialize extensions
+    hv.extension('bokeh')
+    pn.extension()
+
+    # Validate input arguments
+    if factors is not None and factors_filepath is not None:
+        raise ValueError("Cannot provide both factors and factors_filepath")
+    
+    # Convert sequences to strings if they're bytes
+    if isinstance(reference_seq, bytes):
+        reference_seq = reference_seq.decode('ascii')
+    if isinstance(target_seq, bytes):
+        target_seq = target_seq.decode('ascii')
+    
+    # Get factors if not provided
+    if factors is None:
+        if factors_filepath is not None:
+            from ..utils import read_factors_binary_file_with_metadata
+            metadata = read_factors_binary_file_with_metadata(factors_filepath)
+            factors = metadata['factors']
+        else:
+            from .sequences import factorize_w_reference_seq
+            factors = factorize_w_reference_seq(reference_seq, target_seq)
+    
+    if not factors:
+        raise PlotError("No factors available for plotting")
+    
+    # Calculate sequence boundaries
+    ref_length = len(reference_seq)
+    target_start = ref_length + 1  # +1 for sentinel
+    target_length = len(target_seq)
+    total_length = target_start + target_length
+    
+    # Create sequence boundaries for visualization
+    sequence_boundaries = [
+        (0, ref_length, reference_name),
+        (target_start, total_length, target_name)
+    ]
+    
+    # Convert factors to DataFrame for plotting
+    factor_data = []
+    for start, length, ref_pos, is_rc in factors:
+        end = start + length
+        factor_data.append({
+            'x0': start,
+            'x1': end,
+            'y0': ref_pos,
+            'y1': ref_pos + length,
+            'length': length,
+            'is_rc': is_rc,
+            'region': 'target' if start >= target_start else 'reference'
+        })
+    
+    df = pd.DataFrame(factor_data)
+    
+    if len(df) == 0:
+        raise PlotError("No valid factors to plot")
+    
+    # Create plot name
+    plot_name = f"{reference_name} vs {target_name}"
+    
+    # Create interactive plot components
+    def create_base_layers(df_filtered):
+        """Create base datashader layers for factors"""
+        if len(df_filtered) == 0:
+            return hv.Text(0, 0, "No data").opts(width=800, height=800)
+        
+        # Separate reference and target factors for different colors
+        df_ref = df_filtered[df_filtered['region'] == 'reference']
+        df_target = df_filtered[df_filtered['region'] == 'target']
+        
+        layers = []
+        
+        # Reference factors (if any) - use blue tones
+        if len(df_ref) > 0:
+            ref_forward = df_ref[~df_ref['is_rc']]
+            ref_reverse = df_ref[df_ref['is_rc']]
+            
+            if len(ref_forward) > 0:
+                ref_forward_segments = hv.Segments(
+                    ref_forward, ['x0', 'y0', 'x1', 'y1']
+                ).opts(color='blue', alpha=0.7, line_width=2)
+                layers.append(ref_forward_segments)
+            
+            if len(ref_reverse) > 0:
+                ref_reverse_segments = hv.Segments(
+                    ref_reverse, ['x0', 'y0', 'x1', 'y1']
+                ).opts(color='darkblue', alpha=0.7, line_width=2)
+                layers.append(ref_reverse_segments)
+        
+        # Target factors - use red/orange tones  
+        if len(df_target) > 0:
+            target_forward = df_target[~df_target['is_rc']]
+            target_reverse = df_target[df_target['is_rc']]
+            
+            if len(target_forward) > 0:
+                target_forward_segments = hv.Segments(
+                    target_forward, ['x0', 'y0', 'x1', 'y1']
+                ).opts(color='red', alpha=0.7, line_width=2)
+                layers.append(target_forward_segments)
+            
+            if len(target_reverse) > 0:
+                target_reverse_segments = hv.Segments(
+                    target_reverse, ['x0', 'y0', 'x1', 'y1']
+                ).opts(color='darkorange', alpha=0.7, line_width=2)
+                layers.append(target_reverse_segments)
+        
+        if not layers:
+            return hv.Text(0, 0, "No data").opts(width=800, height=800)
+        
+        # Combine layers
+        plot = layers[0]
+        for layer in layers[1:]:
+            plot = plot * layer
+            
+        return plot
+    
+    def create_hover_overlay(x_range, y_range, df_filtered, k_per_bin):
+        """Create hover overlay for detailed factor information"""
+        if x_range is None or y_range is None or len(df_filtered) == 0:
+            return hv.Text(0, 0, "").opts(alpha=0)
+        
+        x_min, x_max = x_range
+        y_min, y_max = y_range
+        
+        # Filter data to current view
+        view_data = df_filtered[
+            (df_filtered['x0'] >= x_min) & (df_filtered['x1'] <= x_max) &
+            (df_filtered['y0'] >= y_min) & (df_filtered['y1'] <= y_max)
+        ]
+        
+        if len(view_data) == 0:
+            return hv.Text(0, 0, "").opts(alpha=0)
+        
+        # Sample data if too many points
+        if len(view_data) > k_per_bin:
+            view_data = view_data.sample(n=k_per_bin)
+        
+        # Create points for hover
+        hover_data = []
+        for _, row in view_data.iterrows():
+            hover_data.append({
+                'x': (row['x0'] + row['x1']) / 2,
+                'y': (row['y0'] + row['y1']) / 2,
+                'start': int(row['x0']),
+                'length': int(row['length']),
+                'ref_pos': int(row['y0']),
+                'is_rc': row['is_rc'],
+                'region': row['region']
+            })
+        
+        if not hover_data:
+            return hv.Text(0, 0, "").opts(alpha=0)
+        
+        hover_df = pd.DataFrame(hover_data)
+        
+        return hv.Points(
+            hover_df, ['x', 'y'], ['start', 'length', 'ref_pos', 'is_rc', 'region']
+        ).opts(
+            size=8, alpha=0.8, color='yellow',
+            tools=['hover'], hover_alpha=1.0
+        )
+    
+    # Set up interactive plot
+    rangexy = streams.RangeXY()
+    
+    # Create dynamic plot function
+    def create_plot(length_range, show_overlay, k_per_bin, colormap_name):
+        length_min, length_max = length_range
+        # Filter by length
+        df_filtered = df[
+            (df['length'] >= length_min) & 
+            (df['length'] <= length_max)
+        ].copy()
+        
+        if len(df_filtered) == 0:
+            return hv.Text(0, 0, "No data in range").opts(width=800, height=800)
+        
+        # Create base layers
+        base_plot = create_base_layers(df_filtered)
+        
+        # Add diagonal y=x line
+        max_val = max(df_filtered[['x1', 'y1']].max())
+        min_val = min(df_filtered[['x0', 'y0']].min())
+        diagonal = hv.Curve([(min_val, min_val), (max_val, max_val)]).opts(
+            line_dash='dashed',
+            line_color='gray',
+            line_width=1,
+            alpha=0.5
+        )
+        
+        # Add sequence boundary lines
+        boundary_elements = []
+        
+        # Vertical line separating reference and target
+        sep_pos = target_start - 0.5  # Position between ref and target
+        if min_val <= sep_pos <= max_val:
+            v_line = hv.VLine(sep_pos).opts(
+                line_color='green',
+                line_width=3,
+                alpha=0.8,
+                line_dash='solid'
+            )
+            boundary_elements.append(v_line)
+            
+            # Horizontal line at same position
+            h_line = hv.HLine(sep_pos).opts(
+                line_color='green',
+                line_width=3,
+                alpha=0.8,
+                line_dash='solid'
+            )
+            boundary_elements.append(h_line)
+        
+        # Add sequence name labels
+        label_elements = []
+        for start_pos, end_pos, seq_name in sequence_boundaries:
+            mid_pos = (start_pos + end_pos) / 2
+            if min_val <= mid_pos <= max_val:
+                # Determine color based on sequence type
+                label_color = 'blue' if seq_name == reference_name else 'red'
+                
+                # X-axis label (bottom)
+                x_label = hv.Text(mid_pos, min_val - (max_val - min_val) * 0.05, seq_name).opts(
+                    text_color=label_color,
+                    text_font_size='12pt',
+                    text_align='center'
+                )
+                label_elements.append(x_label)
+                
+                # Y-axis label (left side)  
+                y_label = hv.Text(min_val - (max_val - min_val) * 0.05, mid_pos, seq_name).opts(
+                    text_color=label_color, 
+                    text_font_size='12pt',
+                    text_align='center',
+                    angle=90
+                )
+                label_elements.append(y_label)
+        
+        # Combine all plot elements
+        plot = base_plot * diagonal
+        
+        # Add boundary lines
+        for element in boundary_elements:
+            plot = plot * element
+            
+        # Add sequence labels
+        for element in label_elements:
+            plot = plot * element
+        
+        # Add hover overlay if requested
+        if show_overlay:
+            # Use rangexy stream to get current view
+            overlay_func = lambda x_range, y_range: create_hover_overlay(
+                x_range, y_range, df_filtered, k_per_bin
+            )
+            hover_dmap = hv.DynamicMap(overlay_func, streams=[rangexy])
+            plot = plot * hover_dmap
+        
+        # Configure plot options
+        plot = plot.opts(
+            width=800,
+            height=800,
+            aspect='equal',
+            xlabel=f'Position in concatenated sequence ({plot_name})',
+            ylabel=f'Reference position ({plot_name})',
+            title=f'Reference Sequence LZ Factor Plot - {plot_name}',
+            toolbar='above'
+        )
+        
+        return plot
+    
+    # Create interactive controls
+    length_min, length_max = df['length'].min(), df['length'].max()
+    
+    length_slider = pn.widgets.RangeSlider(
+        name='Factor Length Range',
+        start=length_min,
+        end=length_max,
+        value=(length_min, length_max),
+        step=1
+    )
+    
+    overlay_toggle = pn.widgets.Toggle(
+        name='Show Hover Details',
+        value=True
+    )
+    
+    k_spinner = pn.widgets.IntInput(
+        name='Max Points for Hover',
+        value=min(1000, len(df)),
+        start=100,
+        end=5000,
+        step=100
+    )
+    
+    colormap_select = pn.widgets.Select(
+        name='Colormap',
+        value='viridis',
+        options=['viridis', 'plasma', 'inferno', 'magma', 'cividis']
+    )
+    
+    # Create dynamic plot with controls
+    dmap = hv.DynamicMap(
+        create_plot,
+        kdims=[
+            hv.Dimension('length_range', values=[length_slider.param.value]),
+            hv.Dimension('show_overlay', values=[overlay_toggle.param.value]),
+            hv.Dimension('k_per_bin', values=[k_spinner.param.value]),
+            hv.Dimension('colormap_name', values=[colormap_select.param.value])
+        ]
+    )
+    
+    # Create layout
+    controls = pn.Column(
+        pn.pane.Markdown("### Plot Controls"),
+        length_slider,
+        overlay_toggle,
+        k_spinner,
+        colormap_select,
+        pn.pane.Markdown(f"**Dataset Info:**\n- Total factors: {len(df)}\n- Reference length: {ref_length}\n- Target length: {target_length}"),
+        width=300
+    )
+    
+    plot_pane = pn.pane.HoloViews(dmap, width=850, height=850)
+    
+    app = pn.Row(controls, plot_pane)
+    
+    # Save plot if requested
+    if save_path:
+        try:
+            # Create a static version for saving
+            static_plot = create_plot(
+                (length_min, length_max),
+                False,  # No hover for static
+                1000,
+                'viridis'
+            )
+            
+            save_path = Path(save_path)
+            save_path.parent.mkdir(parents=True, exist_ok=True)
+            
+            hv.save(static_plot, save_path, fmt='png', dpi=300)
+            print(f"Plot saved to {save_path}")
+        except Exception as e:
+            warnings.warn(f"Could not save plot: {e}")
+    
+    # Show or return plot
+    if return_panel:
+        return app
+    elif show_plot:
+        try:
+            app.show(port=0)  # Auto-select port
+        except Exception as e:
+            warnings.warn(f"Could not display plot: {e}")
+            return app
+    
+    return None
+
 
 if __name__ == "__main__":
 
