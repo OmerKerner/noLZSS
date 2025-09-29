@@ -8,6 +8,7 @@ and validates that each factor correctly represents a substring match or reverse
 import pytest
 import os
 from pathlib import Path
+from typing import List
 
 # Import test helpers
 try:
@@ -41,7 +42,7 @@ def reverse_complement(dna_sequence: str) -> str:
         raise ValueError(f"Invalid nucleotide found: {e.args[0]}")
 
 
-def parse_fasta_sequences(fasta_path: str) -> list[str]:
+def parse_fasta_sequences(fasta_path: str) -> List[str]:
     """
     Parse FASTA file and return list of DNA sequences (uppercase, validated).
     
