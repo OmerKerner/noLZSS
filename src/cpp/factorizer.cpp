@@ -1076,7 +1076,7 @@ size_t write_factors_binary_file_multiple_dna_w_rc(const std::string& in_path, c
 
 // Reference sequence factorization functions
 
-std::vector<Factor> factorize_w_reference_seq(const std::string& reference_seq, const std::string& target_seq) {
+std::vector<Factor> factorize_dna_w_reference_seq(const std::string& reference_seq, const std::string& target_seq) {
     // Prepare reference and target sequences together
     std::vector<std::string> sequences = {reference_seq, target_seq};
     PreparedSequenceResult prep_result = prepare_multiple_dna_sequences_w_rc(sequences);
@@ -1095,7 +1095,7 @@ std::vector<Factor> factorize_w_reference_seq(const std::string& reference_seq, 
     return factors;
 }
 
-size_t factorize_w_reference_seq_file(const std::string& reference_seq, const std::string& target_seq, const std::string& out_path) {
+size_t factorize_dna_w_reference_seq_file(const std::string& reference_seq, const std::string& target_seq, const std::string& out_path) {
     // Set up binary output file with buffering
     std::ofstream os(out_path, std::ios::binary);
     if (!os) {
@@ -1106,13 +1106,65 @@ size_t factorize_w_reference_seq_file(const std::string& reference_seq, const st
     os.rdbuf()->pubsetbuf(buf.data(), static_cast<std::streamsize>(buf.size()));
     
     // Get factors using the in-memory function
-    std::vector<Factor> factors = factorize_w_reference_seq(reference_seq, target_seq);
+    std::vector<Factor> factors = factorize_dna_w_reference_seq(reference_seq, target_seq);
     
     // Create header for reference+target factorization
     FactorFileHeader header;
     header.num_factors = factors.size();
     header.num_sequences = 2;  // Reference + target sequences
     header.num_sentinels = 1;  // One sentinel between ref and target (in factorized region)
+    header.header_size = sizeof(FactorFileHeader);
+    
+    // Write header
+    os.write(reinterpret_cast<const char*>(&header), sizeof(header));
+    
+    // Write factors
+    for (const Factor& f : factors) {
+        os.write(reinterpret_cast<const char*>(&f), sizeof(Factor));
+    }
+    
+    return factors.size();
+}
+
+// General reference sequence factorization functions (no reverse complement)
+
+std::vector<Factor> factorize_w_reference(const std::string& reference_seq, const std::string& target_seq) {
+    // Concatenate reference and target with a sentinel (use ASCII character 1)
+    std::string combined = reference_seq + '\x01' + target_seq;
+    
+    // Calculate the starting position of the target sequence in the combined string
+    size_t target_start_pos = reference_seq.length() + 1; // +1 for the sentinel
+    
+    // Perform general factorization starting from target sequence position
+    std::vector<Factor> factors;
+    factorize_stream(combined, [&](const Factor& f) {
+        // Only collect factors that start at or after the target sequence
+        if (f.start >= target_start_pos) {
+            factors.push_back(f);
+        }
+    });
+    
+    return factors;
+}
+
+size_t factorize_w_reference_file(const std::string& reference_seq, const std::string& target_seq, const std::string& out_path) {
+    // Set up binary output file with buffering
+    std::ofstream os(out_path, std::ios::binary);
+    if (!os) {
+        throw std::runtime_error("Cannot create output file: " + out_path);
+    }
+    
+    std::vector<char> buf(1<<20); // 1 MB buffer for performance
+    os.rdbuf()->pubsetbuf(buf.data(), static_cast<std::streamsize>(buf.size()));
+    
+    // Get factors using the in-memory function
+    std::vector<Factor> factors = factorize_w_reference(reference_seq, target_seq);
+    
+    // Create header for reference+target factorization
+    FactorFileHeader header;
+    header.num_factors = factors.size();
+    header.num_sequences = 2;  // Reference + target sequences
+    header.num_sentinels = 1;  // One sentinel between ref and target
     header.header_size = sizeof(FactorFileHeader);
     
     // Write header

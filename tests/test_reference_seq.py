@@ -1,19 +1,25 @@
 """
 Test module for reference sequence factorization functionality.
 
-Tests the new factorize_w_reference_seq functions that allow factorization
-of a target sequence using a reference sequence with reverse complement awareness.
+Tests the factorize_dna_w_reference_seq functions that allow factorization
+of a target sequence using a reference sequence with reverse complement awareness,
+as well as the general factorize_w_reference functions for text/amino acid sequences.
 Factor positions are absolute positions in the combined reference+target string.
 """
 
 import os
 import tempfile
 import sys
-import pytest
 from pathlib import Path
 
 # Add source to path for testing
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+
+try:
+    import pytest
+    PYTEST_AVAILABLE = True
+except ImportError:
+    PYTEST_AVAILABLE = False
 
 def test_cpp_bindings_available():
     """Test that the C++ bindings are available."""
@@ -23,16 +29,19 @@ def test_cpp_bindings_available():
         if os.path.exists(build_path):
             sys.path.insert(0, build_path)
             import _noLZSS
-            assert hasattr(_noLZSS, 'factorize_w_reference_seq') and hasattr(_noLZSS, 'factorize_w_reference_seq_file')
+            assert hasattr(_noLZSS, 'factorize_dna_w_reference_seq') and hasattr(_noLZSS, 'factorize_dna_w_reference_seq_file')
+            assert hasattr(_noLZSS, 'factorize_w_reference') and hasattr(_noLZSS, 'factorize_w_reference_file')
         
         # Fallback to installed package
-        from noLZSS._noLZSS import factorize_w_reference_seq, factorize_w_reference_seq_file
+        from noLZSS._noLZSS import factorize_dna_w_reference_seq, factorize_dna_w_reference_seq_file
+        from noLZSS._noLZSS import factorize_w_reference, factorize_w_reference_file
         # If we reach here, import was successful
+        return True
     except ImportError:
-        pytest.fail("C++ bindings not available")
+        return False
 
-def test_basic_reference_factorization():
-    """Test basic reference sequence factorization with absolute factor positions."""
+def test_basic_dna_reference_factorization():
+    """Test basic DNA reference sequence factorization with absolute factor positions."""
     if not test_cpp_bindings_available():
         print("Skipping test - C++ extension not available")
         return
@@ -42,9 +51,9 @@ def test_basic_reference_factorization():
     if os.path.exists(build_path):
         sys.path.insert(0, build_path)
         import _noLZSS
-        factorize_func = _noLZSS.factorize_w_reference_seq
+        factorize_func = _noLZSS.factorize_dna_w_reference_seq
     else:
-        from noLZSS._noLZSS import factorize_w_reference_seq as factorize_func
+        from noLZSS._noLZSS import factorize_dna_w_reference_seq as factorize_func
     
     # Test case: reference contains patterns that target can reference
     reference = "ATCGATCGATCG"
@@ -72,8 +81,8 @@ def test_basic_reference_factorization():
     
     print(f"✓ Basic reference factorization test passed: {len(factors)} factors")
 
-def test_file_output():
-    """Test file output functionality."""
+def test_dna_file_output():
+    """Test DNA file output functionality."""
     if not test_cpp_bindings_available():
         print("Skipping test - C++ extension not available")
         return
@@ -83,9 +92,9 @@ def test_file_output():
     if os.path.exists(build_path):
         sys.path.insert(0, build_path)
         import _noLZSS
-        factorize_file_func = _noLZSS.factorize_w_reference_seq_file
+        factorize_file_func = _noLZSS.factorize_dna_w_reference_seq_file
     else:
-        from noLZSS._noLZSS import factorize_w_reference_seq_file as factorize_file_func
+        from noLZSS._noLZSS import factorize_dna_w_reference_seq_file as factorize_file_func
     
     reference = "ATCGATCGATCGATCG"
     target = "GATCGATCGATC"
@@ -112,8 +121,8 @@ def test_file_output():
         if os.path.exists(output_path):
             os.unlink(output_path)
 
-def test_edge_cases():
-    """Test edge cases and error conditions with absolute factor positions."""
+def test_dna_edge_cases():
+    """Test DNA edge cases and error conditions with absolute factor positions."""
     if not test_cpp_bindings_available():
         print("Skipping test - C++ extension not available")
         return
@@ -123,9 +132,9 @@ def test_edge_cases():
     if os.path.exists(build_path):
         sys.path.insert(0, build_path)
         import _noLZSS
-        factorize_func = _noLZSS.factorize_w_reference_seq
+        factorize_func = _noLZSS.factorize_dna_w_reference_seq
     else:
-        from noLZSS._noLZSS import factorize_w_reference_seq as factorize_func
+        from noLZSS._noLZSS import factorize_dna_w_reference_seq as factorize_func
     
     # Test with minimal sequences
     reference = "A"
@@ -153,8 +162,8 @@ def test_edge_cases():
     
     print("✓ Edge cases test passed")
 
-def test_reverse_complement():
-    """Test reverse complement functionality with absolute factor positions."""
+def test_dna_reverse_complement():
+    """Test DNA reverse complement functionality with absolute factor positions."""
     if not test_cpp_bindings_available():
         print("Skipping test - C++ extension not available")
         return
@@ -164,9 +173,9 @@ def test_reverse_complement():
     if os.path.exists(build_path):
         sys.path.insert(0, build_path)
         import _noLZSS
-        factorize_func = _noLZSS.factorize_w_reference_seq
+        factorize_func = _noLZSS.factorize_dna_w_reference_seq
     else:
-        from noLZSS._noLZSS import factorize_w_reference_seq as factorize_func
+        from noLZSS._noLZSS import factorize_dna_w_reference_seq as factorize_func
     
     # Create a case where target should match reverse complement of reference
     reference = "ATCGATCG"
@@ -185,13 +194,191 @@ def test_reverse_complement():
     
     print(f"✓ Reverse complement test: found RC matches = {has_rc_match}")
 
+
+def test_general_reference_text():
+    """Test general reference factorization with text sequences."""
+    if not test_cpp_bindings_available():
+        print("Skipping test - C++ extension not available")
+        return
+    
+    # Try build directory first
+    build_path = os.path.join(os.path.dirname(__file__), '..', 'build')
+    if os.path.exists(build_path):
+        sys.path.insert(0, build_path)
+        import _noLZSS
+        factorize_func = _noLZSS.factorize_w_reference
+        factorize_file_func = _noLZSS.factorize_w_reference_file
+    else:
+        from noLZSS._noLZSS import factorize_w_reference as factorize_func
+        from noLZSS._noLZSS import factorize_w_reference_file as factorize_file_func
+    
+    # Test with text that has matching patterns
+    reference = "hello world"
+    target = "world hello"
+    
+    factors = factorize_func(reference, target)
+    
+    # Verify we got factors
+    assert len(factors) > 0, "Should produce at least one factor"
+    
+    # Verify factor structure (no is_rc field for general factorization)
+    for factor in factors:
+        assert len(factor) == 3, "Each factor should have 3 elements (start, length, ref)"
+        start, length, ref = factor
+        assert isinstance(start, int) and start >= 0, "Start should be non-negative integer"
+        assert isinstance(length, int) and length > 0, "Length should be positive integer"
+        assert isinstance(ref, int) and ref >= 0, "Ref should be non-negative integer"
+        
+        # Factor start positions should be in the target sequence range
+        target_start_pos = len(reference) + 1
+        assert start >= target_start_pos, f"Factor start {start} should be at or after target start position {target_start_pos}"
+    
+    # Test file function
+    with tempfile.NamedTemporaryFile(suffix=".bin", delete=False) as f:
+        output_path = f.name
+    
+    try:
+        num_factors = factorize_file_func(reference, target, output_path)
+        assert num_factors == len(factors), "File function should produce same number of factors"
+        assert os.path.exists(output_path), "Output file should exist"
+        
+        print(f"✓ General text test passed: {num_factors} factors")
+        
+    finally:
+        if os.path.exists(output_path):
+            os.unlink(output_path)
+
+
+def test_general_reference_amino_acids():
+    """Test general reference factorization with amino acid sequences."""
+    if not test_cpp_bindings_available():
+        print("Skipping test - C++ extension not available")
+        return
+    
+    # Try build directory first
+    build_path = os.path.join(os.path.dirname(__file__), '..', 'build')
+    if os.path.exists(build_path):
+        sys.path.insert(0, build_path)
+        import _noLZSS
+        factorize_func = _noLZSS.factorize_w_reference
+    else:
+        from noLZSS._noLZSS import factorize_w_reference as factorize_func
+    
+    # Test with amino acid sequences
+    reference = "ACDEFGHIKLMNPQRSTVWY"  # All 20 standard amino acids
+    target = "ACDEFGHIKLMNPQR"  # Subset that should match reference
+    
+    factors = factorize_func(reference, target)
+    
+    # Verify we got factors and they make sense
+    assert len(factors) > 0, "Should produce at least one factor"
+    
+    # Should have fewer factors than characters due to matching
+    assert len(factors) <= len(target), "Should have compression"
+    
+    # Verify all factors are properly positioned
+    for factor in factors:
+        start, length, ref = factor
+        target_start_pos = len(reference) + 1
+        assert start >= target_start_pos, f"Factor start {start} should be in target region"
+        assert start < target_start_pos + len(target), f"Factor should not exceed target region"
+    
+    print(f"✓ Amino acid test passed: {len(factors)} factors for {len(target)} characters")
+
+
+def test_general_vs_dna_differences():
+    """Test that general and DNA functions behave differently for DNA sequences."""
+    if not test_cpp_bindings_available():
+        print("Skipping test - C++ extension not available")
+        return
+    
+    # Try build directory first
+    build_path = os.path.join(os.path.dirname(__file__), '..', 'build')
+    if os.path.exists(build_path):
+        sys.path.insert(0, build_path)
+        import _noLZSS
+        dna_func = _noLZSS.factorize_dna_w_reference_seq
+        general_func = _noLZSS.factorize_w_reference
+    else:
+        from noLZSS._noLZSS import factorize_dna_w_reference_seq as dna_func
+        from noLZSS._noLZSS import factorize_w_reference as general_func
+    
+    # Use DNA sequences where reverse complement could make a difference
+    reference = "ATCGATCG"
+    target = "CGATCGAT"  # Reverse complement of reference
+    
+    dna_factors = dna_func(reference, target)
+    general_factors = general_func(reference, target)
+    
+    # DNA factors should have 4 elements (including is_rc)
+    for factor in dna_factors:
+        assert len(factor) == 4, "DNA factors should have 4 elements"
+        assert isinstance(factor[3], bool), "Fourth element should be boolean is_rc"
+    
+    # General factors should have 3 elements (no is_rc)
+    for factor in general_factors:
+        assert len(factor) == 3, "General factors should have 3 elements"
+    
+    # Check if DNA function found reverse complement matches
+    has_rc_matches = any(factor[3] for factor in dna_factors)
+    
+    print(f"✓ Function differences test: DNA has RC matches = {has_rc_matches}")
+    print(f"  DNA factors: {len(dna_factors)}, General factors: {len(general_factors)}")
+
+
+def test_pattern_matching_validation():
+    """Test that factors correctly reference patterns in the reference sequence."""
+    if not test_cpp_bindings_available():
+        print("Skipping test - C++ extension not available")
+        return
+    
+    # Try build directory first
+    build_path = os.path.join(os.path.dirname(__file__), '..', 'build')
+    if os.path.exists(build_path):
+        sys.path.insert(0, build_path)
+        import _noLZSS
+        factorize_func = _noLZSS.factorize_w_reference
+    else:
+        from noLZSS._noLZSS import factorize_w_reference as factorize_func
+    
+    reference = "abcdefghijk"
+    target = "defghijkabc"  # Contains substrings from reference
+    combined = reference + '\x01' + target  # How the C++ function combines them
+    
+    factors = factorize_func(reference, target)
+    
+    # Validate that each factor correctly references content
+    target_start_pos = len(reference) + 1
+    
+    for factor in factors:
+        start, length, ref = factor
+        
+        # Extract the factor content from the combined string
+        factor_content = combined[start:start + length]
+        
+        # Extract the reference content
+        ref_content = combined[ref:ref + length]
+        
+        # They should match
+        assert factor_content == ref_content, f"Factor content '{factor_content}' should match reference content '{ref_content}'"
+        
+        # Factor should be in target region
+        assert start >= target_start_pos, f"Factor start {start} should be in target region"
+    
+    print(f"✓ Pattern matching validation passed for {len(factors)} factors")
+
+
 def main():
     """Run all tests."""
     tests = [
-        test_basic_reference_factorization,
-        test_file_output,
-        test_edge_cases,
-        test_reverse_complement,
+        test_basic_dna_reference_factorization,
+        test_dna_file_output,
+        test_dna_edge_cases,
+        test_dna_reverse_complement,
+        test_general_reference_text,
+        test_general_reference_amino_acids,
+        test_general_vs_dna_differences,
+        test_pattern_matching_validation,
     ]
     
     print("Running reference sequence factorization tests...")

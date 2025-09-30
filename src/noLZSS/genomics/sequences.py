@@ -117,7 +117,7 @@ def detect_sequence_type(data: Union[str, bytes]) -> str:
         return 'text'
 
 
-def factorize_w_reference_seq(reference_seq: Union[str, bytes], target_seq: Union[str, bytes], validate: bool = True):
+def factorize_dna_w_reference_seq(reference_seq: Union[str, bytes], target_seq: Union[str, bytes], validate: bool = True):
     """
     Factorize target DNA sequence using a reference sequence with reverse complement awareness.
     
@@ -144,7 +144,7 @@ def factorize_w_reference_seq(reference_seq: Union[str, bytes], target_seq: Unio
         Both sequences are converted to uppercase before factorization.
         ref field has RC_MASK cleared. is_rc boolean indicates reverse complement matches.
     """
-    from .._noLZSS import factorize_w_reference_seq as _factorize_w_reference_seq
+    from .._noLZSS import factorize_dna_w_reference_seq as _factorize_dna_w_reference_seq
     from ..utils import validate_input
     
     if validate:
@@ -163,10 +163,10 @@ def factorize_w_reference_seq(reference_seq: Union[str, bytes], target_seq: Unio
     if isinstance(target_seq, bytes):
         target_seq = target_seq.decode('ascii')
     
-    return _factorize_w_reference_seq(reference_seq, target_seq)
+    return _factorize_dna_w_reference_seq(reference_seq, target_seq)
 
 
-def factorize_w_reference_seq_file(reference_seq: Union[str, bytes], target_seq: Union[str, bytes], 
+def factorize_dna_w_reference_seq_file(reference_seq: Union[str, bytes], target_seq: Union[str, bytes], 
                                    output_path: Union[str, 'Path'], validate: bool = True) -> int:
     """
     Factorize target DNA sequence using a reference sequence and write factors to binary file.
@@ -194,7 +194,7 @@ def factorize_w_reference_seq_file(reference_seq: Union[str, bytes], target_seq:
         Binary format follows the same structure as other DNA factorization binary outputs.
         This function overwrites the output file if it exists.
     """
-    from .._noLZSS import factorize_w_reference_seq_file as _factorize_w_reference_seq_file
+    from .._noLZSS import factorize_dna_w_reference_seq_file as _factorize_dna_w_reference_seq_file
     from ..utils import validate_input
     from pathlib import Path
     
@@ -218,4 +218,4 @@ def factorize_w_reference_seq_file(reference_seq: Union[str, bytes], target_seq:
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     
-    return _factorize_w_reference_seq_file(reference_seq, target_seq, str(output_path))
+    return _factorize_dna_w_reference_seq_file(reference_seq, target_seq, str(output_path))

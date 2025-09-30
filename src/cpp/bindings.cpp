@@ -818,11 +818,11 @@ Note:
     The function validates that all sequences contain only valid DNA nucleotides.
 )doc");
 
-    // Reference sequence factorization functions
-    m.def("factorize_w_reference_seq", [](const std::string& reference_seq, const std::string& target_seq) {
+    // DNA-specific reference sequence factorization functions
+    m.def("factorize_dna_w_reference_seq", [](const std::string& reference_seq, const std::string& target_seq) {
         // Release GIL while doing heavy C++ work
         py::gil_scoped_release release;
-        auto factors = noLZSS::factorize_w_reference_seq(reference_seq, target_seq);
+        auto factors = noLZSS::factorize_dna_w_reference_seq(reference_seq, target_seq);
         py::gil_scoped_acquire acquire;
 
         // Convert factors to Python tuples
@@ -856,10 +856,10 @@ Note:
     ref field has RC_MASK cleared. is_rc boolean indicates if this was a reverse complement match.
 )doc");
 
-    m.def("factorize_w_reference_seq_file", [](const std::string& reference_seq, const std::string& target_seq, const std::string& out_path) {
+    m.def("factorize_dna_w_reference_seq_file", [](const std::string& reference_seq, const std::string& target_seq, const std::string& out_path) {
         // Release GIL while doing heavy C++ work
         py::gil_scoped_release release;
-        auto num_factors = noLZSS::factorize_w_reference_seq_file(reference_seq, target_seq, out_path);
+        auto num_factors = noLZSS::factorize_dna_w_reference_seq_file(reference_seq, target_seq, out_path);
         py::gil_scoped_acquire acquire;
         return num_factors;
     }, py::arg("reference_seq"), py::arg("target_seq"), py::arg("out_path"), R"doc(Factorize target DNA sequence using a reference sequence and write factors to binary file.
@@ -884,6 +884,80 @@ Note:
     Factor start positions are relative to the beginning of the target sequence.
     Binary format follows the same structure as other DNA factorization binary outputs.
     This function overwrites the output file if it exists.
+)doc");
+
+    // General reference sequence factorization functions (no reverse complement)
+    m.def("factorize_w_reference", [](const std::string& reference_seq, const std::string& target_seq) {
+        // Release GIL while doing heavy C++ work
+        py::gil_scoped_release release;
+        auto factors = noLZSS::factorize_w_reference(reference_seq, target_seq);
+        py::gil_scoped_acquire acquire;
+
+        // Convert factors to Python tuples (no is_rc field for general factorization)
+        py::list out;
+        for (auto &f : factors) {
+            out.append(py::make_tuple(f.start, f.length, f.ref));
+        }
+        return out;
+    }, py::arg("reference_seq"), py::arg("target_seq"), R"doc(Factorize target sequence using a reference sequence without reverse complement.
+
+Concatenates a reference sequence and target sequence, then performs noLZSS factorization
+starting from where the target sequence begins. This allows the target sequence to reference
+patterns in the reference sequence without factorizing the reference itself. Suitable for
+general text or amino acid sequences.
+
+Args:
+    reference_seq: Reference sequence string (any text)
+    target_seq: Target sequence string to be factorized (any text)
+
+Returns:
+    List of (start, length, ref) tuples representing the factorization of target sequence
+
+Raises:
+    ValueError: If sequences are empty
+    RuntimeError: If processing errors occur
+
+Note:
+    Factor start positions are absolute positions in the combined reference+target string.
+    No reverse complement matching is performed - suitable for text or amino acid sequences.
+
+Warning:
+    The sentinel character '\x01' (ASCII 1) must not appear in either input sequence,
+    as it is used internally to separate the reference and target sequences.
+)doc");
+
+    m.def("factorize_w_reference_file", [](const std::string& reference_seq, const std::string& target_seq, const std::string& out_path) {
+        // Release GIL while doing heavy C++ work
+        py::gil_scoped_release release;
+        auto num_factors = noLZSS::factorize_w_reference_file(reference_seq, target_seq, out_path);
+        py::gil_scoped_acquire acquire;
+        return num_factors;
+    }, py::arg("reference_seq"), py::arg("target_seq"), py::arg("out_path"), R"doc(Factorize target sequence using a reference sequence and write factors to binary file.
+
+Concatenates a reference sequence and target sequence, then performs noLZSS factorization
+starting from where the target sequence begins, and writes the resulting factors to a binary file.
+Suitable for general text or amino acid sequences.
+
+Args:
+    reference_seq: Reference sequence string (any text)
+    target_seq: Target sequence string to be factorized (any text)
+    out_path: Path to output file where binary factors will be written
+
+Returns:
+    Number of factors written to the output file
+
+Raises:
+    ValueError: If sequences are empty
+    RuntimeError: If unable to create output file or processing errors
+
+Note:
+    Factor start positions are absolute positions in the combined reference+target string.
+    No reverse complement matching is performed - suitable for text or amino acid sequences.
+    This function overwrites the output file if it exists.
+
+Warning:
+    The sentinel character '\x01' (ASCII 1) must not appear in either input sequence,
+    as it is used internally to separate the reference and target sequences.
 )doc");
 
     // Version information
