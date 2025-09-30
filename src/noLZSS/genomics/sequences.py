@@ -219,39 +219,3 @@ def factorize_dna_w_reference_seq_file(reference_seq: Union[str, bytes], target_
     output_path.parent.mkdir(parents=True, exist_ok=True)
     
     return _factorize_dna_w_reference_seq_file(reference_seq, target_seq, str(output_path))
-
-
-# Backward compatibility functions with deprecation warnings
-def factorize_w_reference_seq(reference_seq: Union[str, bytes], target_seq: Union[str, bytes], validate: bool = True):
-    """
-    DEPRECATED: Use factorize_dna_w_reference_seq() instead.
-    
-    This function is deprecated and will be removed in a future version.
-    Please use factorize_dna_w_reference_seq() for DNA sequences with reverse complement support.
-    """
-    import warnings
-    warnings.warn(
-        "factorize_w_reference_seq() is deprecated and will be removed in a future version. "
-        "Use factorize_dna_w_reference_seq() instead for DNA sequences with reverse complement support.",
-        DeprecationWarning,
-        stacklevel=2
-    )
-    return factorize_dna_w_reference_seq(reference_seq, target_seq, validate)
-
-
-def factorize_w_reference_seq_file(reference_seq: Union[str, bytes], target_seq: Union[str, bytes], 
-                                   output_path: Union[str, 'Path'], validate: bool = True) -> int:
-    """
-    DEPRECATED: Use factorize_dna_w_reference_seq_file() instead.
-    
-    This function is deprecated and will be removed in a future version.
-    Please use factorize_dna_w_reference_seq_file() for DNA sequences with reverse complement support.
-    """
-    import warnings
-    warnings.warn(
-        "factorize_w_reference_seq_file() is deprecated and will be removed in a future version. "
-        "Use factorize_dna_w_reference_seq_file() instead for DNA sequences with reverse complement support.",
-        DeprecationWarning,
-        stacklevel=2
-    )
-    return factorize_dna_w_reference_seq_file(reference_seq, target_seq, output_path, validate)
