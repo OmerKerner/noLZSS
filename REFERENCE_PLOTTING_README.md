@@ -37,7 +37,71 @@ This implementation adds new plotting functions to visualize DNA sequences that 
 - High-performance rendering for large datasets
 - Real-time plot updates
 
-## Usage Examples
+## Command-Line Interface
+
+The plotting functions are available via command-line for easy access:
+
+### Basic Usage
+
+```bash
+# Simple matplotlib plot
+python -m noLZSS.genomics.plots reference-plot \
+    "ATCGATCGATCGATCG" \
+    "ATCGCCCCGATCGAAA" \
+    --reference_name "Reference Genome" \
+    --target_name "Query Sequence" \
+    --save_path "reference_plot.png" \
+    --show_plot
+```
+
+### Interactive Plot
+
+```bash
+# Interactive Panel/Datashader plot
+python -m noLZSS.genomics.plots reference-plot \
+    "ATCGATCGATCGATCG" \
+    "ATCGCCCCGATCGAAA" \
+    --interactive \
+    --save_path "reference_plot.png"
+```
+
+### Using Pre-computed Factors
+
+```bash
+# Use binary factor file
+python -m noLZSS.genomics.plots reference-plot \
+    "ATCGATCGATCGATCG" \
+    "ATCGCCCCGATCGAAA" \
+    --factors_filepath "reference_factors.bin" \
+    --save_path "reference_plot.png"
+```
+
+### Available Commands
+
+```bash
+# View all plot types
+python -m noLZSS.genomics.plots --help
+
+# View reference-plot specific help
+python -m noLZSS.genomics.plots reference-plot --help
+```
+
+### Command-Line Arguments
+
+**Required:**
+- `reference_seq`: Reference DNA sequence
+- `target_seq`: Target DNA sequence
+
+**Optional:**
+- `--factors_filepath`: Path to binary factors file (will compute if not provided)
+- `--reference_name`: Name for reference sequence (default: "Reference")
+- `--target_name`: Name for target sequence (default: "Target")
+- `--save_path`: Path to save plot image
+- `--show_plot`: Display the plot
+- `--interactive`: Use interactive Panel plot instead of simple matplotlib
+- `--return_panel`: Return Panel app object (interactive mode only)
+
+## Python API Usage Examples
 
 ```python
 from noLZSS.genomics.sequences import factorize_w_reference_seq

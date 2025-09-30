@@ -1573,6 +1573,18 @@ if __name__ == "__main__":
     self_factors_parser.add_argument('--show_plot', action='store_true', default=True, help='Whether to display the plot')
     self_factors_parser.add_argument('--return_panel', action='store_true', help='Whether to return the Panel app')
 
+    # Subparser for reference sequence plotting
+    ref_plot_parser = subparsers.add_parser('reference-plot', help='Plot target sequence factorized with reference sequence')
+    ref_plot_parser.add_argument('reference_seq', help='Reference DNA sequence')
+    ref_plot_parser.add_argument('target_seq', help='Target DNA sequence')
+    ref_plot_parser.add_argument('--factors_filepath', help='Path to binary factors file (optional, will compute if not provided)')
+    ref_plot_parser.add_argument('--reference_name', default='Reference', help='Name for the reference sequence')
+    ref_plot_parser.add_argument('--target_name', default='Target', help='Name for the target sequence')
+    ref_plot_parser.add_argument('--save_path', default=None, help='Path to save the plot image')
+    ref_plot_parser.add_argument('--show_plot', action='store_true', default=True, help='Whether to display the plot')
+    ref_plot_parser.add_argument('--interactive', action='store_true', help='Use interactive Panel/Datashader plot instead of simple matplotlib')
+    ref_plot_parser.add_argument('--return_panel', action='store_true', help='Whether to return the Panel app (interactive mode only)')
+
     args = parser.parse_args()
 
     if args.command == 'cumulative':
@@ -1592,3 +1604,26 @@ if __name__ == "__main__":
             show_plot=args.show_plot,
             return_panel=args.return_panel
         )
+    elif args.command == 'reference-plot':
+        # Choose between simple and interactive plotting
+        if args.interactive:
+            plot_reference_seq_lz_factor_plot(
+                reference_seq=args.reference_seq,
+                target_seq=args.target_seq,
+                factors_filepath=args.factors_filepath,
+                reference_name=args.reference_name,
+                target_name=args.target_name,
+                save_path=args.save_path,
+                show_plot=args.show_plot,
+                return_panel=args.return_panel
+            )
+        else:
+            plot_reference_seq_lz_factor_plot_simple(
+                reference_seq=args.reference_seq,
+                target_seq=args.target_seq,
+                factors_filepath=args.factors_filepath,
+                reference_name=args.reference_name,
+                target_name=args.target_name,
+                save_path=args.save_path,
+                show_plot=args.show_plot
+            )

@@ -5,11 +5,54 @@ Example usage of reference sequence plotting functions.
 This script demonstrates how to use the new plotting functions:
 - plot_reference_seq_lz_factor_plot_simple()  # matplotlib-based
 - plot_reference_seq_lz_factor_plot()         # interactive Panel/Datashader
+- Command-line interface via python -m noLZSS.genomics.plots reference-plot
 
 These functions are designed to work with the output of factorize_w_reference_seq().
 """
 
 # Example usage (requires the package to be built with C++ extension)
+
+def example_cli_usage():
+    """Example using the command-line interface"""
+    
+    print("""
+    Command-Line Interface Usage:
+    ============================
+    
+    The plotting functions can be accessed via command-line:
+    
+    # Simple matplotlib plot
+    python -m noLZSS.genomics.plots reference-plot \\
+        "ATCGATCGATCGATCG" \\
+        "ATCGCCCCGATCGAAA" \\
+        --reference_name "Reference Genome" \\
+        --target_name "Query Sequence" \\
+        --save_path "reference_plot.png" \\
+        --show_plot
+    
+    # Interactive Panel plot
+    python -m noLZSS.genomics.plots reference-plot \\
+        "ATCGATCGATCGATCG" \\
+        "ATCGCCCCGATCGAAA" \\
+        --reference_name "Reference Genome" \\
+        --target_name "Query Sequence" \\
+        --save_path "reference_plot_interactive.png" \\
+        --interactive \\
+        --show_plot
+    
+    # Using pre-computed factors from binary file
+    python -m noLZSS.genomics.plots reference-plot \\
+        "ATCGATCGATCGATCG" \\
+        "ATCGCCCCGATCGAAA" \\
+        --factors_filepath "reference_factors.bin" \\
+        --save_path "reference_plot.png"
+    
+    # View all available plot types
+    python -m noLZSS.genomics.plots --help
+    
+    # View help for reference-plot
+    python -m noLZSS.genomics.plots reference-plot --help
+    """)
 
 def example_simple_plot():
     """Example using the simple matplotlib-based plotting function"""
@@ -147,6 +190,9 @@ if __name__ == "__main__":
     print("=" * 40)
     
     try:
+        print("\n0. Command-line interface:")
+        example_cli_usage()
+        
         print("\n1. Simple matplotlib plot:")
         example_simple_plot()
         
