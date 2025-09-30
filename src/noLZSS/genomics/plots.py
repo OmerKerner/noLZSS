@@ -5,7 +5,7 @@ This module provides functions for creating plots and visualizations
 from FASTA files and their factorizations.
 """
 
-from typing import Union, Optional, Dict, Any, List, Tuple
+from typing import Union, Optional, Dict, Any, List, Tuple, Literal, Sequence, cast
 from pathlib import Path
 import warnings
 import argparse
@@ -15,9 +15,31 @@ from .fasta import _parse_fasta_content
 from .sequences import detect_sequence_type
 
 
+
 class PlotError(NoLZSSError):
     """Raised when plotting operations fail."""
     pass
+
+
+def _normalize_reference_factors(
+    factors: List[Tuple[int, ...]]
+) -> List[Tuple[int, int, int, bool]]:
+    """Ensure reference-sequence factors include an explicit reverse-complement flag."""
+    normalized: List[Tuple[int, int, int, bool]] = []
+
+    for idx, factor in enumerate(factors):
+        if len(factor) == 4:
+            start, length, ref, is_rc = factor
+            normalized.append((int(start), int(length), int(ref), bool(is_rc)))
+        elif len(factor) == 3:
+            start, length, ref = factor
+            normalized.append((int(start), int(length), int(ref), False))
+        else:
+            raise PlotError(
+                f"Factor at index {idx} has {len(factor)} elements; expected 3 or 4 values"
+            )
+
+    return normalized
 
 
 def plot_single_seq_accum_factors_from_file(
@@ -327,7 +349,7 @@ def plot_multiple_seq_self_lz_factor_plot_from_file(
     save_path: Optional[Union[str, Path]] = None,
     show_plot: bool = True,
     return_panel: bool = False
-) -> Optional["panel.viewable.Viewable"]:
+) -> Optional[Any]:
     """
     Create an interactive Datashader/Panel factor plot for multiple DNA sequences from a FASTA file or binary factors file.
 
@@ -825,25 +847,35 @@ def plot_reference_seq_lz_factor_plot_simple(
     reference_name: str = "Reference",
     target_name: str = "Target",
     save_path: Optional[Union[str, Path]] = None,
-    show_plot: bool = True
+    show_plot: bool = True,
+    factorization_mode: Literal["dna", "general"] = "dna"
 ) -> None:
     """
-    Create a simple matplotlib factor plot for a DNA sequence factorized with a reference sequence.
+    Create a simple matplotlib factor plot for a sequence factorized with a reference sequence.
     
-    This function creates a plot compatible with the output of factorize_w_reference_seq().
+    This function creates a plot compatible with the outputs of factorize_dna_w_reference_seq()
+    or the general factorize_w_reference() wrapper.
     The plot shows the reference sequence at the beginning, concatenated with the target sequence,
     and uses distinct colors for reference vs target regions.
     
     Args:
-        reference_seq: Reference DNA sequence (A, C, T, G - case insensitive)
-        target_seq: Target DNA sequence (A, C, T, G - case insensitive)
-        factors: Optional list of (start, length, ref, is_rc) tuples from factorize_w_reference_seq().
-                If None, will compute factors automatically.
-        factors_filepath: Optional path to binary factors file (mutually exclusive with factors)
+        reference_seq: Reference DNA sequence (A, C, T, G - case insensitive) or
+            general ASCII text when ``factorization_mode`` is "general"
+        target_seq: Target DNA sequence (A, C, T, G - case insensitive) or
+            general ASCII text when ``factorization_mode`` is "general"
+        factors: Optional list of (start, length, ref, is_rc) tuples from
+            factorize_dna_w_reference_seq() or factorize_w_reference(). If None,
+            the function will compute factors automatically based on
+            ``factorization_mode``.
+        factors_filepath: Optional path to binary factors file (mutually exclusive
+            with ``factors``)
         reference_name: Name for the reference sequence (default: "Reference")
         target_name: Name for the target sequence (default: "Target")
         save_path: Optional path to save the plot image
         show_plot: Whether to display the plot
+        factorization_mode: Choose "dna" for reverse-complement-aware
+            factorization or "general" for ASCII/general sequences without
+            reverse complements
         
     Raises:
         PlotError: If plotting fails or input sequences are invalid
@@ -864,6 +896,10 @@ def plot_reference_seq_lz_factor_plot_simple(
     # Validate input arguments
     if factors is not None and factors_filepath is not None:
         raise ValueError("Cannot provide both factors and factors_filepath")
+
+    factorization_mode_normalized = factorization_mode.lower()
+    if factorization_mode_normalized not in {"dna", "general"}:
+        raise ValueError("factorization_mode must be 'dna' or 'general'")
     
     # Convert sequences to strings if they're bytes
     if isinstance(reference_seq, bytes):
@@ -871,18 +907,37 @@ def plot_reference_seq_lz_factor_plot_simple(
     if isinstance(target_seq, bytes):
         target_seq = target_seq.decode('ascii')
     
+    raw_factors: Optional[List[Tuple[int, ...]]] = None
+
     # Get factors if not provided
     if factors is None:
         if factors_filepath is not None:
-            from ..utils import read_factors_binary_file_with_metadata
-            metadata = read_factors_binary_file_with_metadata(factors_filepath)
-            factors = metadata['factors']
+            from ..utils import (
+                read_factors_binary_file,
+                read_factors_binary_file_with_metadata,
+            )
+
+            try:
+                metadata = read_factors_binary_file_with_metadata(factors_filepath)
+                raw_factors = metadata['factors']
+            except NoLZSSError:
+                raw_factors = read_factors_binary_file(factors_filepath)
         else:
-            from .sequences import factorize_w_reference_seq
-            factors = factorize_w_reference_seq(reference_seq, target_seq)
-    
-    if not factors:
+            if factorization_mode_normalized == "dna":
+                from .sequences import factorize_dna_w_reference_seq
+
+                raw_factors = factorize_dna_w_reference_seq(reference_seq, target_seq)
+            else:
+                from ..core import factorize_w_reference
+
+                raw_factors = factorize_w_reference(reference_seq, target_seq)
+    else:
+        raw_factors = list(factors)
+
+    if not raw_factors:
         raise PlotError("No factors available for plotting")
+
+    factors = _normalize_reference_factors(raw_factors)
     
     # Calculate sequence boundaries
     ref_length = len(reference_seq)
@@ -904,7 +959,7 @@ def plot_reference_seq_lz_factor_plot_simple(
             color = 'red' if not is_rc else 'darkorange'
             alpha = 0.7
         else:
-            # Reference region (shouldn't happen with factorize_w_reference_seq)
+            # Reference region (shouldn't happen with factorize_dna_w_reference_seq)
             color = 'blue' if not is_rc else 'darkblue'
             alpha = 0.7
         
@@ -939,19 +994,22 @@ def plot_reference_seq_lz_factor_plot_simple(
     ]
     ax.legend(handles=legend_elements, loc='upper right', bbox_to_anchor=(1, 1))
     
-    # Set equal aspect ratio and grid
+    # Set equal aspect ratio, grid, and ensure axes start at zero
     ax.set_aspect('equal', adjustable='box')
     ax.grid(True, alpha=0.3)
-    
-    # Add text annotations for sequence regions
-    ax.text(ref_length/2, -max_pos*0.05, reference_name, ha='center', va='top', 
-            fontsize=12, color='blue', weight='bold')
-    ax.text((target_start + total_length)/2, -max_pos*0.05, target_name, ha='center', va='top',
-            fontsize=12, color='red', weight='bold')
-    ax.text(-max_pos*0.05, ref_length/2, reference_name, ha='right', va='center',
-            fontsize=12, color='blue', weight='bold', rotation=90)
-    ax.text(-max_pos*0.05, (target_start + total_length)/2, target_name, ha='right', va='center',
-            fontsize=12, color='red', weight='bold', rotation=90)
+    ax.set_xlim(0, max_pos)
+    ax.set_ylim(0, max_pos)
+
+    # Add text annotations for sequence regions within the visible range
+    label_offset = max(max_pos * 0.03, 1.0)
+    ax.text(ref_length / 2, label_offset, reference_name, ha='center', va='bottom',
+        fontsize=12, color='blue', weight='bold')
+    ax.text((target_start + total_length) / 2, label_offset, target_name, ha='center', va='bottom',
+        fontsize=12, color='red', weight='bold')
+    ax.text(label_offset, ref_length / 2, reference_name, ha='left', va='center',
+        fontsize=12, color='blue', weight='bold', rotation=90)
+    ax.text(label_offset, (target_start + total_length) / 2, target_name, ha='left', va='center',
+        fontsize=12, color='red', weight='bold', rotation=90)
     
     plt.tight_layout()
     
@@ -978,26 +1036,36 @@ def plot_reference_seq_lz_factor_plot(
     target_name: str = "Target",
     save_path: Optional[Union[str, Path]] = None,
     show_plot: bool = True,
-    return_panel: bool = False
-) -> Optional["panel.viewable.Viewable"]:
+    return_panel: bool = False,
+    factorization_mode: Literal["dna", "general"] = "dna"
+) -> Optional[Any]:
     """
-    Create an interactive Datashader/Panel factor plot for a DNA sequence factorized with a reference sequence.
+    Create an interactive Datashader/Panel factor plot for a sequence factorized with a reference sequence.
     
-    This function creates a plot compatible with the output of factorize_w_reference_seq().
+    This function creates a plot compatible with the outputs of factorize_dna_w_reference_seq()
+    or the general factorize_w_reference() wrapper.
     The plot shows the reference sequence at the beginning, concatenated with the target sequence,
     and uses distinct colors for reference vs target regions.
     
     Args:
-        reference_seq: Reference DNA sequence (A, C, T, G - case insensitive)
-        target_seq: Target DNA sequence (A, C, T, G - case insensitive)
-        factors: Optional list of (start, length, ref, is_rc) tuples from factorize_w_reference_seq().
-                If None, will compute factors automatically.
-        factors_filepath: Optional path to binary factors file (mutually exclusive with factors)
+        reference_seq: Reference DNA sequence (A, C, T, G - case insensitive) or
+            general ASCII text when ``factorization_mode`` is "general"
+        target_seq: Target DNA sequence (A, C, T, G - case insensitive) or
+            general ASCII text when ``factorization_mode`` is "general"
+        factors: Optional list of (start, length, ref, is_rc) tuples from
+            factorize_dna_w_reference_seq() or factorize_w_reference(). If None,
+            the function will compute factors automatically based on
+            ``factorization_mode``.
+        factors_filepath: Optional path to binary factors file (mutually exclusive
+            with ``factors``)
         reference_name: Name for the reference sequence (default: "Reference")
         target_name: Name for the target sequence (default: "Target")
         save_path: Optional path to save the plot image (PNG export)
         show_plot: Whether to display/serve the plot
         return_panel: Whether to return the Panel app for embedding
+        factorization_mode: Choose "dna" for reverse-complement-aware
+            factorization or "general" for ASCII/general sequences without
+            reverse complements
         
     Returns:
         Panel app if return_panel=True, otherwise None
@@ -1033,25 +1101,48 @@ def plot_reference_seq_lz_factor_plot(
     # Validate input arguments
     if factors is not None and factors_filepath is not None:
         raise ValueError("Cannot provide both factors and factors_filepath")
-    
+
+    factorization_mode_normalized = factorization_mode.lower()
+    if factorization_mode_normalized not in {"dna", "general"}:
+        raise ValueError("factorization_mode must be 'dna' or 'general'")
+
     # Convert sequences to strings if they're bytes
     if isinstance(reference_seq, bytes):
         reference_seq = reference_seq.decode('ascii')
     if isinstance(target_seq, bytes):
         target_seq = target_seq.decode('ascii')
     
+    raw_factors: Optional[List[Tuple[int, ...]]] = None
+
     # Get factors if not provided
     if factors is None:
         if factors_filepath is not None:
-            from ..utils import read_factors_binary_file_with_metadata
-            metadata = read_factors_binary_file_with_metadata(factors_filepath)
-            factors = metadata['factors']
+            from ..utils import (
+                read_factors_binary_file,
+                read_factors_binary_file_with_metadata,
+            )
+
+            try:
+                metadata = read_factors_binary_file_with_metadata(factors_filepath)
+                raw_factors = metadata['factors']
+            except NoLZSSError:
+                raw_factors = read_factors_binary_file(factors_filepath)
         else:
-            from .sequences import factorize_w_reference_seq
-            factors = factorize_w_reference_seq(reference_seq, target_seq)
-    
-    if not factors:
+            if factorization_mode_normalized == "dna":
+                from .sequences import factorize_dna_w_reference_seq
+
+                raw_factors = factorize_dna_w_reference_seq(reference_seq, target_seq)
+            else:
+                from ..core import factorize_w_reference
+
+                raw_factors = factorize_w_reference(reference_seq, target_seq)
+    else:
+        raw_factors = list(factors)
+
+    if not raw_factors:
         raise PlotError("No factors available for plotting")
+
+    factors = _normalize_reference_factors(raw_factors)
     
     # Calculate sequence boundaries
     ref_length = len(reference_seq)
@@ -1080,7 +1171,12 @@ def plot_reference_seq_lz_factor_plot(
         })
     
     df = pd.DataFrame(factor_data)
-    
+
+    global_x_max = max(float(df[['x0', 'x1']].max().max()), float(total_length))
+    raw_y_max = float(df[['y0', 'y1']].max().max())
+    global_y_max = max(raw_y_max, float(target_start))
+    global_max = max(global_x_max, global_y_max)
+
     if len(df) == 0:
         raise PlotError("No valid factors to plot")
     
@@ -1146,7 +1242,8 @@ def plot_reference_seq_lz_factor_plot(
     def create_hover_overlay(x_range, y_range, df_filtered, k_per_bin):
         """Create hover overlay for detailed factor information"""
         if x_range is None or y_range is None or len(df_filtered) == 0:
-            return hv.Text(0, 0, "").opts(alpha=0)
+            empty_hover = pd.DataFrame(columns=['x', 'y', 'start', 'length', 'ref_pos', 'is_rc', 'region'])
+            return hv.Points(empty_hover, ['x', 'y'], ['start', 'length', 'ref_pos', 'is_rc', 'region'])
         
         x_min, x_max = x_range
         y_min, y_max = y_range
@@ -1158,7 +1255,8 @@ def plot_reference_seq_lz_factor_plot(
         ]
         
         if len(view_data) == 0:
-            return hv.Text(0, 0, "").opts(alpha=0)
+            empty_hover = pd.DataFrame(columns=['x', 'y', 'start', 'length', 'ref_pos', 'is_rc', 'region'])
+            return hv.Points(empty_hover, ['x', 'y'], ['start', 'length', 'ref_pos', 'is_rc', 'region'])
         
         # Sample data if too many points
         if len(view_data) > k_per_bin:
@@ -1178,7 +1276,8 @@ def plot_reference_seq_lz_factor_plot(
             })
         
         if not hover_data:
-            return hv.Text(0, 0, "").opts(alpha=0)
+            empty_hover = pd.DataFrame(columns=['x', 'y', 'start', 'length', 'ref_pos', 'is_rc', 'region'])
+            return hv.Points(empty_hover, ['x', 'y'], ['start', 'length', 'ref_pos', 'is_rc', 'region'])
         
         hover_df = pd.DataFrame(hover_data)
         
@@ -1190,11 +1289,24 @@ def plot_reference_seq_lz_factor_plot(
         )
     
     # Set up interactive plot
-    rangexy = streams.RangeXY()
+    rangexy = streams.RangeXY(x_range=(0, global_x_max), y_range=(0, global_max))
     
     # Create dynamic plot function
     def create_plot(length_range, show_overlay, k_per_bin, colormap_name):
-        length_min, length_max = length_range
+        length_min: float
+        length_max: float
+
+        if isinstance(length_range, Sequence) and len(length_range) == 2:
+            length_min, length_max = length_range[0], length_range[1]
+        else:
+            start = getattr(length_range, "start", None)
+            end = getattr(length_range, "end", None)
+            if start is None or end is None:
+                raise TypeError(
+                    "length_range must be a (min, max) sequence or expose 'start' and 'end' attributes"
+                )
+            length_min, length_max = start, end
+
         # Filter by length
         df_filtered = df[
             (df['length'] >= length_min) & 
@@ -1208,8 +1320,12 @@ def plot_reference_seq_lz_factor_plot(
         base_plot = create_base_layers(df_filtered)
         
         # Add diagonal y=x line
-        max_val = max(df_filtered[['x1', 'y1']].max())
-        min_val = min(df_filtered[['x0', 'y0']].min())
+        filtered_max = float(df_filtered[['x1', 'y1']].max().max())
+        max_val = max(global_max, filtered_max)
+        min_val = 0.0
+        range_span = max(max_val - min_val, 1.0)
+        label_offset = max(range_span * 0.03, 1.0)
+
         diagonal = hv.Curve([(min_val, min_val), (max_val, max_val)]).opts(
             line_dash='dashed',
             line_color='gray',
@@ -1249,24 +1365,26 @@ def plot_reference_seq_lz_factor_plot(
                 label_color = 'blue' if seq_name == reference_name else 'red'
                 
                 # X-axis label (bottom)
-                x_label = hv.Text(mid_pos, min_val - (max_val - min_val) * 0.05, seq_name).opts(
+                x_label = hv.Text(mid_pos, min_val + label_offset, seq_name).opts(
                     text_color=label_color,
                     text_font_size='12pt',
-                    text_align='center'
+                    text_align='center',
+                    text_baseline='bottom'
                 )
                 label_elements.append(x_label)
                 
                 # Y-axis label (left side)  
-                y_label = hv.Text(min_val - (max_val - min_val) * 0.05, mid_pos, seq_name).opts(
+                y_label = hv.Text(min_val + label_offset, mid_pos, seq_name).opts(
                     text_color=label_color, 
                     text_font_size='12pt',
                     text_align='center',
+                    text_baseline='middle',
                     angle=90
                 )
                 label_elements.append(y_label)
         
         # Combine all plot elements
-        plot = base_plot * diagonal
+        plot = cast(Any, base_plot) * diagonal
         
         # Add boundary lines
         for element in boundary_elements:
@@ -1293,7 +1411,9 @@ def plot_reference_seq_lz_factor_plot(
             xlabel=f'Position in concatenated sequence ({plot_name})',
             ylabel=f'Reference position ({plot_name})',
             title=f'Reference Sequence LZ Factor Plot - {plot_name}',
-            toolbar='above'
+            toolbar='above',
+            xlim=(0, global_x_max),
+            ylim=(0, global_max)
         )
         
         return plot
@@ -1328,15 +1448,13 @@ def plot_reference_seq_lz_factor_plot(
         options=['viridis', 'plasma', 'inferno', 'magma', 'cividis']
     )
     
-    # Create dynamic plot with controls
-    dmap = hv.DynamicMap(
+    # Bind widgets to plotting function
+    interactive_plot = pn.bind(
         create_plot,
-        kdims=[
-            hv.Dimension('length_range', values=[length_slider.param.value]),
-            hv.Dimension('show_overlay', values=[overlay_toggle.param.value]),
-            hv.Dimension('k_per_bin', values=[k_spinner.param.value]),
-            hv.Dimension('colormap_name', values=[colormap_select.param.value])
-        ]
+        length_range=length_slider,
+        show_overlay=overlay_toggle,
+        k_per_bin=k_spinner,
+        colormap_name=colormap_select
     )
     
     # Create layout
@@ -1350,7 +1468,7 @@ def plot_reference_seq_lz_factor_plot(
         width=300
     )
     
-    plot_pane = pn.pane.HoloViews(dmap, width=850, height=850)
+    plot_pane = pn.pane.HoloViews(interactive_plot, width=850, height=850)
     
     app = pn.Row(controls, plot_pane)
     
@@ -1410,8 +1528,8 @@ if __name__ == "__main__":
 
     # Subparser for reference sequence plotting
     ref_plot_parser = subparsers.add_parser('reference-plot', help='Plot target sequence factorized with reference sequence')
-    ref_plot_parser.add_argument('reference_seq', help='Reference DNA sequence')
-    ref_plot_parser.add_argument('target_seq', help='Target DNA sequence')
+    ref_plot_parser.add_argument('reference_seq', help='Reference sequence (DNA by default)')
+    ref_plot_parser.add_argument('target_seq', help='Target sequence (DNA by default)')
     ref_plot_parser.add_argument('--factors_filepath', help='Path to binary factors file (optional, will compute if not provided)')
     ref_plot_parser.add_argument('--reference_name', default='Reference', help='Name for the reference sequence')
     ref_plot_parser.add_argument('--target_name', default='Target', help='Name for the target sequence')
@@ -1419,6 +1537,12 @@ if __name__ == "__main__":
     ref_plot_parser.add_argument('--show_plot', action='store_true', default=True, help='Whether to display the plot')
     ref_plot_parser.add_argument('--interactive', action='store_true', help='Use interactive Panel/Datashader plot instead of simple matplotlib')
     ref_plot_parser.add_argument('--return_panel', action='store_true', help='Whether to return the Panel app (interactive mode only)')
+    ref_plot_parser.add_argument(
+        '--factorization-mode',
+        choices=['dna', 'general'],
+        default='dna',
+        help='Choose "dna" for reverse-complement-aware factorization or "general" for arbitrary strings'
+    )
 
     args = parser.parse_args()
 
@@ -1450,8 +1574,10 @@ if __name__ == "__main__":
                 target_name=args.target_name,
                 save_path=args.save_path,
                 show_plot=args.show_plot,
-                return_panel=args.return_panel
+                return_panel=args.return_panel,
+                factorization_mode=args.factorization_mode
             )
+
         else:
             plot_reference_seq_lz_factor_plot_simple(
                 reference_seq=args.reference_seq,
@@ -1460,5 +1586,8 @@ if __name__ == "__main__":
                 reference_name=args.reference_name,
                 target_name=args.target_name,
                 save_path=args.save_path,
-                show_plot=args.show_plot
+                show_plot=args.show_plot,
+                factorization_mode=args.factorization_mode
             )
+
+

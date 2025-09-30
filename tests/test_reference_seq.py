@@ -21,8 +21,8 @@ try:
 except ImportError:
     PYTEST_AVAILABLE = False
 
-def test_cpp_bindings_available():
-    """Test that the C++ bindings are available."""
+def cpp_bindings_available():
+    """Check that the C++ bindings are available."""
     try:
         # Try importing the built extension first
         build_path = os.path.join(os.path.dirname(__file__), '..', 'build')
@@ -42,7 +42,7 @@ def test_cpp_bindings_available():
 
 def test_basic_dna_reference_factorization():
     """Test basic DNA reference sequence factorization with absolute factor positions."""
-    if not test_cpp_bindings_available():
+    if not cpp_bindings_available():
         print("Skipping test - C++ extension not available")
         return
     
@@ -83,7 +83,7 @@ def test_basic_dna_reference_factorization():
 
 def test_dna_file_output():
     """Test DNA file output functionality."""
-    if not test_cpp_bindings_available():
+    if not cpp_bindings_available():
         print("Skipping test - C++ extension not available")
         return
     
@@ -123,7 +123,7 @@ def test_dna_file_output():
 
 def test_dna_edge_cases():
     """Test DNA edge cases and error conditions with absolute factor positions."""
-    if not test_cpp_bindings_available():
+    if not cpp_bindings_available():
         print("Skipping test - C++ extension not available")
         return
     
@@ -164,7 +164,7 @@ def test_dna_edge_cases():
 
 def test_dna_reverse_complement():
     """Test DNA reverse complement functionality with absolute factor positions."""
-    if not test_cpp_bindings_available():
+    if not cpp_bindings_available():
         print("Skipping test - C++ extension not available")
         return
     
@@ -197,7 +197,7 @@ def test_dna_reverse_complement():
 
 def test_general_reference_text():
     """Test general reference factorization with text sequences."""
-    if not test_cpp_bindings_available():
+    if not cpp_bindings_available():
         print("Skipping test - C++ extension not available")
         return
     
@@ -251,7 +251,7 @@ def test_general_reference_text():
 
 def test_general_reference_amino_acids():
     """Test general reference factorization with amino acid sequences."""
-    if not test_cpp_bindings_available():
+    if not cpp_bindings_available():
         print("Skipping test - C++ extension not available")
         return
     
@@ -288,7 +288,7 @@ def test_general_reference_amino_acids():
 
 def test_general_vs_dna_differences():
     """Test that general and DNA functions behave differently for DNA sequences."""
-    if not test_cpp_bindings_available():
+    if not cpp_bindings_available():
         print("Skipping test - C++ extension not available")
         return
     
@@ -328,7 +328,7 @@ def test_general_vs_dna_differences():
 
 def test_pattern_matching_validation():
     """Test that factors correctly reference patterns in the reference sequence."""
-    if not test_cpp_bindings_available():
+    if not cpp_bindings_available():
         print("Skipping test - C++ extension not available")
         return
     
@@ -390,19 +390,19 @@ def main():
         try:
             test()  # Tests now use assertions and will raise exceptions on failure
             passed += 1
-            print(f"✓ {test.__name__} passed")
+            print(f"{test.__name__} passed")
         except Exception as e:
-            print(f"✗ {test.__name__} failed with exception: {e}")
+            print(f"{test.__name__} failed with exception: {e}")
             import traceback
             traceback.print_exc()
     
     print(f"\nTest Results: {passed}/{total} passed")
     
     if passed == total:
-        print("🎉 All tests passed!")
+        print("All tests passed!")
         return 0
     else:
-        print("❌ Some tests failed")
+        print("Some tests failed")
         return 1
 
 if __name__ == "__main__":
