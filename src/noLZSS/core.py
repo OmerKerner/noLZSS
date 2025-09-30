@@ -186,6 +186,10 @@ def factorize_w_reference(reference_seq: Union[str, bytes], target_seq: Union[st
     Note:
         Factor start positions are absolute positions in the combined reference+target string.
         No reverse complement matching is performed - suitable for text or amino acid sequences.
+        
+    Warning:
+        The sentinel character '\\x01' (ASCII 1) must not appear in either input sequence,
+        as it is used internally to separate the reference and target sequences.
     """
     from .utils import validate_input
     
@@ -229,6 +233,10 @@ def factorize_w_reference_file(reference_seq: Union[str, bytes], target_seq: Uni
         Factor start positions are absolute positions in the combined reference+target string.
         No reverse complement matching is performed - suitable for text or amino acid sequences.
         This function overwrites the output file if it exists.
+        
+    Warning:
+        The sentinel character '\\x01' (ASCII 1) must not appear in either input sequence,
+        as it is used internally to separate the reference and target sequences.
     """
     from .utils import validate_input
     

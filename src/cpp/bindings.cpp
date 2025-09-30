@@ -920,6 +920,10 @@ Raises:
 Note:
     Factor start positions are absolute positions in the combined reference+target string.
     No reverse complement matching is performed - suitable for text or amino acid sequences.
+
+Warning:
+    The sentinel character '\x01' (ASCII 1) must not appear in either input sequence,
+    as it is used internally to separate the reference and target sequences.
 )doc");
 
     m.def("factorize_w_reference_file", [](const std::string& reference_seq, const std::string& target_seq, const std::string& out_path) {
@@ -950,6 +954,10 @@ Note:
     Factor start positions are absolute positions in the combined reference+target string.
     No reverse complement matching is performed - suitable for text or amino acid sequences.
     This function overwrites the output file if it exists.
+
+Warning:
+    The sentinel character '\x01' (ASCII 1) must not appear in either input sequence,
+    as it is used internally to separate the reference and target sequences.
 )doc");
 
     // Version information

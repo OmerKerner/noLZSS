@@ -453,6 +453,8 @@ size_t factorize_dna_w_reference_seq_file(const std::string& reference_seq, cons
  * @note Factors start positions are absolute positions in the combined reference+target string
  * @note No reverse complement matching is performed - suitable for text or amino acid sequences
  * @note Sequences can contain any ASCII characters
+ * @warning The sentinel character '\x01' (ASCII 1) must not appear in either input sequence,
+ *          as it is used internally to separate the reference and target sequences
  */
 std::vector<Factor> factorize_w_reference(const std::string& reference_seq, const std::string& target_seq);
 
@@ -471,6 +473,8 @@ std::vector<Factor> factorize_w_reference(const std::string& reference_seq, cons
  * @note Factors start positions are absolute positions in the combined reference+target string
  * @note No reverse complement matching is performed - suitable for text or amino acid sequences
  * @note Binary format follows the same structure as other factorization binary outputs
+ * @warning The sentinel character '\x01' (ASCII 1) must not appear in either input sequence,
+ *          as it is used internally to separate the reference and target sequences
  * @warning This function overwrites the output file if it exists
  */
 size_t factorize_w_reference_file(const std::string& reference_seq, const std::string& target_seq, const std::string& out_path);
