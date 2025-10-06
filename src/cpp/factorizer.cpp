@@ -65,8 +65,6 @@ static std::string revcomp(std::string_view s) {
     return r;
 }
 
-
-// ---------- factorization utilities ----------
 /**
  * @brief Prepares multiple DNA sequences for factorization with reverse complement and tracks sentinel positions.
  *
@@ -268,9 +266,7 @@ PreparedSequenceResult prepare_multiple_dna_sequences_no_rc(const std::vector<st
     return result;
 }
 
-
 // ---------- generic, sink-driven noLZSS ----------
-
 /**
  * @brief Core noLZSS factorization algorithm implementation.
  *
@@ -288,13 +284,13 @@ PreparedSequenceResult prepare_multiple_dna_sequences_no_rc(const std::vector<st
  * @note All factors are emitted, including the last one
  */
 template<class Sink>
-static size_t nolzss(cst_t& cst, Sink&& sink) {
+static size_t nolzss(cst_t& cst, Sink&& sink, size_t start_pos = 0) {
     sdsl::rmq_succinct_sct<> rmq(&cst.csa);
     const size_t str_len = cst.size() - 1; // the length of the string is the size of the CST minus the sentinel
 
-    auto lambda = cst.select_leaf(cst.csa.isa[0] + 1);
+    auto lambda = cst.select_leaf(cst.csa.isa[start_pos] + 1);
     size_t lambda_node_depth = cst.node_depth(lambda);
-    size_t lambda_sufnum = 0;
+    size_t lambda_sufnum = start_pos;
 
     cst_t::node_type v;
     size_t v_min_leaf_sufnum = 0;
@@ -389,7 +385,6 @@ static size_t nolzss_dna_w_rc(const std::string& T, Sink&& sink) {
     // Use the multiple sequence algorithm
     return nolzss_multiple_dna_w_rc(S, std::forward<Sink>(sink));
 }
-
 
 /**
  * @brief Core noLZSS factorization algorithm implementation with reverse complement awareness for multiple DNA sequences.
@@ -558,7 +553,6 @@ static size_t nolzss_multiple_dna_w_rc(const std::string& S, Sink&& sink, size_t
 }
 
 // ------------- public wrappers -------------
-
 /**
  * @brief Factorizes a text string using the noLZSS algorithm.
  *
@@ -576,10 +570,10 @@ static size_t nolzss_multiple_dna_w_rc(const std::string& S, Sink&& sink, size_t
  * @see factorize() for the non-template version that returns a vector
  */
 template<class Sink>
-size_t factorize_stream(std::string_view text, Sink&& sink) {
+size_t factorize_stream(std::string_view text, Sink&& sink, size_t start_pos) {
     std::string tmp(text);
     cst_t cst; construct_im(cst, tmp, 1);
-    return nolzss(cst, std::forward<Sink>(sink));
+    return nolzss(cst, std::forward<Sink>(sink), start_pos);
 }
 
 /**
@@ -598,10 +592,10 @@ size_t factorize_stream(std::string_view text, Sink&& sink) {
  * @see factorize_file() for the non-template version that returns a vector
  */
 template<class Sink>
-size_t factorize_file_stream(const std::string& path, Sink&& sink) {
+size_t factorize_file_stream(const std::string& path, Sink&& sink, size_t start_pos) {
     // sdsl-lite will automatically add the sentinel when needed
     cst_t cst; construct(cst, path, 1);
-    return nolzss(cst, std::forward<Sink>(sink));
+    return nolzss(cst, std::forward<Sink>(sink), start_pos);
 }
 
 /**
@@ -617,9 +611,9 @@ size_t factorize_file_stream(const std::string& path, Sink&& sink) {
  * @see factorize() for getting the actual factors
  * @see count_factors_file() for file-based counting
  */
-size_t count_factors(std::string_view text) {
+size_t count_factors(std::string_view text, size_t start_pos) {
     size_t n = 0;
-    factorize_stream(text, [&](const Factor&){ ++n; });
+    factorize_stream(text, [&](const Factor&){ ++n; }, start_pos);
     return n;
 }
 
@@ -637,9 +631,9 @@ size_t count_factors(std::string_view text) {
  * @see count_factors() for in-memory counting
  * @see factorize_file() for getting the actual factors from a file
  */
-size_t count_factors_file(const std::string& path) {
+size_t count_factors_file(const std::string& path, size_t start_pos) {
     size_t n = 0;
-    factorize_file_stream(path, [&](const Factor&){ ++n; });
+    factorize_file_stream(path, [&](const Factor&){ ++n; }, start_pos);
     return n;
 }
 
@@ -656,9 +650,9 @@ size_t count_factors_file(const std::string& path) {
  * @note The returned factors are non-overlapping and cover the entire input
  * @see factorize_file() for file-based factorization
  */
-std::vector<Factor> factorize(std::string_view text) {
+std::vector<Factor> factorize(std::string_view text, size_t start_pos) {
     std::vector<Factor> out;
-    factorize_stream(text, [&](const Factor& f){ out.push_back(f); });
+    factorize_stream(text, [&](const Factor& f){ out.push_back(f); }, start_pos);
     return out;
 }
 
@@ -677,10 +671,10 @@ std::vector<Factor> factorize(std::string_view text) {
  * @note This is more memory-efficient than factorize() for large files
  * @see factorize() for in-memory factorization
  */
-std::vector<Factor> factorize_file(const std::string& path, size_t reserve_hint) {
+std::vector<Factor> factorize_file(const std::string& path, size_t reserve_hint, size_t start_pos) {
     std::vector<Factor> out;
     if (reserve_hint) out.reserve(reserve_hint);
-    factorize_file_stream(path, [&](const Factor& f){ out.push_back(f); });
+    factorize_file_stream(path, [&](const Factor& f){ out.push_back(f); }, start_pos);
     return out;
 }
 
@@ -1138,11 +1132,8 @@ std::vector<Factor> factorize_w_reference(const std::string& reference_seq, cons
     // Perform general factorization starting from target sequence position
     std::vector<Factor> factors;
     factorize_stream(combined, [&](const Factor& f) {
-        // Only collect factors that start at or after the target sequence
-        if (f.start >= target_start_pos) {
-            factors.push_back(f);
-        }
-    });
+        factors.push_back(f);
+    }, target_start_pos);
     
     return factors;
 }

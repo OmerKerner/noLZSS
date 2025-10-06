@@ -8,7 +8,36 @@
 namespace noLZSS {
 
 // Constants and utility functions for reverse complement handling
-/** @brief Mask for reverse complement flag in ref field (MSB of uint64_t) */
+/** @brief Mask for reverse complement flag in ref field (/**
+ * @brief Advanced fac/**
+ * @brief Advanced factorization function for file-based text.
+ *
+ * This template function reads text from a file and provides low-level access
+ * to the factorization process through a sink callable.
+ *
+ * @tparam Sink Callable type that accepts Factor objects
+ * @param path Path to input file containing text
+ * @param sink Callable that receives each computed factor
+ * @param start_pos Position in the text to start factorization from (default: 0)
+ * @return Number of factors emitted
+ */
+template<class Sink>
+size_t factorize_file_stream(const std::string& path, Sink&& sink, size_t start_pos = 0);
+
+/**
+ * @brief Advanced factorization function for in-memory text.
+ *
+ * This template function provides low-level access to the factorization process,
+ * allowing custom handling of factors through a sink callable.
+ *
+ * @tparam Sink Callable type that accepts Factor objects
+ * @param text Input text string
+ * @param sink Callable that receives each computed factor
+ * @param start_pos Position in the text to start factorization from (default: 0)
+ * @return Number of factors emitted
+ */
+template<class Sink>
+size_t factorize_stream(std::string_view text, Sink&& sink, size_t start_pos = 0);
 constexpr uint64_t RC_MASK = (1ULL << 63);
 
 /**
@@ -114,12 +143,13 @@ struct Factor {
  * The algorithm uses a suffix tree to find the longest previous factors for each position.
  *
  * @param text Input text string
+ * @param start_pos Position in the text to start factorization from (default: 0)
  * @return Vector of Factor objects representing the factorization
  *
- * @note Factors are non-overlapping and cover the entire input
+ * @note Factors are non-overlapping and cover the text from start_pos onwards
  * @see factorize_file() for file-based factorization
  */
-std::vector<Factor> factorize(std::string_view text);
+std::vector<Factor> factorize(std::string_view text, size_t start_pos = 0);
 
 /**
  * @brief Factorizes text from a file into noLZSS factors.
@@ -129,12 +159,14 @@ std::vector<Factor> factorize(std::string_view text);
  *
  * @param path Path to the input file containing text
  * @param reserve_hint Optional hint for reserving space in the output vector (0 = no hint)
+ * @param start_pos Position in the text to start factorization from (default: 0)
  * @return Vector of Factor objects representing the factorization
  *
  * @note Use reserve_hint for better performance when you know approximate factor count
+ * @note Factors are non-overlapping and cover the text from start_pos onwards
  * @see factorize() for in-memory factorization
  */
-std::vector<Factor> factorize_file(const std::string& path, size_t reserve_hint = 0);
+std::vector<Factor> factorize_file(const std::string& path, size_t reserve_hint = 0, size_t start_pos = 0);
 
 // Counting functions
 
@@ -145,11 +177,12 @@ std::vector<Factor> factorize_file(const std::string& path, size_t reserve_hint 
  * the count of factors rather than the factors themselves.
  *
  * @param text Input text string
+ * @param start_pos Position in the text to start factorization from (default: 0)
  * @return Number of factors in the factorization
  *
  * @see count_factors_file() for file-based counting
  */
-size_t count_factors(std::string_view text);
+size_t count_factors(std::string_view text, size_t start_pos = 0);
 
 /**
  * @brief Counts the number of noLZSS factors in a file.
@@ -158,11 +191,12 @@ size_t count_factors(std::string_view text);
  * This is the most memory-efficient way to get factor counts for large files.
  *
  * @param path Path to the input file containing text
+ * @param start_pos Position in the text to start factorization from (default: 0)
  * @return Number of factors in the factorization
  *
  * @see count_factors() for in-memory counting
  */
-size_t count_factors_file(const std::string& path);
+size_t count_factors_file(const std::string& path, size_t start_pos = 0);
 
 // Binary output
 
