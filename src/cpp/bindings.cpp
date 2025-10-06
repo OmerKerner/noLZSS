@@ -960,6 +960,41 @@ Warning:
     as it is used internally to separate the reference and target sequences.
 )doc");
 
+    m.def("write_factors_dna_w_reference_fasta_files_to_binary", [](const std::string& reference_fasta_path, const std::string& target_fasta_path, const std::string& out_path) {
+        // Release GIL while doing heavy C++ work
+        py::gil_scoped_release release;
+        auto num_factors = noLZSS::write_factors_dna_w_reference_fasta_files_to_binary(reference_fasta_path, target_fasta_path, out_path);
+        py::gil_scoped_acquire acquire;
+        return num_factors;
+    }, py::arg("reference_fasta_path"), py::arg("target_fasta_path"), py::arg("out_path"), R"doc(Factorize DNA sequences from FASTA files with reference and write factors to binary file.
+
+Reads DNA sequences from reference and target FASTA files, performs noLZSS factorization
+of the target using the reference, and writes the resulting factors to a binary file.
+Specialized for nucleotide sequences (A, C, T, G) with reverse complement matching capability.
+
+Args:
+    reference_fasta_path: Path to reference FASTA file containing DNA sequences
+    target_fasta_path: Path to target FASTA file containing DNA sequences to factorize
+    out_path: Path to output file where binary factors will be written
+
+Returns:
+    Number of factors written to the output file
+
+Raises:
+    ValueError: If files contain empty sequences or invalid nucleotides
+    RuntimeError: If unable to read FASTA files, create output file, or processing errors
+
+Note:
+    - Factor start positions are absolute positions in the combined reference+target string
+    - Supports reverse complement matching for DNA sequences (indicated by MSB in reference field)
+    - All sequences from both FASTA files are concatenated with sentinel separators
+    - Only nucleotides A, C, T, G are allowed (case-insensitive)
+    - This function overwrites the output file if it exists
+
+Warning:
+    Characters 1-251 are used as sentinel separators and must not appear in sequences.
+)doc");
+
     // Version information
 #ifdef NOLZSS_VERSION
     m.attr("__version__") = NOLZSS_VERSION;

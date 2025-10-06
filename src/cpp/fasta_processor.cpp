@@ -76,7 +76,6 @@ static FastaParseResult parse_fasta_sequences_and_ids(const std::string& fasta_p
     return result;
 }
 
-// Legacy helper function to maintain compatibility with existing code
 // Helper function to identify sentinel factors from factorization results
 static std::vector<uint64_t> identify_sentinel_factors(const std::vector<Factor>& factors, 
                                                       const std::vector<size_t>& sentinel_positions) {
@@ -221,6 +220,94 @@ FastaProcessResult process_nucleotide_fasta(const std::string& fasta_path) {
 
     file.close();
     return result;
+}
+
+/**
+ * @brief Prepares reference and target DNA sequences from FASTA files without reverse complement.
+ *
+ * Reads reference and target FASTA files, parses DNA sequences from each, and concatenates them with
+ * reference sequences first, followed by target sequences, using sentinel characters between sequences.
+ * Only nucleotides A, C, T, G are allowed (case insensitive, converted to uppercase).
+ * This version does not append reverse complements.
+ *
+ * @param reference_fasta_path Path to the reference FASTA file
+ * @param target_fasta_path Path to the target FASTA file
+ * @return FastaReferenceTargetResult containing the prepared sequence data, sequence IDs, and counts of reference and target sequences
+ */
+FastaReferenceTargetResult prepare_ref_target_dna_no_rc_from_fasta(const std::string& reference_fasta_path,
+                                                           const std::string& target_fasta_path) {
+    std::vector<std::string> all_sequence_ids;
+    std::vector<std::string> all_original_sequences;
+    
+    // Process reference FASTA file first
+    FastaParseResult ref_parse_result = parse_fasta_sequences_and_ids(reference_fasta_path);
+    all_original_sequences.insert(all_original_sequences.end(), ref_parse_result.sequences.begin(), ref_parse_result.sequences.end());
+    all_sequence_ids.insert(all_sequence_ids.end(), ref_parse_result.sequence_ids.begin(), ref_parse_result.sequence_ids.end());
+    
+    // Process target FASTA file second
+    FastaParseResult target_parse_result = parse_fasta_sequences_and_ids(target_fasta_path);
+    all_original_sequences.insert(all_original_sequences.end(), target_parse_result.sequences.begin(), target_parse_result.sequences.end());
+    all_sequence_ids.insert(all_sequence_ids.end(), target_parse_result.sequence_ids.begin(), target_parse_result.sequence_ids.end());
+
+    if (all_original_sequences.empty()) {
+        throw std::runtime_error("No valid sequences found in FASTA files");
+    }
+
+    size_t num_ref_sequences = ref_parse_result.sequences.size();
+    size_t num_target_sequences = target_parse_result.sequences.size();
+
+    // Calculate the index where target sequences start in the prepared string
+    size_t target_start_index = 0;
+    for (size_t i = 0; i < num_ref_sequences; ++i) {
+        target_start_index += all_original_sequences[i].length() + 1; // +1 for sentinel
+    }
+
+    // Use prepare_multiple_dna_sequences_no_rc directly with collected sequences
+    return {prepare_multiple_dna_sequences_no_rc(all_original_sequences), all_sequence_ids, num_ref_sequences, num_target_sequences, target_start_index};
+}
+
+/**
+ * @brief Prepares reference and target DNA sequences from FASTA files with reverse complement.
+ *
+ * Reads reference and target FASTA files, parses DNA sequences from each, and prepares them using
+ * prepare_multiple_dna_sequences_w_rc which concatenates sequences with sentinels
+ * and appends reverse complements. Reference sequences come first, followed by target sequences.
+ * Only nucleotides A, C, T, G are allowed.
+ *
+ * @param reference_fasta_path Path to the reference FASTA file
+ * @param target_fasta_path Path to the target FASTA file
+ * @return FastaReferenceTargetResult containing the prepared sequence data, sequence IDs, and counts of reference and target sequences
+ */
+FastaReferenceTargetResult prepare_ref_target_dna_w_rc_from_fasta(const std::string& reference_fasta_path,
+                                                          const std::string& target_fasta_path) {
+    std::vector<std::string> all_sequence_ids;
+    std::vector<std::string> all_original_sequences;
+    
+    // Process reference FASTA file first
+    FastaParseResult ref_parse_result = parse_fasta_sequences_and_ids(reference_fasta_path);
+    all_original_sequences.insert(all_original_sequences.end(), ref_parse_result.sequences.begin(), ref_parse_result.sequences.end());
+    all_sequence_ids.insert(all_sequence_ids.end(), ref_parse_result.sequence_ids.begin(), ref_parse_result.sequence_ids.end());
+    
+    // Process target FASTA file second
+    FastaParseResult target_parse_result = parse_fasta_sequences_and_ids(target_fasta_path);
+    all_original_sequences.insert(all_original_sequences.end(), target_parse_result.sequences.begin(), target_parse_result.sequences.end());
+    all_sequence_ids.insert(all_sequence_ids.end(), target_parse_result.sequence_ids.begin(), target_parse_result.sequence_ids.end());
+
+    if (all_original_sequences.empty()) {
+        throw std::runtime_error("No valid sequences found in FASTA files");
+    }
+
+    size_t num_ref_sequences = ref_parse_result.sequences.size();
+    size_t num_target_sequences = target_parse_result.sequences.size();
+
+    // Calculate the index where target sequences start in the prepared string
+    size_t target_start_index = 0;
+    for (size_t i = 0; i < num_ref_sequences; ++i) {
+        target_start_index += all_original_sequences[i].length() + 1; // +1 for sentinel
+    }
+
+    // Use prepare_multiple_dna_sequences_w_rc directly with collected sequences
+    return {prepare_multiple_dna_sequences_w_rc(all_original_sequences), all_sequence_ids, num_ref_sequences, num_target_sequences, target_start_index};
 }
 
 /**
@@ -513,6 +600,49 @@ size_t write_factors_binary_file_fasta_multiple_dna_no_rc(const std::string& fas
     }
     
     return factorization_result.factors.size();
+}
+
+/**
+ * @brief Writes noLZSS factors from DNA sequences in reference and target FASTA files to a binary output file.
+ *
+ * This function reads DNA sequences from two FASTA files (reference and target), concatenates them
+ * with a sentinel separator, performs general factorization starting from the target sequences,
+ * and writes the resulting factors in binary format to an output file.
+ */
+size_t write_factors_dna_w_reference_fasta_files_to_binary(const std::string& reference_fasta_path, 
+                                                          const std::string& target_fasta_path, 
+                                                          const std::string& out_path) {
+    // Process both FASTA files and get prepared sequence with reverse complement
+    FastaReferenceTargetResult ref_target_concat_w_rc = prepare_ref_target_dna_w_rc_from_fasta(reference_fasta_path, target_fasta_path);
+    
+    std::ofstream os(out_path, std::ios::binary);
+    if (!os) {
+        throw std::runtime_error("Cannot create output file: " + out_path);
+    }
+    
+    std::vector<char> buf(1<<20); // 1 MB buffer for performance
+    os.rdbuf()->pubsetbuf(buf.data(), static_cast<std::streamsize>(buf.size()));
+    
+    // Perform general factorization from the target start index
+    std::vector<Factor> factors;
+    factors = factorize_multiple_dna_w_rc(ref_target_concat_w_rc.concatinated_sequences.prepared_string, 
+                                          ref_target_concat_w_rc.target_start_index);
+    // Create minimal header for reference+target factorization
+    FactorFileHeader header;
+    header.num_factors = factors.size();
+    header.num_sequences = 0;  // We don't track individual sequences in this simple approach
+    header.num_sentinels = 0;  // We don't track sentinels in this simple approach
+    header.header_size = sizeof(FactorFileHeader);
+    
+    // Write header
+    os.write(reinterpret_cast<const char*>(&header), sizeof(header));
+    
+    // Write factors
+    for (const Factor& f : factors) {
+        os.write(reinterpret_cast<const char*>(&f), sizeof(Factor));
+    }
+    
+    return factors.size();
 }
 
 } // namespace noLZSS

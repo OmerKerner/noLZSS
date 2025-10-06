@@ -332,13 +332,14 @@ size_t factorize_file_stream_dna_w_rc(const std::string& path, Sink&& sink);
  * biologically significant across multiple sequences.
  *
  * @param text Input DNA text string with multiple sequences and sentinels
+ * @param start_pos Starting position for factorization (default: 0)
  * @return Vector of Factor objects representing the factorization
  *
  * @note Reverse complement matches are encoded with RC_MASK in the ref field
  * @note Factors are non-overlapping and cover the entire input
  * @see factorize_file_multiple_dna_w_rc() for file-based factorization
  */
-std::vector<Factor> factorize_multiple_dna_w_rc(std::string_view text);
+std::vector<Factor> factorize_multiple_dna_w_rc(std::string_view text, size_t start_pos = 0);
 
 /**
  * @brief Factorizes DNA text from a file with reverse complement awareness for multiple sequences into noLZSS factors.
@@ -349,12 +350,13 @@ std::vector<Factor> factorize_multiple_dna_w_rc(std::string_view text);
  *
  * @param path Path to the input file containing DNA text with multiple sequences
  * @param reserve_hint Optional hint for reserving space in the output vector (0 = no hint)
+ * @param start_pos Starting position for factorization (default: 0)
  * @return Vector of Factor objects representing the factorization
  *
  * @note Use reserve_hint for better performance when you know approximate factor count
  * @see factorize_multiple_dna_w_rc() for in-memory factorization
  */
-std::vector<Factor> factorize_file_multiple_dna_w_rc(const std::string& path, size_t reserve_hint = 0);
+std::vector<Factor> factorize_file_multiple_dna_w_rc(const std::string& path, size_t reserve_hint = 0, size_t start_pos = 0);
 
 /**
  * @brief Counts the number of noLZSS factors in a DNA text string with reverse complement awareness for multiple sequences.
@@ -363,11 +365,12 @@ std::vector<Factor> factorize_file_multiple_dna_w_rc(const std::string& path, si
  * the count of factors rather than the factors themselves.
  *
  * @param text Input DNA text string with multiple sequences
+ * @param start_pos Starting position for factorization (default: 0)
  * @return Number of factors in the factorization
  *
  * @see count_factors_file_multiple_dna_w_rc() for file-based counting
  */
-size_t count_factors_multiple_dna_w_rc(std::string_view text);
+size_t count_factors_multiple_dna_w_rc(std::string_view text, size_t start_pos = 0);
 
 /**
  * @brief Counts the number of noLZSS factors in a DNA file with reverse complement awareness for multiple sequences.
@@ -377,11 +380,12 @@ size_t count_factors_multiple_dna_w_rc(std::string_view text);
  * with multiple sequences.
  *
  * @param path Path to the input file containing DNA text with multiple sequences
+ * @param start_pos Starting position for factorization (default: 0)
  * @return Number of factors in the factorization
  *
  * @see count_factors_multiple_dna_w_rc() for in-memory counting
  */
-size_t count_factors_file_multiple_dna_w_rc(const std::string& path);
+size_t count_factors_file_multiple_dna_w_rc(const std::string& path, size_t start_pos = 0);
 
 /**
  * @brief Writes noLZSS factors from a DNA file with reverse complement awareness for multiple sequences to a binary output file.
@@ -391,13 +395,14 @@ size_t count_factors_file_multiple_dna_w_rc(const std::string& path);
  *
  * @param in_path Path to input file containing DNA text with multiple sequences
  * @param out_path Path to output file where binary factors will be written
+ * @param start_pos Starting position for factorization (default: 0)
  * @return Number of factors written to the output file
  *
  * @note Binary format: each factor is written as three uint64_t values (start, length, ref)
  * @note Reverse complement factors have RC_MASK set in the ref field
  * @warning This function overwrites the output file if it exists
  */
-size_t write_factors_binary_file_multiple_dna_w_rc(const std::string& in_path, const std::string& out_path);
+size_t write_factors_binary_file_multiple_dna_w_rc(const std::string& in_path, const std::string& out_path, size_t start_pos = 0);
 
 // Template functions for advanced usage with multiple sequences
 

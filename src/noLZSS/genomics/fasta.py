@@ -11,6 +11,12 @@ from pathlib import Path
 
 from ..utils import NoLZSSError
 from ..core import factorize
+
+try:
+    from .._noLZSS import write_factors_dna_w_reference_fasta_files_to_binary as _write_factors_dna_w_reference_fasta_files_to_binary
+except ImportError:
+    _write_factors_dna_w_reference_fasta_files_to_binary = None
+
 from .sequences import detect_sequence_type
 
 
@@ -220,4 +226,58 @@ def read_fasta_auto(filepath: Union[str, Path]) -> Union[
     else:
         raise FASTAError(f"Cannot determine sequence type. Detected: {seq_type}. "
                         f"Expected DNA (A,C,T,G) or protein (amino acids) sequences.")
+
+
+def write_factors_dna_w_reference_fasta_files_to_binary(reference_fasta_path: Union[str, Path], 
+                                                        target_fasta_path: Union[str, Path],
+                                                        output_path: Union[str, Path]) -> int:
+    """
+    Factorize DNA sequences from FASTA files with reference and write factors to binary file.
+    
+    Reads DNA sequences from reference and target FASTA files, performs noLZSS factorization
+    of the target using the reference, and writes the resulting factors to a binary file.
+    Specialized for nucleotide sequences (A, C, T, G) with reverse complement matching capability.
+    
+    Args:
+        reference_fasta_path: Path to reference FASTA file containing DNA sequences
+        target_fasta_path: Path to target FASTA file containing DNA sequences to factorize
+        output_path: Path to output file where binary factors will be written
+        
+    Returns:
+        Number of factors written to the output file
+        
+    Raises:
+        ValueError: If files contain empty sequences or invalid nucleotides
+        FileNotFoundError: If FASTA files do not exist
+        RuntimeError: If unable to read FASTA files, create output file, or processing errors occur
+        FASTAError: If C++ extension is not available
+        
+    Note:
+        - Factor start positions are absolute positions in the combined reference+target string
+        - Supports reverse complement matching for DNA sequences (indicated by MSB in reference field)
+        - All sequences from both FASTA files are concatenated with sentinel separators
+        - Only nucleotides A, C, T, G are allowed (case-insensitive)
+        - This function overwrites the output file if it exists
+        
+    Warning:
+        Characters 1-251 are used as sentinel separators and must not appear in sequences.
+    """
+    # Check if C++ extension is available
+    if _write_factors_dna_w_reference_fasta_files_to_binary is None:
+        raise FASTAError("C++ extension not available. Cannot process FASTA files with reference sequences.")
+    
+    # Validate input file paths
+    reference_path = Path(reference_fasta_path)
+    target_path = Path(target_fasta_path)
+    
+    if not reference_path.exists():
+        raise FileNotFoundError(f"Reference FASTA file not found: {reference_path}")
+    if not target_path.exists():
+        raise FileNotFoundError(f"Target FASTA file not found: {target_path}")
+    
+    # Ensure output directory exists
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    
+    return _write_factors_dna_w_reference_fasta_files_to_binary(str(reference_path), str(target_path), str(output_path))
 

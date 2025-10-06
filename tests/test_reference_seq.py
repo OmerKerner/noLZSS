@@ -368,6 +368,87 @@ def test_pattern_matching_validation():
     print(f"✓ Pattern matching validation passed for {len(factors)} factors")
 
 
+def test_fasta_reference_binary_output():
+    """Test DNA reference sequence factorization from FASTA files with binary output."""
+    if not cpp_bindings_available():
+        print("Skipping test - C++ extension not available")
+        return
+    
+    # Check if our new function is available
+    try:
+        from noLZSS.genomics.fasta import write_factors_dna_w_reference_fasta_files_to_binary
+    except ImportError:
+        print("Skipping test - write_factors_dna_w_reference_fasta_files_to_binary not available")
+        return
+    
+    # Create test FASTA files
+    with tempfile.TemporaryDirectory() as temp_dir:
+        ref_fasta_path = os.path.join(temp_dir, "reference.fasta")
+        target_fasta_path = os.path.join(temp_dir, "target.fasta")
+        output_path = os.path.join(temp_dir, "factors.bin")
+        
+        # Create reference FASTA with multiple sequences
+        with open(ref_fasta_path, 'w') as f:
+            f.write(">ref1\n")
+            f.write("ATCGATCGATCG\n")  # Reference sequence 1
+            f.write(">ref2\n")
+            f.write("GCTAGCTAGCTA\n")  # Reference sequence 2
+        
+        # Create target FASTA with sequences that should match parts of reference
+        with open(target_fasta_path, 'w') as f:
+            f.write(">target1\n")
+            f.write("ATCGATCG\n")  # Should match beginning of ref1
+            f.write(">target2\n")
+            f.write("GCTAGCTA\n")  # Should match beginning of ref2
+        
+        # Test the function
+        try:
+            num_factors = write_factors_dna_w_reference_fasta_files_to_binary(
+                ref_fasta_path, target_fasta_path, output_path
+            )
+            
+            # Verify output file was created
+            assert os.path.exists(output_path), "Output file was not created"
+            
+            # Verify file is not empty
+            assert os.path.getsize(output_path) > 0, "Output file is empty"
+            
+            # Should have at least some factors
+            assert num_factors > 0, f"Expected positive number of factors, got {num_factors}"
+            
+            print(f"FASTA reference binary output test: {num_factors} factors written successfully")
+            
+        except Exception as e:
+            print(f"FASTA reference test failed: {e}")
+            raise
+    
+    # Test with invalid files
+    with tempfile.TemporaryDirectory() as temp_dir:
+        invalid_ref = os.path.join(temp_dir, "nonexistent_ref.fasta")
+        invalid_target = os.path.join(temp_dir, "nonexistent_target.fasta")
+        output_path = os.path.join(temp_dir, "factors.bin")
+        
+        # Test with non-existent reference file
+        try:
+            write_factors_dna_w_reference_fasta_files_to_binary(
+                invalid_ref, target_fasta_path, output_path
+            )
+            assert False, "Should have raised FileNotFoundError for missing reference file"
+        except FileNotFoundError:
+            pass  # Expected
+        
+        # Test with non-existent target file
+        try:
+            write_factors_dna_w_reference_fasta_files_to_binary(
+                ref_fasta_path, invalid_target, output_path
+            )
+            assert False, "Should have raised FileNotFoundError for missing target file"
+        except FileNotFoundError:
+            pass  # Expected
+    
+    print("FASTA reference binary output test completed successfully")
+
+
 def main():
     """Run all tests."""
     tests = [
@@ -379,6 +460,7 @@ def main():
         test_general_reference_amino_acids,
         test_general_vs_dna_differences,
         test_pattern_matching_validation,
+        test_fasta_reference_binary_output,
     ]
     
     print("Running reference sequence factorization tests...")

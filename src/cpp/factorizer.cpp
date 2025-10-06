@@ -909,6 +909,7 @@ size_t write_factors_binary_file_dna_w_rc(const std::string& in_path, const std:
  * @tparam Sink Callable type that accepts Factor objects
  * @param text Input DNA text string with multiple sequences and sentinels
  * @param sink Callable that receives each computed factor
+ * @param start_pos Starting position for factorization (default: 0)
  * @return Number of factors emitted
  *
  * @note This function copies the input string for suffix tree construction
@@ -916,9 +917,9 @@ size_t write_factors_binary_file_dna_w_rc(const std::string& in_path, const std:
  * @see factorize_multiple_dna_w_rc() for the non-template version that returns a vector
  */
 template<class Sink>
-size_t factorize_stream_multiple_dna_w_rc(std::string_view text, Sink&& sink) {
+size_t factorize_stream_multiple_dna_w_rc(std::string_view text, Sink&& sink, size_t start_pos = 0) {
     std::string tmp(text);
-    return nolzss_multiple_dna_w_rc(tmp, std::forward<Sink>(sink));
+    return nolzss_multiple_dna_w_rc(tmp, std::forward<Sink>(sink), start_pos);
 }
 
 /**
@@ -931,17 +932,18 @@ size_t factorize_stream_multiple_dna_w_rc(std::string_view text, Sink&& sink) {
  * @tparam Sink Callable type that accepts Factor objects
  * @param path Path to input file containing DNA text with multiple sequences
  * @param sink Callable that receives each computed factor
+ * @param start_pos Starting position for factorization (default: 0)
  * @return Number of factors emitted
  *
  * @note This function builds the suffix tree directly from the file
  * @see factorize_file_multiple_dna_w_rc() for the non-template version that returns a vector
  */
 template<class Sink>
-size_t factorize_file_stream_multiple_dna_w_rc(const std::string& path, Sink&& sink) {
+size_t factorize_file_stream_multiple_dna_w_rc(const std::string& path, Sink&& sink, size_t start_pos = 0) {
     std::ifstream is(path, std::ios::binary);
     if (!is) throw std::runtime_error("Cannot open input file: " + path);
     std::string data((std::istreambuf_iterator<char>(is)), std::istreambuf_iterator<char>());
-    return nolzss_multiple_dna_w_rc(data, std::forward<Sink>(sink));
+    return nolzss_multiple_dna_w_rc(data, std::forward<Sink>(sink), start_pos);
 }
 
 /**
@@ -951,15 +953,16 @@ size_t factorize_file_stream_multiple_dna_w_rc(const std::string& path, Sink&& s
  * It performs noLZSS factorization and returns all factors in a vector.
  *
  * @param text Input DNA text string with multiple sequences and sentinels
+ * @param start_pos Starting position for factorization (default: 0)
  * @return Vector containing all factors from the factorization
  *
  * @note Factors are returned in order of appearance in the text
  * @note The returned factors are non-overlapping and cover the entire input
  * @see factorize_file_multiple_dna_w_rc() for file-based factorization
  */
-std::vector<Factor> factorize_multiple_dna_w_rc(std::string_view text) {
+std::vector<Factor> factorize_multiple_dna_w_rc(std::string_view text, size_t start_pos) {
     std::vector<Factor> out;
-    factorize_stream_multiple_dna_w_rc(text, [&](const Factor& f){ out.push_back(f); });
+    factorize_stream_multiple_dna_w_rc(text, [&](const Factor& f){ out.push_back(f); }, start_pos);
     return out;
 }
 
@@ -972,15 +975,16 @@ std::vector<Factor> factorize_multiple_dna_w_rc(std::string_view text) {
  *
  * @param path Path to input file containing DNA text with multiple sequences
  * @param reserve_hint Optional hint for reserving space in output vector (0 = no hint)
+ * @param start_pos Starting position for factorization (default: 0)
  * @return Vector containing all factors from the factorization
  *
  * @note Use reserve_hint for better performance when you know approximate factor count
  * @note This is more memory-efficient than factorize_multiple_dna_w_rc() for large files
  * @see factorize_multiple_dna_w_rc() for in-memory factorization
  */
-std::vector<Factor> factorize_file_multiple_dna_w_rc(const std::string& path, size_t reserve_hint) {
+std::vector<Factor> factorize_file_multiple_dna_w_rc(const std::string& path, size_t reserve_hint, size_t start_pos) {
     std::vector<Factor> out; if (reserve_hint) out.reserve(reserve_hint);
-    factorize_file_stream_multiple_dna_w_rc(path, [&](const Factor& f){ out.push_back(f); });
+    factorize_file_stream_multiple_dna_w_rc(path, [&](const Factor& f){ out.push_back(f); }, start_pos);
     return out;
 }
 
@@ -991,14 +995,15 @@ std::vector<Factor> factorize_file_multiple_dna_w_rc(const std::string& path, si
  * It uses the sink-based factorization internally with a counting lambda.
  *
  * @param text Input DNA text string with multiple sequences
+ * @param start_pos Starting position for factorization (default: 0)
  * @return Number of factors in the factorization
  *
  * @note This is more memory-efficient than factorize_multiple_dna_w_rc() when you only need the count
  * @see factorize_multiple_dna_w_rc() for getting the actual factors
  * @see count_factors_file_multiple_dna_w_rc() for file-based counting
  */
-size_t count_factors_multiple_dna_w_rc(std::string_view text) {
-    size_t n = 0; factorize_stream_multiple_dna_w_rc(text, [&](const Factor&){ ++n; }); return n;
+size_t count_factors_multiple_dna_w_rc(std::string_view text, size_t start_pos) {
+    size_t n = 0; factorize_stream_multiple_dna_w_rc(text, [&](const Factor&){ ++n; }, start_pos); return n;
 }
 
 /**
@@ -1009,14 +1014,15 @@ size_t count_factors_multiple_dna_w_rc(std::string_view text) {
  * to get factor counts for large DNA files with multiple sequences.
  *
  * @param path Path to input file containing DNA text with multiple sequences
+ * @param start_pos Starting position for factorization (default: 0)
  * @return Number of factors in the factorization
  *
  * @note This function builds the suffix tree directly from the file
  * @see count_factors_multiple_dna_w_rc() for in-memory counting
  * @see factorize_file_multiple_dna_w_rc() for getting the actual factors from a file
  */
-size_t count_factors_file_multiple_dna_w_rc(const std::string& path) {
-    size_t n = 0; factorize_file_stream_multiple_dna_w_rc(path, [&](const Factor&){ ++n; }); return n;
+size_t count_factors_file_multiple_dna_w_rc(const std::string& path, size_t start_pos) {
+    size_t n = 0; factorize_file_stream_multiple_dna_w_rc(path, [&](const Factor&){ ++n; }, start_pos); return n;
 }
 
 /**
@@ -1028,13 +1034,14 @@ size_t count_factors_file_multiple_dna_w_rc(const std::string& path) {
  *
  * @param in_path Path to input file containing DNA text with multiple sequences
  * @param out_path Path to output file where binary factors will be written
+ * @param start_pos Starting position for factorization (default: 0)
  * @return Number of factors written to the output file
  *
  * @note Binary format: each factor is 24 bytes (3 × uint64_t: start, length, ref)
  * @note This function overwrites the output file if it exists
  * @warning Ensure sufficient disk space for the output file
  */
-size_t write_factors_binary_file_multiple_dna_w_rc(const std::string& in_path, const std::string& out_path) {
+size_t write_factors_binary_file_multiple_dna_w_rc(const std::string& in_path, const std::string& out_path, size_t start_pos) {
     // Set up binary output file with buffering
     std::ofstream os(out_path, std::ios::binary);
     if (!os) {
@@ -1048,7 +1055,7 @@ size_t write_factors_binary_file_multiple_dna_w_rc(const std::string& in_path, c
     std::vector<Factor> factors;
     size_t n = factorize_file_stream_multiple_dna_w_rc(in_path, [&](const Factor& f){
         factors.push_back(f);
-    });
+    }, start_pos);
     
     // For multiple DNA sequences from text file, we don't know sequence names or sentinels
     FactorFileHeader header;
