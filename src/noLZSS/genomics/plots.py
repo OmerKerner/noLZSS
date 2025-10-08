@@ -840,8 +840,8 @@ def plot_multiple_seq_self_lz_factor_plot_from_file(
 
 
 def plot_reference_seq_lz_factor_plot_simple(
-    reference_seq: Union[str, bytes],
-    target_seq: Union[str, bytes],
+    reference_seq: Optional[Union[str, bytes]] = None,
+    target_seq: Optional[Union[str, bytes]] = None,
     factors: Optional[List[Tuple[int, int, int, bool]]] = None,
     factors_filepath: Optional[Union[str, Path]] = None,
     reference_name: str = "Reference",
@@ -860,15 +860,19 @@ def plot_reference_seq_lz_factor_plot_simple(
     
     Args:
         reference_seq: Reference DNA sequence (A, C, T, G - case insensitive) or
-            general ASCII text when ``factorization_mode`` is "general"
+            general ASCII text when ``factorization_mode`` is "general". Optional if
+            ``factors_filepath`` is provided (parameters will be inferred from factors).
         target_seq: Target DNA sequence (A, C, T, G - case insensitive) or
-            general ASCII text when ``factorization_mode`` is "general"
+            general ASCII text when ``factorization_mode`` is "general". Optional if
+            ``factors_filepath`` is provided (parameters will be inferred from factors).
         factors: Optional list of (start, length, ref, is_rc) tuples from
             factorize_dna_w_reference_seq() or factorize_w_reference(). If None,
             the function will compute factors automatically based on
             ``factorization_mode``.
         factors_filepath: Optional path to binary factors file (mutually exclusive
-            with ``factors``)
+            with ``factors``). When provided and sequences are not, parameters are
+            inferred from the factors: first factor start = target_start, last factor
+            end = total_length.
         reference_name: Name for the reference sequence (default: "Reference")
         target_name: Name for the target sequence (default: "Target")
         save_path: Optional path to save the plot image
@@ -879,7 +883,8 @@ def plot_reference_seq_lz_factor_plot_simple(
         
     Raises:
         PlotError: If plotting fails or input sequences are invalid
-        ValueError: If both factors and factors_filepath are provided
+        ValueError: If both factors and factors_filepath are provided, or if
+            sequences are not provided and factors_filepath is not provided
         ImportError: If matplotlib is not available
     """
     try:
@@ -896,15 +901,20 @@ def plot_reference_seq_lz_factor_plot_simple(
     # Validate input arguments
     if factors is not None and factors_filepath is not None:
         raise ValueError("Cannot provide both factors and factors_filepath")
+    
+    # If sequences are not provided, factors_filepath must be provided
+    sequences_provided = reference_seq is not None and target_seq is not None
+    if not sequences_provided and factors_filepath is None and factors is None:
+        raise ValueError("Either provide reference_seq and target_seq, or provide factors_filepath or factors")
 
     factorization_mode_normalized = factorization_mode.lower()
     if factorization_mode_normalized not in {"dna", "general"}:
         raise ValueError("factorization_mode must be 'dna' or 'general'")
     
     # Convert sequences to strings if they're bytes
-    if isinstance(reference_seq, bytes):
+    if reference_seq is not None and isinstance(reference_seq, bytes):
         reference_seq = reference_seq.decode('ascii')
-    if isinstance(target_seq, bytes):
+    if target_seq is not None and isinstance(target_seq, bytes):
         target_seq = target_seq.decode('ascii')
     
     raw_factors: Optional[List[Tuple[int, ...]]] = None
@@ -940,10 +950,23 @@ def plot_reference_seq_lz_factor_plot_simple(
     factors = _normalize_reference_factors(raw_factors)
     
     # Calculate sequence boundaries
-    ref_length = len(reference_seq)
-    target_start = ref_length + 1  # +1 for sentinel
-    target_length = len(target_seq)
-    total_length = target_start + target_length
+    if sequences_provided:
+        # Use provided sequences
+        assert reference_seq is not None and target_seq is not None  # Type hint for mypy
+        ref_length = len(reference_seq)
+        target_start = ref_length + 1  # +1 for sentinel
+        target_length = len(target_seq)
+        total_length = target_start + target_length
+    else:
+        # Infer boundaries from factors
+        if not factors:
+            raise PlotError("Cannot infer sequence boundaries from empty factors")
+        
+        # First factor starts at target_start, last factor ends at total_length
+        target_start = min(start for start, length, ref, is_rc in factors)
+        total_length = max(start + length for start, length, ref, is_rc in factors)
+        ref_length = target_start - 1  # -1 because target_start = ref_length + 1
+        target_length = total_length - target_start
     
     # Create the plot
     fig, ax = plt.subplots(figsize=(10, 10))
@@ -1028,8 +1051,8 @@ def plot_reference_seq_lz_factor_plot_simple(
 
 
 def plot_reference_seq_lz_factor_plot(
-    reference_seq: Union[str, bytes],
-    target_seq: Union[str, bytes],
+    reference_seq: Optional[Union[str, bytes]] = None,
+    target_seq: Optional[Union[str, bytes]] = None,
     factors: Optional[List[Tuple[int, int, int, bool]]] = None,
     factors_filepath: Optional[Union[str, Path]] = None,
     reference_name: str = "Reference",
@@ -1049,15 +1072,19 @@ def plot_reference_seq_lz_factor_plot(
     
     Args:
         reference_seq: Reference DNA sequence (A, C, T, G - case insensitive) or
-            general ASCII text when ``factorization_mode`` is "general"
+            general ASCII text when ``factorization_mode`` is "general". Optional if
+            ``factors_filepath`` is provided (parameters will be inferred from factors).
         target_seq: Target DNA sequence (A, C, T, G - case insensitive) or
-            general ASCII text when ``factorization_mode`` is "general"
+            general ASCII text when ``factorization_mode`` is "general". Optional if
+            ``factors_filepath`` is provided (parameters will be inferred from factors).
         factors: Optional list of (start, length, ref, is_rc) tuples from
             factorize_dna_w_reference_seq() or factorize_w_reference(). If None,
             the function will compute factors automatically based on
             ``factorization_mode``.
         factors_filepath: Optional path to binary factors file (mutually exclusive
-            with ``factors``)
+            with ``factors``). When provided and sequences are not, parameters are
+            inferred from the factors: first factor start = target_start, last factor
+            end = total_length.
         reference_name: Name for the reference sequence (default: "Reference")
         target_name: Name for the target sequence (default: "Target")
         save_path: Optional path to save the plot image (PNG export)
@@ -1072,7 +1099,8 @@ def plot_reference_seq_lz_factor_plot(
         
     Raises:
         PlotError: If plotting fails or input sequences are invalid
-        ValueError: If both factors and factors_filepath are provided
+        ValueError: If both factors and factors_filepath are provided, or if
+            sequences are not provided and factors_filepath is not provided
         ImportError: If required dependencies are missing
     """
     # Check for required dependencies
@@ -1101,15 +1129,20 @@ def plot_reference_seq_lz_factor_plot(
     # Validate input arguments
     if factors is not None and factors_filepath is not None:
         raise ValueError("Cannot provide both factors and factors_filepath")
+    
+    # If sequences are not provided, factors_filepath must be provided
+    sequences_provided = reference_seq is not None and target_seq is not None
+    if not sequences_provided and factors_filepath is None and factors is None:
+        raise ValueError("Either provide reference_seq and target_seq, or provide factors_filepath or factors")
 
     factorization_mode_normalized = factorization_mode.lower()
     if factorization_mode_normalized not in {"dna", "general"}:
         raise ValueError("factorization_mode must be 'dna' or 'general'")
 
     # Convert sequences to strings if they're bytes
-    if isinstance(reference_seq, bytes):
+    if reference_seq is not None and isinstance(reference_seq, bytes):
         reference_seq = reference_seq.decode('ascii')
-    if isinstance(target_seq, bytes):
+    if target_seq is not None and isinstance(target_seq, bytes):
         target_seq = target_seq.decode('ascii')
     
     raw_factors: Optional[List[Tuple[int, ...]]] = None
@@ -1145,10 +1178,23 @@ def plot_reference_seq_lz_factor_plot(
     factors = _normalize_reference_factors(raw_factors)
     
     # Calculate sequence boundaries
-    ref_length = len(reference_seq)
-    target_start = ref_length + 1  # +1 for sentinel
-    target_length = len(target_seq)
-    total_length = target_start + target_length
+    if sequences_provided:
+        # Use provided sequences
+        assert reference_seq is not None and target_seq is not None  # Type hint for mypy
+        ref_length = len(reference_seq)
+        target_start = ref_length + 1  # +1 for sentinel
+        target_length = len(target_seq)
+        total_length = target_start + target_length
+    else:
+        # Infer boundaries from factors
+        if not factors:
+            raise PlotError("Cannot infer sequence boundaries from empty factors")
+        
+        # First factor starts at target_start, last factor ends at total_length
+        target_start = min(start for start, length, ref, is_rc in factors)
+        total_length = max(start + length for start, length, ref, is_rc in factors)
+        ref_length = target_start - 1  # -1 because target_start = ref_length + 1
+        target_length = total_length - target_start
     
     # Create sequence boundaries for visualization
     sequence_boundaries = [
@@ -1528,8 +1574,8 @@ if __name__ == "__main__":
 
     # Subparser for reference sequence plotting
     ref_plot_parser = subparsers.add_parser('reference-plot', help='Plot target sequence factorized with reference sequence')
-    ref_plot_parser.add_argument('reference_seq', help='Reference sequence (DNA by default)')
-    ref_plot_parser.add_argument('target_seq', help='Target sequence (DNA by default)')
+    ref_plot_parser.add_argument('reference_seq', nargs='?', help='Reference sequence (DNA by default, optional if factors_filepath provided)')
+    ref_plot_parser.add_argument('target_seq', nargs='?', help='Target sequence (DNA by default, optional if factors_filepath provided)')
     ref_plot_parser.add_argument('--factors_filepath', help='Path to binary factors file (optional, will compute if not provided)')
     ref_plot_parser.add_argument('--reference_name', default='Reference', help='Name for the reference sequence')
     ref_plot_parser.add_argument('--target_name', default='Target', help='Name for the target sequence')
@@ -1564,6 +1610,10 @@ if __name__ == "__main__":
             return_panel=args.return_panel
         )
     elif args.command == 'reference-plot':
+        # Validate that sequences are provided if factors_filepath is not
+        if args.factors_filepath is None and (args.reference_seq is None or args.target_seq is None):
+            parser.error("reference_seq and target_seq are required when factors_filepath is not provided")
+        
         # Choose between simple and interactive plotting
         if args.interactive:
             plot_reference_seq_lz_factor_plot(

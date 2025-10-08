@@ -122,17 +122,38 @@ def read_factors_binary_file(filepath: Union[str, Path]) -> List[Tuple[int, int,
     
     try:
         with open(filepath, 'rb') as f:
-            binary_data = f.read()
+            # Read header
+            header_data = f.read(40)  # magic 8 + 4*8 = 40
+            if len(header_data) != 40:
+                raise NoLZSSError("File too small to contain valid header")
+            
+            magic = header_data[:8]
+            if magic != b'noLZSSv1':
+                raise NoLZSSError("Invalid file format: missing noLZSS magic header")
+            
+            num_factors, num_sequences, num_sentinels, header_size = struct.unpack('<QQQQ', header_data[8:40])
+            
+            # For simple file, num_sequences and num_sentinels should be 0
+            if num_sequences != 0 or num_sentinels != 0:
+                raise NoLZSSError("This function is for simple binary files without metadata. Use read_factors_binary_file_with_metadata for files with metadata.")
+            
+            # Seek to after header
+            f.seek(header_size)
+            
+            # Read factors
+            factors = []
+            for i in range(num_factors):
+                factor_data = f.read(24)
+                if len(factor_data) != 24:
+                    raise NoLZSSError(f"Insufficient data for factor {i}")
+                
+                start, length, ref = struct.unpack('<QQQ', factor_data)
+                factors.append((start, length, ref))
+    
     except IOError as e:
         raise NoLZSSError(f"Error reading file {filepath}: {e}")
-    
-    if len(binary_data) % 24 != 0:
-        raise NoLZSSError(f"Invalid binary file format: file size {len(binary_data)} is not a multiple of 24")
-    
-    factors = []
-    for i in range(len(binary_data) // 24):
-        start, length, ref = struct.unpack('<QQQ', binary_data[i*24:(i+1)*24])
-        factors.append((start, length, ref))
+    except struct.error as e:
+        raise NoLZSSError(f"Error unpacking binary data: {e}")
     
     return factors
 

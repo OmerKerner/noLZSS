@@ -25,17 +25,17 @@ positional arguments:
 ### Command Structure
 
 ```bash
-python -m noLZSS.genomics.plots reference-plot <reference_seq> <target_seq> [options]
+python -m noLZSS.genomics.plots reference-plot [reference_seq] [target_seq] [options]
 ```
 
-### Required Arguments
+### Arguments
 
-- `reference_seq`: The reference DNA sequence (A, C, T, G)
-- `target_seq`: The target DNA sequence to be factorized
+- `reference_seq`: The reference DNA sequence (A, C, T, G) - optional if `--factors_filepath` is provided
+- `target_seq`: The target DNA sequence to be factorized - optional if `--factors_filepath` is provided
 
 ### Optional Arguments
 
-- `--factors_filepath`: Path to binary factors file (will compute if not provided)
+- `--factors_filepath`: Path to binary factors file (when provided, sequences are inferred from factors)
 - `--reference_name`: Name for the reference sequence (default: "Reference")
 - `--target_name`: Name for the target sequence (default: "Target")
 - `--save_path`: Path to save the plot image
@@ -86,17 +86,17 @@ The `--interactive` flag creates a Panel/Datashader plot with:
 - Zoom/pan functionality
 - High-performance rendering
 
-#### 4. Using Pre-computed Factors
+#### 4. Using Pre-computed Factors (without sequences)
 
-If you've already computed factors and saved them to a binary file:
+If you've already computed factors and saved them to a binary file created with `write_factors_dna_w_reference_fasta_files_to_binary()`:
 
 ```bash
 python -m noLZSS.genomics.plots reference-plot \
-    "ATCGATCGATCGATCG" \
-    "ATCGCCCCGATCGAAA" \
     --factors_filepath "precomputed_factors.bin" \
     --save_path "plot_from_binary.png"
 ```
+
+This will automatically infer the reference length, target start, target length, and total length from the factors themselves.
 
 #### 5. Long Sequences from Files
 

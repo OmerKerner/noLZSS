@@ -175,10 +175,13 @@ class TestBinaryFileIO:
     
     def test_read_factors_binary_file_valid(self):
         """Test reading a valid binary factors file."""
+        # Create header: magic, num_factors=2, num_sequences=0, num_sentinels=0, header_size=40
+        header = b'noLZSSv1' + struct.pack('<QQQQ', 2, 0, 0, 40)
         # Create mock binary data: 2 factors
         # Factor 1: pos=0, len=3, ref=1
         # Factor 2: pos=3, len=2, ref=2
-        binary_data = struct.pack('<QQQ', 0, 3, 1) + struct.pack('<QQQ', 3, 2, 2)
+        factors_data = struct.pack('<QQQ', 0, 3, 1) + struct.pack('<QQQ', 3, 2, 2)
+        binary_data = header + factors_data
         
         with tempfile.NamedTemporaryFile(delete=False) as f:
             f.write(binary_data)
