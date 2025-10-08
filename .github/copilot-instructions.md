@@ -36,9 +36,19 @@ pip install -e .  # Triggers CMake build via scikit-build-core
 - **C++ dependency awareness**: Tests gracefully handle missing C++ extension
 - **Run all tests**: `python tests/run_all_tests.py` or `python -m pytest tests/`
 
-### Performance Testing
-- Benchmarks in `benchmarks/fasta_benchmark.py` with memory tracking
-- Benchmark results saved in `benchmarks/fasta_results/`
+### Performance Testing & Benchmarking
+- **Full benchmark suite**: `python benchmarks/fasta_benchmark.py` (10-15 min runtime)
+- **Resource prediction**: `python benchmarks/fasta_predictor.py results/trend_parameters.pkl --size 1000000`
+- **Benchmark results**: Saved in `benchmarks/fasta_results/` with trend analysis (R² > 0.99)
+
+### CLI Plotting Interface
+```bash
+# Interactive reference sequence plots
+python -m noLZSS.genomics.plots reference-plot "ATCG" "ATCGATCG" --interactive
+
+# Batch processing with file output
+python -m noLZSS.genomics.plots reference-plot "ref.fasta" "target.fasta" --save_path plot.png
+```
 
 ## Project-Specific Conventions
 
@@ -59,6 +69,7 @@ def factorize(data, validate=True):
 ### Genomics Specialization
 - **Sequence validation**: Strict nucleotide (A,C,T,G) and amino acid validation
 - **Sentinel handling**: Characters 1-251 as separators (avoiding nucleotide conflicts)
+- **Multi-sequence processing**: Sentinels track sequence boundaries in concatenated strings
 - **Reverse complement**: MSB flag in reference field for DNA analysis
 
 ## External Dependencies
@@ -69,9 +80,10 @@ def factorize(data, validate=True):
 - **matplotlib**: Optional dependency for plotting (`[plotting]` extra)
 
 ### Build Configuration
-- **CMake 3.20+**: Required for FetchContent and C++17 support  
+- **CMake 3.20+**: Required for FetchContent and C++17 support
 - **C++17**: Standard requirement across codebase
 - **Position Independent Code**: Required for Python extensions
+- **scikit-build-core**: Handles Python package building and CMake integration
 
 ## Code Patterns to Follow
 
@@ -96,6 +108,14 @@ For large datasets, prefer C++ implementations:
 - Use `*_file()` functions instead of loading into memory
 - Pass `reserve_hint` when factor count is known
 
+### Genomics Multi-Sequence Processing
+```python
+# Prepare multiple sequences with sentinels for boundary tracking
+result = prepare_multiple_dna_sequences_w_rc(["ATCG", "GCTA"])
+# result.prepared_string contains concatenated sequences with sentinels
+# result.sentinel_positions tracks original sequence boundaries
+```
+
 ## Testing Guidelines
 
 ### C++ Extension Awareness
@@ -109,9 +129,26 @@ except ImportError:
 
 ### Test Organization
 - `test_utils.py`: Input validation, utilities (no C++ required)
-- `test_core.py`: Python wrappers (requires C++ extension)  
+- `test_core.py`: Python wrappers (requires C++ extension)
 - `test_cpp_bindings.py`: Direct C++ binding tests
 - `test_genomics.py`: FASTA processing and genomics features
+- `test_batch_factorize.py`: Batch processing workflows
+
+### Test Execution Order
+Run tests in dependency order:
+```python
+# 1. Structure/utils (no C++ required)
+python tests/test_utils.py
+
+# 2. Core wrappers (requires C++ extension)
+python tests/test_core.py
+
+# 3. Genomics features
+python tests/test_genomics.py
+
+# 4. All tests with summary
+python tests/run_all_tests.py
+```
 
 ## Key Files for Understanding
 
@@ -120,3 +157,5 @@ except ImportError:
 - `src/cpp/factorizer.hpp`: Core algorithm interface
 - `src/noLZSS/core.py`: Main Python API patterns
 - `tests/run_all_tests.py`: Complete test execution workflow
+- `benchmarks/fasta_benchmark.py`: Performance benchmarking patterns
+- `CLI_PLOTTING_GUIDE.md`: Command-line plotting interface documentation
