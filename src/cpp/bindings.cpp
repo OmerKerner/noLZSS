@@ -631,6 +631,52 @@ Nucleotide validation is performed by prepare_multiple_dna_sequences_w_rc()
 ref field has RC_MASK cleared. is_rc boolean indicates if this was a reverse complement match.
 )doc");
 
+m.def("factorize_dna_rc_w_ref_fasta_files", [](const std::string& reference_fasta_path, const std::string& target_fasta_path) {
+    py::gil_scoped_release release;
+    auto result = noLZSS::factorize_dna_rc_w_ref_fasta_files(reference_fasta_path, target_fasta_path);
+    py::gil_scoped_acquire acquire;
+
+    py::list factors_list;
+    for (auto &f : result.factors) {
+        factors_list.append(py::make_tuple(f.start, f.length, f.ref & ~noLZSS::RC_MASK, noLZSS::is_rc(f.ref)));
+    }
+
+    py::list sentinel_indices_list;
+    for (auto idx : result.sentinel_factor_indices) {
+        sentinel_indices_list.append(idx);
+    }
+
+    py::list sequence_ids_list;
+    for (const auto& seq_id : result.sequence_ids) {
+        sequence_ids_list.append(seq_id);
+    }
+
+    return py::make_tuple(factors_list, sentinel_indices_list, sequence_ids_list);
+}, py::arg("reference_fasta_path"), py::arg("target_fasta_path"), R"doc(Factorize DNA sequences from reference and target FASTA files with reverse complement awareness.
+
+Reads reference and target FASTA files, concatenates their sequences with sentinels, and performs
+reverse-complement-aware factorization starting from the target region.
+
+Args:
+reference_fasta_path: Path to reference FASTA file containing DNA sequences
+target_fasta_path: Path to target FASTA file containing DNA sequences to factorize
+
+Returns:
+Tuple of (factors, sentinel_factor_indices, sequence_ids) where:
+- factors: List of (start, length, ref, is_rc) tuples representing the factorization
+- sentinel_factor_indices: List of factor indices that correspond to sentinel separators
+- sequence_ids: List of sequence identifiers from both FASTA files (reference first)
+
+Raises:
+RuntimeError: If FASTA files cannot be read or contain no valid sequences
+ValueError: If invalid nucleotides or too many sequences are encountered
+
+Note:
+- Factor start positions are absolute indices in the concatenated reference+target string
+- Reverse complement matches are indicated by is_rc=True
+- Sentinels mark sequence boundaries for both original and reverse-complement sections
+)doc");
+
 // FASTA factorization function (no reverse complement)
 m.def("factorize_fasta_multiple_dna_no_rc", [](const std::string& fasta_path) {
     // Release GIL while doing heavy C++ work

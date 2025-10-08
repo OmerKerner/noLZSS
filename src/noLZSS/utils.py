@@ -133,10 +133,6 @@ def read_factors_binary_file(filepath: Union[str, Path]) -> List[Tuple[int, int,
             
             num_factors, num_sequences, num_sentinels, header_size = struct.unpack('<QQQQ', header_data[8:40])
             
-            # For simple file, num_sequences and num_sentinels should be 0
-            if num_sequences != 0 or num_sentinels != 0:
-                raise NoLZSSError("This function is for simple binary files without metadata. Use read_factors_binary_file_with_metadata for files with metadata.")
-            
             # Seek to after header
             f.seek(header_size)
             

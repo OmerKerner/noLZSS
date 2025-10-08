@@ -2,6 +2,9 @@ import noLZSS
 import tempfile
 import os
 import struct
+import pytest
+
+from noLZSS.utils import read_factors_binary_file_with_metadata
 
 def check_invariants(text: bytes):
     factors = noLZSS.factorize(text)
@@ -560,6 +563,92 @@ ATCGNTCG
             assert "No valid sequences found" in str(e)
     finally:
         os.unlink(empty_path)
+
+def test_factorize_dna_rc_w_ref_fasta_files():
+    """Test factorize_dna_rc_w_ref_fasta_files binding and result invariants"""
+    import noLZSS._noLZSS as cpp
+
+    if not hasattr(cpp, "factorize_dna_rc_w_ref_fasta_files"):
+        pytest.skip("factorize_dna_rc_w_ref_fasta_files binding not available")
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        reference_path = os.path.join(temp_dir, "reference.fasta")
+        target_path = os.path.join(temp_dir, "target.fasta")
+
+        with open(reference_path, "w", encoding="utf-8") as ref_file:
+            ref_file.write(">ref1\nATCGATCG\n>ref2\nGCTAGCTA\n")
+
+        with open(target_path, "w", encoding="utf-8") as target_file:
+            # Target is reverse complement of ref1 to exercise is_rc handling
+            target_file.write(">target1\nCGATCGAT\n")
+
+        factors, sentinel_indices, sequence_ids = cpp.factorize_dna_rc_w_ref_fasta_files(
+            reference_path, target_path
+        )
+
+        assert sequence_ids == ["ref1", "ref2", "target1"]
+        assert isinstance(factors, list) and len(factors) > 0
+        assert isinstance(sentinel_indices, list)
+        if sentinel_indices:
+            assert sentinel_indices == sorted(sentinel_indices)
+
+        sentinel_set = set(sentinel_indices)
+        total_ref_lengths = [len("ATCGATCG"), len("GCTAGCTA")]
+        target_start = sum(length + 1 for length in total_ref_lengths)
+
+        has_rc_factor = False
+        for idx, factor in enumerate(factors):
+            assert isinstance(factor, tuple) and len(factor) == 4
+            start, length, ref, is_rc = factor
+            assert length > 0
+            assert isinstance(is_rc, bool)
+            if idx in sentinel_set:
+                assert length == 1
+                assert start == ref
+            else:
+                assert start >= target_start
+            has_rc_factor = has_rc_factor or is_rc
+
+        assert has_rc_factor, "Expected at least one reverse complement match"
+
+def test_write_factors_dna_w_reference_fasta_files_to_binary_metadata():
+    """Test binary writer with metadata for reference/target FASTA factorization"""
+    import noLZSS._noLZSS as cpp
+
+    if not hasattr(cpp, "write_factors_dna_w_reference_fasta_files_to_binary"):
+        pytest.skip("write_factors_dna_w_reference_fasta_files_to_binary binding not available")
+    if not hasattr(cpp, "factorize_dna_rc_w_ref_fasta_files"):
+        pytest.skip("factorize_dna_rc_w_ref_fasta_files binding not available")
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        reference_path = os.path.join(temp_dir, "reference.fasta")
+        target_path = os.path.join(temp_dir, "target.fasta")
+        output_path = os.path.join(temp_dir, "factors.bin")
+
+        with open(reference_path, "w", encoding="utf-8") as ref_file:
+            ref_file.write(">ref1\nATCGATCG\n>ref2\nGCTAGCTA\n")
+
+        with open(target_path, "w", encoding="utf-8") as target_file:
+            target_file.write(">target1\nCGATCGAT\n")
+
+        expected_factors, expected_sentinels, expected_names = cpp.factorize_dna_rc_w_ref_fasta_files(
+            reference_path, target_path
+        )
+
+        num_written = cpp.write_factors_dna_w_reference_fasta_files_to_binary(
+            reference_path, target_path, output_path
+        )
+
+        assert os.path.exists(output_path)
+        assert num_written == len(expected_factors)
+
+        metadata = read_factors_binary_file_with_metadata(output_path)
+
+        assert metadata["sequence_names"] == list(expected_names)
+        assert metadata["sentinel_factor_indices"] == list(expected_sentinels)
+        assert metadata["factors"] == list(expected_factors)
+        assert metadata["num_sequences"] == len(expected_names)
+        assert metadata["num_sentinels"] == len(expected_sentinels)
 
 def test_dna_w_rc_functions_integration():
     """Test integration between DNA reverse complement functions"""

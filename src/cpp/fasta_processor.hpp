@@ -136,6 +136,20 @@ FastaFactorizationResult factorize_fasta_multiple_dna_w_rc(const std::string& fa
 FastaFactorizationResult factorize_fasta_multiple_dna_no_rc(const std::string& fasta_path);
 
 /**
+ * @brief Factorizes DNA sequences from reference and target FASTA files with reverse complement awareness.
+ *
+ * Reads two FASTA files (reference and target), concatenates their sequences with sentinels,
+ * prepares them using prepare_multiple_dna_sequences_w_rc(), and performs factorization starting
+ * from the target sequence region. Returns factors alongside sentinel metadata and sequence IDs.
+ *
+ * @param reference_fasta_path Path to the reference FASTA file
+ * @param target_fasta_path Path to the target FASTA file
+ * @return FastaFactorizationResult containing factors, sentinel indices, and sequence IDs
+ */
+FastaFactorizationResult factorize_dna_rc_w_ref_fasta_files(const std::string& reference_fasta_path,
+                                                           const std::string& target_fasta_path);
+
+/**
  * @brief Writes noLZSS factors from multiple DNA sequences in a FASTA file with reverse complement awareness to a binary output file.
  *
  * This function reads DNA sequences from a FASTA file, parses them into individual sequences,

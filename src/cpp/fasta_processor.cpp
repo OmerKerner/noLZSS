@@ -84,17 +84,23 @@ static std::vector<uint64_t> identify_sentinel_factors(const std::vector<Factor>
     
     for (size_t i = 0; i < factors.size(); ++i) {
         const Factor& f = factors[i];
-        
+
+        // Advance sentinel index past positions that occur before the current factor start
+        while (sentinel_idx < sentinel_positions.size() &&
+               sentinel_positions[sentinel_idx] < f.start) {
+            sentinel_idx++;
+        }
+
         // Check if this factor's start position matches current sentinel position
-        if (sentinel_idx < sentinel_positions.size() && 
+        if (sentinel_idx < sentinel_positions.size() &&
             f.start == sentinel_positions[sentinel_idx]) {
-            
+
             // Sanity checks for sentinel factors
             if (f.length != 1) {
                 throw std::runtime_error("Sentinel factor has unexpected length: " + std::to_string(f.length));
             }
             if (f.ref != f.start) {
-                throw std::runtime_error("Sentinel factor reference mismatch: ref=" + 
+                throw std::runtime_error("Sentinel factor reference mismatch: ref=" +
                                        std::to_string(f.ref) + ", pos=" + std::to_string(f.start));
             }
             sentinel_factor_indices.push_back(i);
@@ -650,7 +656,7 @@ size_t write_factors_dna_w_reference_fasta_files_to_binary(const std::string& re
     header.num_factors = factorization_result.factors.size();
     header.num_sequences = factorization_result.sequence_ids.size();
     header.num_sentinels = factorization_result.sentinel_factor_indices.size();
-    header.header_size = sizeof(FactorFileHeader);
+    header.header_size = header_size;
 
     os.write(reinterpret_cast<const char*>(&header), sizeof(header));
 
@@ -661,9 +667,9 @@ size_t write_factors_dna_w_reference_fasta_files_to_binary(const std::string& re
 
     // Write sentinel factor indices
     os.write(reinterpret_cast<const char*>(factorization_result.sentinel_factor_indices.data()),
-              factorization_result.sentinel_factor_indices.size() * sizeof(uint64_t));
-    
-              // Write factors
+             factorization_result.sentinel_factor_indices.size() * sizeof(uint64_t));
+
+    // Write factors
     for (const Factor& f : factorization_result.factors) {
         os.write(reinterpret_cast<const char*>(&f), sizeof(Factor));
     }

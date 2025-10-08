@@ -918,29 +918,41 @@ def plot_reference_seq_lz_factor_plot_simple(
         target_seq = target_seq.decode('ascii')
     
     raw_factors: Optional[List[Tuple[int, ...]]] = None
+    metadata: Optional[Dict[str, Any]] = None
+    sequence_names: List[str] = []
+    sentinel_factor_indices: List[int] = []
 
     # Get factors if not provided
     if factors is None:
         if factors_filepath is not None:
-            from ..utils import (
-                read_factors_binary_file,
-                read_factors_binary_file_with_metadata,
-            )
+            from ..utils import read_factors_binary_file_with_metadata
 
             try:
                 metadata = read_factors_binary_file_with_metadata(factors_filepath)
-                raw_factors = metadata['factors']
-            except NoLZSSError:
-                raw_factors = read_factors_binary_file(factors_filepath)
+                raw_factors = metadata.get('factors', [])
+                sequence_names = metadata.get('sequence_names', [])
+                sentinel_factor_indices = metadata.get('sentinel_factor_indices', [])
+            except NoLZSSError as exc:
+                raise PlotError(
+                    f"Failed to read factors metadata from {factors_filepath}: {exc}"
+                ) from exc
         else:
             if factorization_mode_normalized == "dna":
                 from .sequences import factorize_dna_w_reference_seq
 
-                raw_factors = factorize_dna_w_reference_seq(reference_seq, target_seq)
+                assert reference_seq is not None and target_seq is not None
+                raw_factors = factorize_dna_w_reference_seq(
+                    cast(str, reference_seq),
+                    cast(str, target_seq)
+                )
             else:
                 from ..core import factorize_w_reference
 
-                raw_factors = factorize_w_reference(reference_seq, target_seq)
+                assert reference_seq is not None and target_seq is not None
+                raw_factors = factorize_w_reference(
+                    cast(str, reference_seq),
+                    cast(str, target_seq)
+                )
     else:
         raw_factors = list(factors)
 
@@ -1146,29 +1158,41 @@ def plot_reference_seq_lz_factor_plot(
         target_seq = target_seq.decode('ascii')
     
     raw_factors: Optional[List[Tuple[int, ...]]] = None
+    metadata: Optional[Dict[str, Any]] = None
+    sequence_names: List[str] = []
+    sentinel_factor_indices: List[int] = []
 
     # Get factors if not provided
     if factors is None:
         if factors_filepath is not None:
-            from ..utils import (
-                read_factors_binary_file,
-                read_factors_binary_file_with_metadata,
-            )
+            from ..utils import read_factors_binary_file_with_metadata
 
             try:
                 metadata = read_factors_binary_file_with_metadata(factors_filepath)
-                raw_factors = metadata['factors']
-            except NoLZSSError:
-                raw_factors = read_factors_binary_file(factors_filepath)
+                raw_factors = metadata.get('factors', [])
+                sequence_names = metadata.get('sequence_names', [])
+                sentinel_factor_indices = metadata.get('sentinel_factor_indices', [])
+            except NoLZSSError as exc:
+                raise PlotError(
+                    f"Failed to read factors metadata from {factors_filepath}: {exc}"
+                ) from exc
         else:
             if factorization_mode_normalized == "dna":
                 from .sequences import factorize_dna_w_reference_seq
 
-                raw_factors = factorize_dna_w_reference_seq(reference_seq, target_seq)
+                assert reference_seq is not None and target_seq is not None
+                raw_factors = factorize_dna_w_reference_seq(
+                    cast(str, reference_seq),
+                    cast(str, target_seq)
+                )
             else:
                 from ..core import factorize_w_reference
 
-                raw_factors = factorize_w_reference(reference_seq, target_seq)
+                assert reference_seq is not None and target_seq is not None
+                raw_factors = factorize_w_reference(
+                    cast(str, reference_seq),
+                    cast(str, target_seq)
+                )
     else:
         raw_factors = list(factors)
 
@@ -1176,35 +1200,85 @@ def plot_reference_seq_lz_factor_plot(
         raise PlotError("No factors available for plotting")
 
     factors = _normalize_reference_factors(raw_factors)
-    
-    # Calculate sequence boundaries
+
+    valid_sentinels = [idx for idx in sentinel_factor_indices if 0 <= idx < len(factors)]
+    sentinel_positions = sorted(factors[idx][0] for idx in valid_sentinels)
+
+    factors_for_plot = [factor for idx, factor in enumerate(factors) if idx not in valid_sentinels]
+    if not factors_for_plot:
+        factors_for_plot = factors
+
+    reference_label = reference_name
+    target_label = target_name
+
+    if not sequences_provided and sequence_names:
+        if len(sequence_names) >= 1 and reference_name == "Reference":
+            reference_label = sequence_names[0]
+        if len(sequence_names) >= 2 and target_name == "Target":
+            target_label = sequence_names[1]
+
+    max_end = max((start + length) for start, length, _, _ in factors_for_plot) if factors_for_plot else 0
+
     if sequences_provided:
-        # Use provided sequences
-        assert reference_seq is not None and target_seq is not None  # Type hint for mypy
+        assert reference_seq is not None and target_seq is not None  # mypy hint
         ref_length = len(reference_seq)
-        target_start = ref_length + 1  # +1 for sentinel
         target_length = len(target_seq)
+        target_start = ref_length + 1
         total_length = target_start + target_length
+        sequence_boundaries = [
+            (0, ref_length, reference_label),
+            (target_start, total_length, target_label)
+        ]
+    elif sentinel_positions:
+        sequence_boundaries = []
+        prev_pos = 0
+        for idx, pos in enumerate(sentinel_positions):
+            seq_name = sequence_names[idx] if idx < len(sequence_names) else (
+                reference_label if idx == 0 else f"sequence_{idx}"
+            )
+            sequence_boundaries.append((prev_pos, pos, seq_name))
+            prev_pos = pos + 1
+
+        max_pos = max(max_end, prev_pos)
+        last_index = len(sequence_boundaries)
+        if sequence_names and last_index < len(sequence_names):
+            last_name = sequence_names[last_index]
+        elif last_index == 0:
+            last_name = reference_label
+        elif last_index == 1:
+            last_name = target_label
+        else:
+            last_name = f"sequence_{last_index}"
+
+        sequence_boundaries.append((prev_pos, max_pos, last_name))
+
+        total_length = int(sequence_boundaries[-1][1])
+        ref_length = int(sequence_boundaries[0][1]) if sequence_boundaries else 0
+        target_start = int(sequence_boundaries[1][0]) if len(sequence_boundaries) > 1 else ref_length + 1
+        target_length = max(total_length - target_start, 0)
     else:
-        # Infer boundaries from factors
-        if not factors:
-            raise PlotError("Cannot infer sequence boundaries from empty factors")
-        
-        # First factor starts at target_start, last factor ends at total_length
-        target_start = min(start for start, length, ref, is_rc in factors)
-        total_length = max(start + length for start, length, ref, is_rc in factors)
-        ref_length = target_start - 1  # -1 because target_start = ref_length + 1
-        target_length = total_length - target_start
-    
-    # Create sequence boundaries for visualization
-    sequence_boundaries = [
-        (0, ref_length, reference_name),
-        (target_start, total_length, target_name)
-    ]
-    
-    # Convert factors to DataFrame for plotting
+        if not factors_for_plot:
+            raise PlotError("No factors available for plotting")
+
+        target_start = min(start for start, length, _, _ in factors_for_plot)
+        total_length = max(start + length for start, length, _, _ in factors_for_plot)
+        ref_length = max(target_start - 1, 0)
+        target_length = max(total_length - target_start, 0)
+        sequence_boundaries = [
+            (0, ref_length, reference_label),
+            (target_start, total_length, target_label)
+        ]
+
+    if sequence_boundaries:
+        reference_label = sequence_boundaries[0][2]
+        if len(sequence_boundaries) > 1:
+            target_label = sequence_boundaries[1][2]
+
+    if not factors_for_plot:
+        raise PlotError("No valid factors to plot")
+
     factor_data = []
-    for start, length, ref_pos, is_rc in factors:
+    for start, length, ref_pos, is_rc in factors_for_plot:
         end = start + length
         factor_data.append({
             'x0': start,
@@ -1215,19 +1289,22 @@ def plot_reference_seq_lz_factor_plot(
             'is_rc': is_rc,
             'region': 'target' if start >= target_start else 'reference'
         })
-    
+
     df = pd.DataFrame(factor_data)
+
+    if df.empty:
+        raise PlotError("No valid factors to plot")
 
     global_x_max = max(float(df[['x0', 'x1']].max().max()), float(total_length))
     raw_y_max = float(df[['y0', 'y1']].max().max())
     global_y_max = max(raw_y_max, float(target_start))
     global_max = max(global_x_max, global_y_max)
 
-    if len(df) == 0:
-        raise PlotError("No valid factors to plot")
-    
-    # Create plot name
-    plot_name = f"{reference_name} vs {target_name}"
+    plot_name = (
+        f"{reference_label} vs {target_label}"
+        if len(sequence_boundaries) >= 2
+        else reference_label
+    )
     
     # Create interactive plot components
     def create_base_layers(df_filtered):
@@ -1381,36 +1458,38 @@ def plot_reference_seq_lz_factor_plot(
         
         # Add sequence boundary lines
         boundary_elements = []
-        
-        # Vertical line separating reference and target
-        sep_pos = target_start - 0.5  # Position between ref and target
-        if min_val <= sep_pos <= max_val:
-            v_line = hv.VLine(sep_pos).opts(
-                line_color='green',
-                line_width=3,
-                alpha=0.8,
-                line_dash='solid'
-            )
-            boundary_elements.append(v_line)
-            
-            # Horizontal line at same position
-            h_line = hv.HLine(sep_pos).opts(
-                line_color='green',
-                line_width=3,
-                alpha=0.8,
-                line_dash='solid'
-            )
-            boundary_elements.append(h_line)
-        
+        if sentinel_positions:
+            boundary_positions = sentinel_positions
+        else:
+            boundary_positions = [start_pos - 0.5 for start_pos, _, _ in sequence_boundaries[1:]]
+
+        for pos in boundary_positions:
+            if min_val <= pos <= max_val:
+                boundary_elements.append(
+                    hv.VLine(pos).opts(
+                        line_color='green',
+                        line_width=3,
+                        alpha=0.8,
+                        line_dash='solid'
+                    )
+                )
+                boundary_elements.append(
+                    hv.HLine(pos).opts(
+                        line_color='green',
+                        line_width=3,
+                        alpha=0.8,
+                        line_dash='solid'
+                    )
+                )
+
         # Add sequence name labels
         label_elements = []
-        for start_pos, end_pos, seq_name in sequence_boundaries:
+        sequence_colors = ['#1f77b4', '#d62728', '#2ca02c', '#ff7f0e', '#9467bd']
+        for idx, (start_pos, end_pos, seq_name) in enumerate(sequence_boundaries):
             mid_pos = (start_pos + end_pos) / 2
             if min_val <= mid_pos <= max_val:
-                # Determine color based on sequence type
-                label_color = 'blue' if seq_name == reference_name else 'red'
-                
-                # X-axis label (bottom)
+                label_color = sequence_colors[idx % len(sequence_colors)]
+
                 x_label = hv.Text(mid_pos, min_val + label_offset, seq_name).opts(
                     text_color=label_color,
                     text_font_size='12pt',
@@ -1418,10 +1497,9 @@ def plot_reference_seq_lz_factor_plot(
                     text_baseline='bottom'
                 )
                 label_elements.append(x_label)
-                
-                # Y-axis label (left side)  
+
                 y_label = hv.Text(min_val + label_offset, mid_pos, seq_name).opts(
-                    text_color=label_color, 
+                    text_color=label_color,
                     text_font_size='12pt',
                     text_align='center',
                     text_baseline='middle',
@@ -1504,13 +1582,24 @@ def plot_reference_seq_lz_factor_plot(
     )
     
     # Create layout
+    sequence_info_lines = []
+    for start_pos, end_pos, seq_name in sequence_boundaries:
+        seq_length = int(end_pos - start_pos)
+        sequence_info_lines.append(f"- {seq_name}: length {seq_length}")
+
+    dataset_info = "\n".join([
+        "**Dataset Info:**",
+        f"- Total factors: {len(df)}",
+        *sequence_info_lines
+    ])
+
     controls = pn.Column(
         pn.pane.Markdown("### Plot Controls"),
         length_slider,
         overlay_toggle,
         k_spinner,
         colormap_select,
-        pn.pane.Markdown(f"**Dataset Info:**\n- Total factors: {len(df)}\n- Reference length: {ref_length}\n- Target length: {target_length}"),
+        pn.pane.Markdown(dataset_info),
         width=300
     )
     
