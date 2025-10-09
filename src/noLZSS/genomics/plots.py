@@ -986,7 +986,16 @@ def plot_reference_seq_lz_factor_plot_simple(
     # Plot factors with different colors for forward/reverse and reference/target
     for start, length, ref_pos, is_rc in factors:
         end = start + length
-        ref_end = ref_pos + length
+        
+        # Calculate coordinates based on direction
+        if is_rc:
+            # Reverse complement: y0 = ref + length, y1 = ref
+            y_start = ref_pos + length
+            y_end = ref_pos
+        else:
+            # Forward: y0 = ref, y1 = ref + length
+            y_start = ref_pos
+            y_end = ref_pos + length
         
         # Determine color based on region and orientation
         if start >= target_start:
@@ -998,8 +1007,8 @@ def plot_reference_seq_lz_factor_plot_simple(
             color = 'blue' if not is_rc else 'darkblue'
             alpha = 0.7
         
-        # Draw line segment from (start, ref_pos) to (end, ref_end)
-        ax.plot([start, end], [ref_pos, ref_end], color=color, alpha=alpha, linewidth=2)
+        # Draw line segment
+        ax.plot([start, end], [y_start, y_end], color=color, alpha=alpha, linewidth=2)
     
     # Add diagonal reference line
     max_pos = max(total_length, max(ref_pos + length for _, length, ref_pos, _ in factors))
@@ -1280,14 +1289,36 @@ def plot_reference_seq_lz_factor_plot(
     factor_data = []
     for start, length, ref_pos, is_rc in factors_for_plot:
         end = start + length
+
+        # Calculate coordinates based on direction
+        if is_rc:
+            # Reverse complement: y0 = ref + length, y1 = ref
+            y0 = ref_pos + length
+            y1 = ref_pos
+        else:
+            # Forward: y0 = ref, y1 = ref + length
+            y0 = ref_pos
+            y1 = ref_pos + length
+
+        if start >= target_start:
+            region = 'target'
+            color = 'darkorange' if is_rc else 'red'
+        else:
+            region = 'reference'
+            color = 'darkblue' if is_rc else 'blue'
+
         factor_data.append({
             'x0': start,
             'x1': end,
-            'y0': ref_pos,
-            'y1': ref_pos + length,
+            'y0': y0,
+            'y1': y1,
             'length': length,
             'is_rc': is_rc,
-            'region': 'target' if start >= target_start else 'reference'
+            'region': region,
+            'color': color,
+            'start': start,
+            'end': end,
+            'ref_pos': ref_pos
         })
 
     df = pd.DataFrame(factor_data)
@@ -1325,13 +1356,19 @@ def plot_reference_seq_lz_factor_plot(
             
             if len(ref_forward) > 0:
                 ref_forward_segments = hv.Segments(
-                    ref_forward, ['x0', 'y0', 'x1', 'y1']
+                    ref_forward,
+                    kdims=['x0', 'y0', 'x1', 'y1'],
+                    vdims=['length', 'is_rc', 'region', 'start', 'end', 'ref_pos'],
+                    label=f"{reference_label} forward"
                 ).opts(color='blue', alpha=0.7, line_width=2)
                 layers.append(ref_forward_segments)
             
             if len(ref_reverse) > 0:
                 ref_reverse_segments = hv.Segments(
-                    ref_reverse, ['x0', 'y0', 'x1', 'y1']
+                    ref_reverse,
+                    kdims=['x0', 'y0', 'x1', 'y1'],
+                    vdims=['length', 'is_rc', 'region', 'start', 'end', 'ref_pos'],
+                    label=f"{reference_label} reverse"
                 ).opts(color='darkblue', alpha=0.7, line_width=2)
                 layers.append(ref_reverse_segments)
         
@@ -1342,13 +1379,19 @@ def plot_reference_seq_lz_factor_plot(
             
             if len(target_forward) > 0:
                 target_forward_segments = hv.Segments(
-                    target_forward, ['x0', 'y0', 'x1', 'y1']
+                    target_forward,
+                    kdims=['x0', 'y0', 'x1', 'y1'],
+                    vdims=['length', 'is_rc', 'region', 'start', 'end', 'ref_pos'],
+                    label=f"{target_label} forward"
                 ).opts(color='red', alpha=0.7, line_width=2)
                 layers.append(target_forward_segments)
             
             if len(target_reverse) > 0:
                 target_reverse_segments = hv.Segments(
-                    target_reverse, ['x0', 'y0', 'x1', 'y1']
+                    target_reverse,
+                    kdims=['x0', 'y0', 'x1', 'y1'],
+                    vdims=['length', 'is_rc', 'region', 'start', 'end', 'ref_pos'],
+                    label=f"{target_label} reverse"
                 ).opts(color='darkorange', alpha=0.7, line_width=2)
                 layers.append(target_reverse_segments)
         
@@ -1356,63 +1399,52 @@ def plot_reference_seq_lz_factor_plot(
             return hv.Text(0, 0, "No data").opts(width=800, height=800)
         
         # Combine layers
-        plot = layers[0]
-        for layer in layers[1:]:
-            plot = plot * layer
-            
-        return plot
+        overlay = hv.Overlay(layers).opts(show_legend=True)
+        return overlay
     
     def create_hover_overlay(x_range, y_range, df_filtered, k_per_bin):
         """Create hover overlay for detailed factor information"""
         if x_range is None or y_range is None or len(df_filtered) == 0:
-            empty_hover = pd.DataFrame(columns=['x', 'y', 'start', 'length', 'ref_pos', 'is_rc', 'region'])
-            return hv.Points(empty_hover, ['x', 'y'], ['start', 'length', 'ref_pos', 'is_rc', 'region'])
+            return hv.Segments([])
         
         x_min, x_max = x_range
         y_min, y_max = y_range
         
-        # Filter data to current view
-        view_data = df_filtered[
-            (df_filtered['x0'] >= x_min) & (df_filtered['x1'] <= x_max) &
-            (df_filtered['y0'] >= y_min) & (df_filtered['y1'] <= y_max)
-        ]
-        
-        if len(view_data) == 0:
-            empty_hover = pd.DataFrame(columns=['x', 'y', 'start', 'length', 'ref_pos', 'is_rc', 'region'])
-            return hv.Points(empty_hover, ['x', 'y'], ['start', 'length', 'ref_pos', 'is_rc', 'region'])
-        
-        # Sample data if too many points
-        if len(view_data) > k_per_bin:
-            view_data = view_data.sample(n=k_per_bin)
-        
-        # Create points for hover
-        hover_data = []
-        for _, row in view_data.iterrows():
-            hover_data.append({
-                'x': (row['x0'] + row['x1']) / 2,
-                'y': (row['y0'] + row['y1']) / 2,
-                'start': int(row['x0']),
-                'length': int(row['length']),
-                'ref_pos': int(row['y0']),
-                'is_rc': row['is_rc'],
-                'region': row['region']
-            })
-        
-        if not hover_data:
-            empty_hover = pd.DataFrame(columns=['x', 'y', 'start', 'length', 'ref_pos', 'is_rc', 'region'])
-            return hv.Points(empty_hover, ['x', 'y'], ['start', 'length', 'ref_pos', 'is_rc', 'region'])
-        
-        hover_df = pd.DataFrame(hover_data)
-        
-        return hv.Points(
-            hover_df, ['x', 'y'], ['start', 'length', 'ref_pos', 'is_rc', 'region']
-        ).opts(
-            size=8, alpha=0.8, color='yellow',
-            tools=['hover'], hover_alpha=1.0
+        # Filter data to current view (allow partial overlaps)
+        view_mask = (
+            (df_filtered['x1'] >= x_min) &
+            (df_filtered['x0'] <= x_max) &
+            (df_filtered['y1'] >= y_min) &
+            (df_filtered['y0'] <= y_max)
         )
+        view_data = df_filtered[view_mask].copy()
+
+        if len(view_data) == 0:
+            return hv.Segments([])
+
+        if len(view_data) > k_per_bin:
+            view_data = view_data.nlargest(int(k_per_bin), 'length')
+
+        view_data['ref_pos'] = view_data['y0']
+
+        hover_segments = hv.Segments(
+            view_data,
+            kdims=['x0', 'y0', 'x1', 'y1'],
+            vdims=['start', 'end', 'length', 'ref_pos', 'is_rc', 'region', 'color']
+        ).opts(
+            color='color',
+            line_width=4,
+            alpha=0.9,
+            tools=['hover'],
+            show_legend=False
+        )
+
+        return hover_segments
     
     # Set up interactive plot
-    rangexy = streams.RangeXY(x_range=(0, global_x_max), y_range=(0, global_max))
+    initial_padding = max(global_max * 0.05, 10.0)
+    padded_min = -initial_padding
+    rangexy = streams.RangeXY(x_range=(padded_min, global_x_max), y_range=(padded_min, global_max))
     
     # Create dynamic plot function
     def create_plot(length_range, show_overlay, k_per_bin, colormap_name):
@@ -1490,15 +1522,15 @@ def plot_reference_seq_lz_factor_plot(
             if min_val <= mid_pos <= max_val:
                 label_color = sequence_colors[idx % len(sequence_colors)]
 
-                x_label = hv.Text(mid_pos, min_val + label_offset, seq_name).opts(
+                x_label = hv.Text(mid_pos, min_val - label_offset, seq_name).opts(
                     text_color=label_color,
                     text_font_size='12pt',
                     text_align='center',
-                    text_baseline='bottom'
+                    text_baseline='top'
                 )
                 label_elements.append(x_label)
 
-                y_label = hv.Text(min_val + label_offset, mid_pos, seq_name).opts(
+                y_label = hv.Text(min_val - label_offset, mid_pos, seq_name).opts(
                     text_color=label_color,
                     text_font_size='12pt',
                     text_align='center',
@@ -1528,6 +1560,8 @@ def plot_reference_seq_lz_factor_plot(
             plot = plot * hover_dmap
         
         # Configure plot options
+        lower_bound = min(-label_offset * 1.5, 0.0)
+
         plot = plot.opts(
             width=800,
             height=800,
@@ -1536,8 +1570,9 @@ def plot_reference_seq_lz_factor_plot(
             ylabel=f'Reference position ({plot_name})',
             title=f'Reference Sequence LZ Factor Plot - {plot_name}',
             toolbar='above',
-            xlim=(0, global_x_max),
-            ylim=(0, global_max)
+            xlim=(lower_bound, global_x_max),
+            ylim=(lower_bound, global_max),
+            legend_position='top_left'
         )
         
         return plot
