@@ -362,7 +362,8 @@ def plot_multiple_seq_self_lz_factor_plot_from_file(
         fasta_filepath: Path to the FASTA file containing DNA sequences (mutually exclusive with factors_filepath)
         factors_filepath: Path to binary factors file with metadata (mutually exclusive with fasta_filepath)
         name: Optional name for the plot title (defaults to input filename)
-        save_path: Optional path to save the plot image (PNG export)
+        save_path: Optional path to save the plot (supports .html or .png; PNG export
+            requires optional selenium-based dependencies)
         show_plot: Whether to display/serve the plot
         return_panel: Whether to return the Panel app for embedding
 
@@ -810,7 +811,47 @@ def plot_multiple_seq_self_lz_factor_plot_from_file(
 
         # Handle save_path
         if save_path:
-            print(f"Note: PNG export to {save_path} requires additional setup (selenium/chromedriver)")
+            target_path = Path(save_path)
+            try:
+                target_path.parent.mkdir(parents=True, exist_ok=True)
+                suffix = target_path.suffix.lower()
+
+                if suffix in {".html", ".htm"}:
+                    try:
+                        from bokeh.resources import INLINE  # type: ignore[import-not-found]
+                    except ImportError as exc:  # pragma: no cover - bokeh required earlier
+                        raise PlotError(
+                            "Saving to HTML requires bokeh to be installed"
+                        ) from exc
+
+                    app.save(str(target_path), embed=False, resources=INLINE, title=f"LZ Factor Plot - {name}")
+                    print(f"Saved interactive HTML plot to {target_path}")
+
+                elif suffix == ".png":
+                    try:
+                        from panel.io.export import export_png as panel_export_png  # type: ignore[import-not-found]
+                    except ImportError as exc:
+                        raise PlotError(
+                            "PNG export requires optional dependencies. Install with: "
+                            "pip install 'panel[selenium]'"
+                        ) from exc
+
+                    try:
+                        panel_export_png(app, filename=str(target_path))
+                    except Exception as exc:
+                        raise PlotError(
+                            "Failed to export PNG. Ensure selenium and a compatible web driver are available."
+                        ) from exc
+
+                    print(f"Saved PNG snapshot to {target_path}")
+
+                else:
+                    raise PlotError(
+                        f"Unsupported save_path extension '{suffix}'. Use .html or .png"
+                    )
+
+            except Exception as exc:
+                raise PlotError(f"Failed to save plot to {target_path}: {exc}") from exc
 
         # Handle display/serving
         if show_plot:
@@ -837,6 +878,214 @@ def plot_multiple_seq_self_lz_factor_plot_from_file(
 
     except Exception as e:
         raise PlotError(f"Failed to create interactive LZ factor plot: {e}")
+
+
+def plot_multiple_seq_self_lz_factor_plot_simple(
+    fasta_filepath: Optional[Union[str, Path]] = None,
+    factors_filepath: Optional[Union[str, Path]] = None,
+    name: Optional[str] = None,
+    save_path: Optional[Union[str, Path]] = None,
+    show_plot: bool = True
+) -> None:
+    """
+    Create a simple matplotlib factor plot for multiple DNA sequences from a FASTA file or binary factors file.
+
+    This function reads factors either from a FASTA file (by factorizing multiple DNA sequences)
+    or from an enhanced binary factors file with metadata. It creates a static plot using matplotlib
+    with sequence boundaries visualization - a simplified alternative to the interactive Panel/Datashader version.
+
+    Args:
+        fasta_filepath: Path to the FASTA file containing DNA sequences (mutually exclusive with factors_filepath)
+        factors_filepath: Path to binary factors file with metadata (mutually exclusive with fasta_filepath)
+        name: Optional name for the plot title (defaults to input filename)
+        save_path: Optional path to save the plot image (PNG, PDF, SVG, etc.)
+        show_plot: Whether to display the plot
+
+    Raises:
+        PlotError: If plotting fails or input files cannot be processed
+        FileNotFoundError: If input file doesn't exist
+        ImportError: If matplotlib is not available
+        ValueError: If both or neither input files are provided
+    """
+    try:
+        import matplotlib.pyplot as plt
+        import matplotlib.patches as patches
+    except ImportError as e:
+        missing_dep = str(e).split("'")[1] if "'" in str(e) else str(e)
+        raise ImportError(
+            f"Missing required dependency: {missing_dep}. "
+            f"Install with: pip install matplotlib"
+        )
+
+    from .._noLZSS import factorize_fasta_multiple_dna_w_rc
+    from ..utils import read_factors_binary_file_with_metadata
+
+    # Validate input arguments
+    if (fasta_filepath is None) == (factors_filepath is None):
+        raise ValueError("Exactly one of fasta_filepath or factors_filepath must be provided")
+
+    # Determine input type and file path
+    if fasta_filepath is not None:
+        input_filepath = Path(fasta_filepath)
+        input_type = "fasta"
+    else:
+        if factors_filepath is None:
+            raise ValueError("Either fasta_filepath or factors_filepath must be provided")
+        input_filepath = Path(factors_filepath)
+        input_type = "binary"
+
+    if not input_filepath.exists():
+        raise FileNotFoundError(f"Input file not found: {input_filepath}")
+
+    # Determine plot title
+    if name is None:
+        name = input_filepath.stem
+
+    try:
+        # Get factors and metadata based on input type
+        if input_type == "fasta":
+            print(f"Reading and factorizing sequences from {input_filepath}...")
+            factors, sentinel_factor_indices, sequence_names = factorize_fasta_multiple_dna_w_rc(str(input_filepath))
+        else:
+            print(f"Reading factors from binary file {input_filepath}...")
+            metadata = read_factors_binary_file_with_metadata(input_filepath)
+            factors = metadata['factors']
+            sentinel_factor_indices = metadata['sentinel_factor_indices']
+            sequence_names = metadata['sequence_names']
+
+        print(f"Loaded {len(factors)} factors with {len(sentinel_factor_indices)} sentinels")
+        print(f"Sequence names: {sequence_names}")
+        
+        if not factors:
+            raise PlotError("No factors found in input file")
+
+        # Calculate sentinel positions for lines and labels
+        sentinel_positions = []
+        sequence_boundaries = []  # (start_pos, end_pos, sequence_name)
+        
+        if sentinel_factor_indices:
+            # Get positions of sentinel factors
+            for idx in sentinel_factor_indices:
+                if idx < len(factors):
+                    sentinel_start = factors[idx][0]  # start position of sentinel factor
+                    sentinel_positions.append(sentinel_start)
+            
+            # Calculate sequence boundaries
+            prev_pos = 0
+            for i, pos in enumerate(sentinel_positions):
+                seq_name = sequence_names[i] if i < len(sequence_names) else f"seq_{i}"
+                sequence_boundaries.append((prev_pos, pos, seq_name))
+                prev_pos = pos + 1  # Skip the sentinel itself
+            
+            # Add the last sequence
+            if len(sequence_names) > len(sentinel_positions):
+                last_name = sequence_names[len(sentinel_positions)]
+            else:
+                last_name = f"seq_{len(sentinel_positions)}"
+            
+            # Find the maximum position for the last sequence
+            max_x = max(factor[0] + factor[1] for factor in factors)  # max end position (start + length)
+            max_y = max(factor[2] + (factor[1] if not factor[3] else 0) for factor in factors)  # max ref position
+            max_pos = max(max_x, max_y)
+            sequence_boundaries.append((prev_pos, max_pos, last_name))
+        else:
+            # No sentinels - single sequence
+            seq_name = sequence_names[0] if sequence_names else "sequence"
+            max_x = max(factor[0] + factor[1] for factor in factors)
+            max_y = max(factor[2] + (factor[1] if not factor[3] else 0) for factor in factors)
+            max_pos = max(max_x, max_y)
+            sequence_boundaries.append((0, max_pos, seq_name))
+
+        print(f"Sequence boundaries: {sequence_boundaries}")
+        print(f"Sentinel positions: {sentinel_positions}")
+
+        # Create the plot
+        fig, ax = plt.subplots(figsize=(12, 12))
+        
+        # Plot factors with different colors for forward/reverse
+        for start, length, ref, is_rc in factors:
+            x0 = start
+            x1 = start + length
+            
+            if is_rc:
+                # Reverse complement: y0 = ref + length, y1 = ref
+                y0 = ref + length
+                y1 = ref
+                color = 'red'
+            else:
+                # Forward: y0 = ref, y1 = ref + length
+                y0 = ref
+                y1 = ref + length
+                color = 'blue'
+            
+            # Draw line segment
+            ax.plot([x0, x1], [y0, y1], color=color, alpha=0.6, linewidth=1.5)
+        
+        # Add diagonal reference line
+        max_pos = max(sequence_boundaries[-1][1] if sequence_boundaries else 1000,
+                     max(factor[0] + factor[1] for factor in factors))
+        ax.plot([0, max_pos], [0, max_pos], 'gray', linestyle='--', alpha=0.5, linewidth=1)
+        
+        # Add sentinel boundary lines
+        for pos in sentinel_positions:
+            ax.axvline(x=pos, color='green', linewidth=2, alpha=0.7, linestyle='solid')
+            ax.axhline(y=pos, color='green', linewidth=2, alpha=0.7, linestyle='solid')
+        
+        # Add sequence region backgrounds (alternating light colors)
+        colors_cycle = ['lightblue', 'lightcoral', 'lightgreen', 'lightyellow', 'lightpink']
+        for idx, (start_pos, end_pos, seq_name) in enumerate(sequence_boundaries):
+            bg_color = colors_cycle[idx % len(colors_cycle)]
+            ax.axvspan(start_pos, end_pos, alpha=0.1, color=bg_color)
+            ax.axhspan(start_pos, end_pos, alpha=0.1, color=bg_color)
+        
+        # Add sequence name labels
+        label_offset = max_pos * 0.02
+        for start_pos, end_pos, seq_name in sequence_boundaries:
+            mid_pos = (start_pos + end_pos) / 2
+            # X-axis label (bottom)
+            ax.text(mid_pos, -label_offset, seq_name, ha='center', va='top',
+                   fontsize=10, color='darkblue', weight='bold')
+            # Y-axis label (left side)
+            ax.text(-label_offset, mid_pos, seq_name, ha='right', va='center',
+                   fontsize=10, color='darkblue', weight='bold', rotation=90)
+        
+        # Set labels and title
+        sequence_list = ", ".join([b[2] for b in sequence_boundaries])
+        ax.set_xlabel(f'Position in concatenated sequence ({name})', fontsize=12)
+        ax.set_ylabel(f'Reference position ({name})', fontsize=12)
+        ax.set_title(f'LZ Factor Plot - {name}\nSequences: {sequence_list}', fontsize=14, weight='bold')
+        
+        # Add legend
+        legend_elements = [
+            patches.Patch(color='blue', alpha=0.6, label='Forward factors'),
+            patches.Patch(color='red', alpha=0.6, label='Reverse complement factors'),
+            patches.Patch(color='green', alpha=0.7, label='Sequence boundaries')
+        ]
+        ax.legend(handles=legend_elements, loc='upper left', fontsize=10)
+        
+        # Set equal aspect ratio, grid, and ensure axes start at zero
+        ax.set_aspect('equal', adjustable='box')
+        ax.grid(True, alpha=0.3)
+        ax.set_xlim(-label_offset * 2, max_pos)
+        ax.set_ylim(-label_offset * 2, max_pos)
+        
+        plt.tight_layout()
+        
+        # Save plot if requested
+        if save_path:
+            save_path = Path(save_path)
+            save_path.parent.mkdir(parents=True, exist_ok=True)
+            plt.savefig(save_path, dpi=300, bbox_inches='tight')
+            print(f"Plot saved to {save_path}")
+        
+        # Show plot
+        if show_plot:
+            plt.show()
+        else:
+            plt.close(fig)
+
+    except Exception as e:
+        raise PlotError(f"Failed to create matplotlib LZ factor plot: {e}")
 
 
 def plot_reference_seq_lz_factor_plot_simple(
@@ -1688,13 +1937,14 @@ if __name__ == "__main__":
     cumulative_parser.add_argument('--save_factors_binary', action='store_true', help='Save factors as binary files')
 
     # Subparser for self-factors-plot
-    self_factors_parser = subparsers.add_parser('self-factors-plot', help='Plot self-factors')
+    self_factors_parser = subparsers.add_parser('self-factors-plot', help='Plot self-factors (simple matplotlib by default, use --interactive for Panel/Datashader)')
     self_factors_parser.add_argument('--fasta_filepath', help='Path to FASTA file')
     self_factors_parser.add_argument('--factors_filepath', help='Path to binary factors file')
     self_factors_parser.add_argument('--name', default=None, help='Name for the plot title')
     self_factors_parser.add_argument('--save_path', default=None, help='Path to save the plot image')
-    self_factors_parser.add_argument('--show_plot', action='store_true', default=True, help='Whether to display the plot')
-    self_factors_parser.add_argument('--return_panel', action='store_true', help='Whether to return the Panel app')
+    self_factors_parser.add_argument('--no-show', action='store_true', help='Do not display the plot')
+    self_factors_parser.add_argument('--interactive', action='store_true', help='Use interactive Panel/Datashader plot instead of simple matplotlib')
+    self_factors_parser.add_argument('--return_panel', action='store_true', help='Whether to return the Panel app (interactive mode only)')
 
     # Subparser for reference sequence plotting
     ref_plot_parser = subparsers.add_parser('reference-plot', help='Plot target sequence factorized with reference sequence')
@@ -1725,14 +1975,24 @@ if __name__ == "__main__":
             save_factors_binary=args.save_factors_binary
         )
     elif args.command == 'self-factors-plot':
-        plot_multiple_seq_self_lz_factor_plot_from_file(
-            fasta_filepath=args.fasta_filepath,
-            factors_filepath=args.factors_filepath,
-            name=args.name,
-            save_path=args.save_path,
-            show_plot=args.show_plot,
-            return_panel=args.return_panel
-        )
+        # Choose between simple and interactive plotting
+        if args.interactive:
+            plot_multiple_seq_self_lz_factor_plot_from_file(
+                fasta_filepath=args.fasta_filepath,
+                factors_filepath=args.factors_filepath,
+                name=args.name,
+                save_path=args.save_path,
+                show_plot=not args.no_show,
+                return_panel=args.return_panel
+            )
+        else:
+            plot_multiple_seq_self_lz_factor_plot_simple(
+                fasta_filepath=args.fasta_filepath,
+                factors_filepath=args.factors_filepath,
+                name=args.name,
+                save_path=args.save_path,
+                show_plot=not args.no_show
+            )
     elif args.command == 'reference-plot':
         # Validate that sequences are provided if factors_filepath is not
         if args.factors_filepath is None and (args.reference_seq is None or args.target_seq is None):
