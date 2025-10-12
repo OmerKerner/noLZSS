@@ -1925,6 +1925,158 @@ def plot_reference_seq_lz_factor_plot(
     return None
 
 
+def plot_factor_length_ccdf(
+    factors_filepath: Union[str, Path],
+    save_path: Optional[Union[str, Path]] = None,
+    show_plot: bool = True,
+    separate: bool = True
+) -> None:
+    """
+    Create an empirical CCDF plot of factor lengths on log-log axes from a binary factors file.
+
+    This function reads factors from a binary file and plots the complementary cumulative
+    distribution function (CCDF) of factor lengths. Forward and reverse complement factors
+    can be plotted separately or together on the same axes with different colors.
+
+    Args:
+        factors_filepath: Path to binary factors file with metadata
+        save_path: Optional path to save the plot image (PNG, PDF, SVG, etc.)
+        show_plot: Whether to display the plot
+        separate: Whether to plot forward and reverse complement factors separately
+            (default: True). If False, both are plotted on the same axes with different colors.
+
+    Raises:
+        PlotError: If file reading or plotting fails
+        FileNotFoundError: If factors file doesn't exist
+        ImportError: If matplotlib is not available
+    """
+    try:
+        import matplotlib.pyplot as plt
+        import numpy as np
+    except ImportError as e:
+        missing_dep = str(e).split("'")[1] if "'" in str(e) else str(e)
+        raise ImportError(
+            f"Missing required dependency: {missing_dep}. "
+            f"Install with: pip install matplotlib"
+        )
+
+    from ..utils import read_factors_binary_file_with_metadata
+
+    # Validate input
+    factors_filepath = Path(factors_filepath)
+    if not factors_filepath.exists():
+        raise FileNotFoundError(f"Factors file not found: {factors_filepath}")
+
+    try:
+        # Read factors from binary file
+        metadata = read_factors_binary_file_with_metadata(factors_filepath)
+        factors = metadata['factors']
+
+        if not factors:
+            raise PlotError("No factors found in the binary file")
+
+        # Extract lengths and separate by direction
+        forward_lengths = []
+        reverse_lengths = []
+
+        for factor in factors:
+            if len(factor) >= 3:
+                start, length, ref = factor[:3]
+                is_rc = factor[3] if len(factor) >= 4 else False
+
+                if is_rc:
+                    reverse_lengths.append(length)
+                else:
+                    forward_lengths.append(length)
+
+        if not forward_lengths and not reverse_lengths:
+            raise PlotError("No valid factors with lengths found")
+
+        # Function to compute empirical CCDF
+        def compute_ccdf(lengths):
+            if not lengths:
+                return np.array([]), np.array([])
+            sorted_lengths = np.sort(lengths)
+            unique_lengths = np.unique(sorted_lengths)
+            ccdf_values = []
+
+            total_count = len(lengths)
+            for length in unique_lengths:
+                # Count how many factors have length >= this value
+                count_ge = np.sum(sorted_lengths >= length)
+                ccdf_values.append(count_ge / total_count)
+
+            return unique_lengths, np.array(ccdf_values)
+
+        # Create the plot
+        if separate:
+            # Create subplots
+            fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 6))
+
+            # Forward factors
+            if forward_lengths:
+                lengths_fwd, ccdf_fwd = compute_ccdf(forward_lengths)
+                ax1.loglog(lengths_fwd, ccdf_fwd, 'o-', color='blue', alpha=0.7,
+                          label=f'Forward (n={len(forward_lengths)})')
+                ax1.set_xlabel('Factor Length')
+                ax1.set_ylabel('CCDF (P(Length ≥ x))')
+                ax1.set_title('Forward Factors')
+                ax1.grid(True, alpha=0.3)
+                ax1.legend()
+
+            # Reverse complement factors
+            if reverse_lengths:
+                lengths_rev, ccdf_rev = compute_ccdf(reverse_lengths)
+                ax2.loglog(lengths_rev, ccdf_rev, 'o-', color='red', alpha=0.7,
+                          label=f'Reverse Complement (n={len(reverse_lengths)})')
+                ax2.set_xlabel('Factor Length')
+                ax2.set_ylabel('CCDF (P(Length ≥ x))')
+                ax2.set_title('Reverse Complement Factors')
+                ax2.grid(True, alpha=0.3)
+                ax2.legend()
+
+            plt.suptitle(f'Factor Length CCDF - {factors_filepath.stem}', fontsize=14, weight='bold')
+            plt.tight_layout()
+
+        else:
+            # Plot on same axes
+            fig, ax = plt.subplots(figsize=(10, 8))
+
+            # Forward factors
+            if forward_lengths:
+                lengths_fwd, ccdf_fwd = compute_ccdf(forward_lengths)
+                ax.loglog(lengths_fwd, ccdf_fwd, 'o-', color='blue', alpha=0.7,
+                         label=f'Forward (n={len(forward_lengths)})')
+
+            # Reverse complement factors
+            if reverse_lengths:
+                lengths_rev, ccdf_rev = compute_ccdf(reverse_lengths)
+                ax.loglog(lengths_rev, ccdf_rev, 'o-', color='red', alpha=0.7,
+                         label=f'Reverse Complement (n={len(reverse_lengths)})')
+
+            ax.set_xlabel('Factor Length')
+            ax.set_ylabel('CCDF (P(Length ≥ x))')
+            ax.set_title(f'Factor Length CCDF - {factors_filepath.stem}', fontsize=14, weight='bold')
+            ax.grid(True, alpha=0.3)
+            ax.legend()
+
+        # Save plot if requested
+        if save_path:
+            save_path = Path(save_path)
+            save_path.parent.mkdir(parents=True, exist_ok=True)
+            plt.savefig(save_path, dpi=300, bbox_inches='tight')
+            print(f"Plot saved to {save_path}")
+
+        # Show plot
+        if show_plot:
+            plt.show()
+        else:
+            plt.close(fig)
+
+    except Exception as e:
+        raise PlotError(f"Failed to create factor length CCDF plot: {e}")
+
+
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="Run LZSS plots")
@@ -1947,6 +2099,13 @@ if __name__ == "__main__":
     self_factors_parser.add_argument('--no-show', action='store_true', help='Do not display the plot')
     self_factors_parser.add_argument('--interactive', action='store_true', help='Use interactive Panel/Datashader plot instead of simple matplotlib')
     self_factors_parser.add_argument('--return_panel', action='store_true', help='Whether to return the Panel app (interactive mode only)')
+
+    # Subparser for factor length CCDF
+    ccdf_parser = subparsers.add_parser('factor-length-ccdf', help='Plot empirical CCDF of factor lengths on log-log axes')
+    ccdf_parser.add_argument('factors_filepath', help='Path to binary factors file')
+    ccdf_parser.add_argument('--save_path', default=None, help='Path to save the plot image')
+    ccdf_parser.add_argument('--no-show', action='store_true', help='Do not display the plot')
+    ccdf_parser.add_argument('--no-separate', action='store_true', help='Plot forward and reverse complement factors on the same axes')
 
     # Subparser for reference sequence plotting
     ref_plot_parser = subparsers.add_parser('reference-plot', help='Plot target sequence factorized with reference sequence')
@@ -1995,6 +2154,13 @@ if __name__ == "__main__":
                 save_path=args.save_path,
                 show_plot=not args.no_show
             )
+    elif args.command == 'factor-length-ccdf':
+        plot_factor_length_ccdf(
+            factors_filepath=args.factors_filepath,
+            save_path=args.save_path,
+            show_plot=not args.no_show,
+            separate=not args.no_separate
+        )
     elif args.command == 'reference-plot':
         # Validate that sequences are provided if factors_filepath is not
         if args.factors_filepath is None and (args.reference_seq is None or args.target_seq is None):
