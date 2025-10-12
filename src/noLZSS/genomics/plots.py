@@ -829,15 +829,17 @@ def plot_multiple_seq_self_lz_factor_plot_from_file(
 
                 elif suffix == ".png":
                     try:
-                        from panel.io.export import export_png as panel_export_png  # type: ignore[import-not-found]
+                        from panel.io.save import save as panel_save_png  # type: ignore[import-not-found]
                     except ImportError as exc:
                         raise PlotError(
-                            "PNG export requires optional dependencies. Install with: "
-                            "pip install 'panel[selenium]'"
+                            "PNG export requires selenium and a web browser driver. "
+                            "Install with: pip install selenium and either "
+                            "'conda install -c conda-forge firefox geckodriver' or "
+                            "'conda install -c conda-forge chromium chromedriver'"
                         ) from exc
 
                     try:
-                        panel_export_png(app, filename=str(target_path))
+                        panel_save_png(app, filename=str(target_path), as_png=True)
                     except Exception as exc:
                         raise PlotError(
                             "Failed to export PNG. Ensure selenium and a compatible web driver are available."
