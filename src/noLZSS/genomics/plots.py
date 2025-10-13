@@ -1281,8 +1281,8 @@ def plot_reference_seq_lz_factor_plot_simple(
     
     # Add legend
     legend_elements = [
-        patches.Patch(color='red', alpha=0.7, label=f'{target_name} forward factors'),
-        patches.Patch(color='darkorange', alpha=0.7, label=f'{target_name} reverse complement factors'),
+        patches.Patch(color='blue', alpha=0.7, label=f'{target_name} forward factors'),
+        patches.Patch(color='darkred', alpha=0.7, label=f'{target_name} reverse complement factors'),
         patches.Patch(color='blue', alpha=0.1, label=f'{reference_name} region'),
         patches.Patch(color='red', alpha=0.1, label=f'{target_name} region'),
         patches.Patch(color='green', alpha=0.8, label='Sequence boundary')
@@ -1553,10 +1553,10 @@ def plot_reference_seq_lz_factor_plot(
 
         if start >= target_start:
             region = 'target'
-            color = 'darkorange' if is_rc else 'red'
+            color = 'darkred' if is_rc else 'blue'
         else:
             region = 'reference'
-            color = 'darkblue' if is_rc else 'blue'
+            color = 'red' if is_rc else 'blue'
 
         factor_data.append({
             'x0': start,
@@ -1620,7 +1620,7 @@ def plot_reference_seq_lz_factor_plot(
                     kdims=['x0', 'y0', 'x1', 'y1'],
                     vdims=['length', 'is_rc', 'region', 'start', 'end', 'ref_pos'],
                     label=f"{reference_label} reverse"
-                ).opts(color='darkblue', alpha=0.7, line_width=2)
+                ).opts(color='red', alpha=0.7, line_width=2)
                 layers.append(ref_reverse_segments)
         
         # Target factors - use red/orange tones  
@@ -1634,7 +1634,7 @@ def plot_reference_seq_lz_factor_plot(
                     kdims=['x0', 'y0', 'x1', 'y1'],
                     vdims=['length', 'is_rc', 'region', 'start', 'end', 'ref_pos'],
                     label=f"{target_label} forward"
-                ).opts(color='red', alpha=0.7, line_width=2)
+                ).opts(color='blue', alpha=0.7, line_width=2)
                 layers.append(target_forward_segments)
             
             if len(target_reverse) > 0:
@@ -1643,7 +1643,7 @@ def plot_reference_seq_lz_factor_plot(
                     kdims=['x0', 'y0', 'x1', 'y1'],
                     vdims=['length', 'is_rc', 'region', 'start', 'end', 'ref_pos'],
                     label=f"{target_label} reverse"
-                ).opts(color='darkorange', alpha=0.7, line_width=2)
+                ).opts(color='darkred', alpha=0.7, line_width=2)
                 layers.append(target_reverse_segments)
         
         if not layers:
