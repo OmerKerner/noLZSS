@@ -50,14 +50,29 @@ struct PreparedSequenceResult {
 };
 
 /**
- * @brief Binary file header for factor files with metadata.
+ * @brief Binary file footer for factor files with metadata.
+ * 
+ * Format has changed: footer is now at the END of the file instead of the beginning.
+ * This allows writing factors directly without knowing metadata in advance.
+ * 
+ * File structure:
+ * [Factors: array of Factor structs (24 bytes each)]
+ * [Optional: sequence names (null-terminated strings)]
+ * [Optional: sentinel indices (uint64 array)]
+ * [Footer: FactorFileFooter struct]
  */
-struct FactorFileHeader {
-    char magic[8] = {'n', 'o', 'L', 'Z', 'S', 'S', 'v', '1'};  /**< Format identifier */
+struct FactorFileFooter {
+    char magic[8];            /**< Format identifier (v2 for footer format) */
     uint64_t num_factors;     /**< Number of factors in file */
     uint64_t num_sequences;   /**< Number of sequences processed */
     uint64_t num_sentinels;   /**< Number of sentinel factors */
-    uint64_t header_size;     /**< Total header size for extensibility */
+    uint64_t footer_size;     /**< Total footer size (bytes from end of file) for extensibility */
+    
+    // Constructor to ensure magic is properly initialized
+    FactorFileFooter() : num_factors(0), num_sequences(0), num_sentinels(0), footer_size(0) {
+        magic[0] = 'n'; magic[1] = 'o'; magic[2] = 'L'; magic[3] = 'Z';
+        magic[4] = 'S'; magic[5] = 'S'; magic[6] = 'v'; magic[7] = '2';
+    }
 };
 
 /**
