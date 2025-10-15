@@ -292,29 +292,44 @@ static size_t nolzss(cst_t& cst, Sink&& sink, size_t start_pos = 0) {
     size_t lambda_node_depth = cst.node_depth(lambda);
     size_t lambda_sufnum = start_pos;
 
-    cst_t::node_type v;
-    size_t v_min_leaf_sufnum = 0;
-    size_t u_min_leaf_sufnum = 0;
-
     size_t count = 0;
 
     while (lambda_sufnum < str_len) {
-        // Compute current factor
-        size_t d = 1;
+        // Compute current factor by walking up ancestors
+        // Store u variables outside the loop to avoid recomputation
+        cst_t::node_type u, v;
+        size_t u_min_leaf_sufnum = 0;
+        size_t u_depth = 0;
+        size_t v_min_leaf_sufnum = 0;
         size_t l = 1;
+        size_t d = 1;
+        
+        // Walk up to find valid non-overlapping factor
         while (true) {
             v = cst.bp_support.level_anc(lambda, lambda_node_depth - d);
             v_min_leaf_sufnum = cst.csa[rmq(cst.lb(v), cst.rb(v))];
             l = cst.depth(v);
 
+            // Check if current node provides non-overlapping match
             if (v_min_leaf_sufnum + l - 1 < lambda_sufnum) {
+                // Store current values as "u" values for next iteration
+                u = v;
                 u_min_leaf_sufnum = v_min_leaf_sufnum;
-                ++d; continue;
+                u_depth = l;
+                ++d; 
+                continue;
             }
-            auto u = cst.parent(v);
-            auto u_depth = cst.depth(u);
+            
+            // Found potential match, finalize factor
+            // Get parent for fallback case
+            if (u_depth == 0) {
+                // First iteration, need to compute parent
+                u = cst.parent(v);
+                u_depth = cst.depth(u);
+            }
 
             if (v_min_leaf_sufnum == lambda_sufnum) {
+                // No previous occurrence - emit literal
                 if (u == cst.root()) {
                     l = 1;
                     Factor factor{static_cast<uint64_t>(lambda_sufnum), static_cast<uint64_t>(l), static_cast<uint64_t>(lambda_sufnum)};
@@ -328,6 +343,8 @@ static size_t nolzss(cst_t& cst, Sink&& sink, size_t start_pos = 0) {
                     break;
                 }
             }
+            
+            // Compute actual LCP and enforce non-overlap
             l = std::min(lcp(cst, lambda_sufnum, v_min_leaf_sufnum),
                          (lambda_sufnum - v_min_leaf_sufnum));
             if (l <= u_depth) {
