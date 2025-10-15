@@ -518,5 +518,58 @@ std::vector<Factor> factorize_w_reference(const std::string& reference_seq, cons
  */
 size_t factorize_w_reference_file(const std::string& reference_seq, const std::string& target_seq, const std::string& out_path);
 
+// Parallel factorization functions
+
+/**
+ * @brief Factorizes text in parallel and writes results to a binary file
+ * 
+ * Uses multiple threads to factorize the input text in parallel, then merges
+ * the results into a single binary output file. Thread count is auto-detected
+ * if not specified.
+ * 
+ * @param text Input text to factorize
+ * @param output_path Path to output binary file
+ * @param num_threads Number of threads (0 for auto-detection)
+ * @return Number of factors produced
+ */
+size_t parallel_factorize_to_file(std::string_view text, const std::string& output_path, size_t num_threads = 0);
+
+/**
+ * @brief Factorizes text from file in parallel and writes results to a binary file
+ * 
+ * Reads text from a file, factorizes it using multiple threads, and writes
+ * the results to a binary output file.
+ * 
+ * @param input_path Path to input text file
+ * @param output_path Path to output binary file
+ * @param num_threads Number of threads (0 for auto-detection)
+ * @return Number of factors produced
+ */
+size_t parallel_factorize_file_to_file(const std::string& input_path, const std::string& output_path, size_t num_threads = 0);
+
+/**
+ * @brief Factorizes DNA text in parallel with reverse complement and writes results to a binary file
+ * 
+ * Performs parallel factorization on DNA sequences with reverse complement awareness.
+ * 
+ * @param text Input DNA text
+ * @param output_path Path to output binary file
+ * @param num_threads Number of threads (0 for auto-detection)
+ * @return Number of factors produced
+ */
+size_t parallel_factorize_dna_w_rc_to_file(std::string_view text, const std::string& output_path, size_t num_threads = 0);
+
+/**
+ * @brief Factorizes DNA text from file in parallel with reverse complement and writes results to a binary file
+ * 
+ * Reads DNA text from a file, factorizes it in parallel with reverse complement awareness,
+ * and writes the results to a binary output file.
+ * 
+ * @param input_path Path to input DNA text file
+ * @param output_path Path to output binary file
+ * @param num_threads Number of threads (0 for auto-detection)
+ * @return Number of factors produced
+ */
+size_t parallel_factorize_file_dna_w_rc_to_file(const std::string& input_path, const std::string& output_path, size_t num_threads = 0);
 
 } // namespace noLZSS

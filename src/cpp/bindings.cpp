@@ -1041,6 +1041,110 @@ Warning:
     Characters 1-251 are used as sentinel separators and must not appear in sequences.
 )doc");
 
+    // Parallel factorization bindings
+    m.def("parallel_factorize_to_file", &noLZSS::parallel_factorize_to_file,
+          py::arg("text"), py::arg("output_path"), py::arg("num_threads") = 0,
+          R"doc(
+Factorizes text in parallel and writes results to a binary file.
+
+This function uses multiple threads to factorize the input text in parallel,
+significantly improving performance on large inputs. The results are automatically
+merged and written to a binary output file.
+
+Args:
+    text: Input text to factorize (str or bytes)
+    output_path: Path to output binary file
+    num_threads: Number of threads (0 for auto-detection based on CPU cores)
+
+Returns:
+    Number of factors produced
+
+Raises:
+    RuntimeError: If factorization fails or output file cannot be written
+
+Note:
+    - Thread count is automatically adjusted based on input size
+    - Small inputs may use fewer threads than specified for efficiency
+    - Temporary files are created and cleaned up automatically
+)doc");
+
+    m.def("parallel_factorize_file_to_file", &noLZSS::parallel_factorize_file_to_file,
+          py::arg("input_path"), py::arg("output_path"), py::arg("num_threads") = 0,
+          R"doc(
+Factorizes text from file in parallel and writes results to a binary file.
+
+Reads text from an input file, factorizes it using multiple threads, and writes
+the results to a binary output file. This is more memory-efficient for large files.
+
+Args:
+    input_path: Path to input text file
+    output_path: Path to output binary file
+    num_threads: Number of threads (0 for auto-detection)
+
+Returns:
+    Number of factors produced
+
+Raises:
+    FileNotFoundError: If input file doesn't exist
+    RuntimeError: If factorization fails
+
+Note:
+    - Suitable for processing very large text files
+    - Memory usage scales with input size but is optimized for large files
+)doc");
+
+    m.def("parallel_factorize_dna_w_rc_to_file", &noLZSS::parallel_factorize_dna_w_rc_to_file,
+          py::arg("text"), py::arg("output_path"), py::arg("num_threads") = 0,
+          R"doc(
+Factorizes DNA text in parallel with reverse complement and writes results to a binary file.
+
+Performs parallel factorization on DNA sequences with reverse complement awareness.
+This is particularly useful for genomic data where reverse complement patterns
+are biologically significant.
+
+Args:
+    text: Input DNA text (should contain only A, C, T, G)
+    output_path: Path to output binary file
+    num_threads: Number of threads (0 for auto-detection)
+
+Returns:
+    Number of factors produced
+
+Raises:
+    ValueError: If input contains invalid nucleotides
+    RuntimeError: If factorization fails
+
+Note:
+    - Reverse complement matches are encoded with RC_MASK in the ref field
+    - Currently under development - may not be fully implemented
+)doc");
+
+    m.def("parallel_factorize_file_dna_w_rc_to_file", &noLZSS::parallel_factorize_file_dna_w_rc_to_file,
+          py::arg("input_path"), py::arg("output_path"), py::arg("num_threads") = 0,
+          R"doc(
+Factorizes DNA text from file in parallel with reverse complement and writes results to a binary file.
+
+Reads DNA text from a file, factorizes it in parallel with reverse complement awareness,
+and writes the results to a binary output file.
+
+Args:
+    input_path: Path to input DNA text file
+    output_path: Path to output binary file
+    num_threads: Number of threads (0 for auto-detection)
+
+Returns:
+    Number of factors produced
+
+Raises:
+    FileNotFoundError: If input file doesn't exist
+    ValueError: If file contains invalid nucleotides
+    RuntimeError: If factorization fails
+
+Note:
+    - Optimized for large genomic datasets
+    - Currently under development - may not be fully implemented
+)doc");
+
     // Version information
 #ifdef NOLZSS_VERSION
     m.attr("__version__") = NOLZSS_VERSION;

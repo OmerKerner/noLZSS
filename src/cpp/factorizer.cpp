@@ -1,4 +1,5 @@
 #include "factorizer.hpp"
+#include "parallel_factorizer.hpp"
 #include <sdsl/suffix_trees.hpp>
 #include <sdsl/rmq_succinct_sct.hpp>
 #include <cassert>
@@ -1174,6 +1175,28 @@ size_t factorize_w_reference_file(const std::string& reference_seq, const std::s
     }
     
     return factors.size();
+}
+
+// Parallel factorization implementations
+
+size_t parallel_factorize_to_file(::std::string_view text, const ::std::string& output_path, size_t num_threads) {
+    ParallelFactorizer factorizer;
+    return factorizer.parallel_factorize(text, output_path, num_threads);
+}
+
+size_t parallel_factorize_file_to_file(const ::std::string& input_path, const ::std::string& output_path, size_t num_threads) {
+    ParallelFactorizer factorizer;
+    return factorizer.parallel_factorize_file(input_path, output_path, num_threads);
+}
+
+size_t parallel_factorize_dna_w_rc_to_file(::std::string_view text, const ::std::string& output_path, size_t num_threads) {
+    ParallelFactorizer factorizer;
+    return factorizer.parallel_factorize_dna_w_rc(text, output_path, num_threads);
+}
+
+size_t parallel_factorize_file_dna_w_rc_to_file(const ::std::string& input_path, const ::std::string& output_path, size_t num_threads) {
+    ParallelFactorizer factorizer;
+    return factorizer.parallel_factorize_file_dna_w_rc(input_path, output_path, num_threads);
 }
 
 } // namespace noLZSS
