@@ -285,6 +285,9 @@ PreparedSequenceResult prepare_multiple_dna_sequences_no_rc(const std::vector<st
  */
 template<class Sink>
 static size_t nolzss(cst_t& cst, Sink&& sink, size_t start_pos = 0) {
+    // Build RMQ structure for efficient range minimum queries on the suffix array
+    // Note: RMQ is read-only after construction and could be shared across threads
+    // for parallel factorization of different text segments
     sdsl::rmq_succinct_sct<> rmq(&cst.csa);
     const size_t str_len = cst.size() - 1; // the length of the string is the size of the CST minus the sentinel
 
@@ -459,6 +462,9 @@ static size_t nolzss_multiple_dna_w_rc(const std::string& S, Sink&& sink, size_t
             rc_ends[k] = endT0;
         }
     }
+    // Build RMQ structures for efficient range minimum queries
+    // Note: These RMQ structures are read-only after construction and could be shared
+    // across threads for parallel factorization of different text segments
     sdsl::rmq_succinct_sct<> rmqF(&fwd_starts);
     sdsl::rmq_succinct_sct<> rmqRcEnd(&rc_ends);
 

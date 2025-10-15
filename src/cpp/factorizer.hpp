@@ -8,8 +8,10 @@
 namespace noLZSS {
 
 // Constants and utility functions for reverse complement handling
-/** @brief Mask for reverse complement flag in ref field (/**
- * @brief Advanced fac/**
+/** @brief Mask for reverse complement flag in ref field (MSB of ref) */
+constexpr uint64_t RC_MASK = (1ULL << 63);
+
+/**
  * @brief Advanced factorization function for file-based text.
  *
  * This template function reads text from a file and provides low-level access
@@ -35,10 +37,12 @@ size_t factorize_file_stream(const std::string& path, Sink&& sink, size_t start_
  * @param sink Callable that receives each computed factor
  * @param start_pos Position in the text to start factorization from (default: 0)
  * @return Number of factors emitted
+ * 
+ * @note Optimized to avoid redundant tree operations by caching intermediate values
+ * @note RMQ structures are constructed once and are thread-safe for read operations
  */
 template<class Sink>
 size_t factorize_stream(std::string_view text, Sink&& sink, size_t start_pos = 0);
-constexpr uint64_t RC_MASK = (1ULL << 63);
 
 /**
  * @brief Result of preparing sequences with sentinel position tracking.
@@ -303,6 +307,9 @@ size_t write_factors_binary_file_dna_w_rc(const std::string& in_path, const std:
  * @param text Input DNA text string
  * @param sink Callable that receives each computed factor
  * @return Number of factors emitted
+ * 
+ * @note RMQ structures are constructed once and are thread-safe for read operations
+ * @note Suitable for parallel factorization by sharing the CST and RMQ structures
  */
 template<class Sink>
 size_t factorize_stream_dna_w_rc(std::string_view text, Sink&& sink);
