@@ -159,15 +159,15 @@ void ParallelFactorizer::factorize_thread(const cst_t& cst, const sdsl::rmq_succ
             break;
         }
         
-        // Write the factor to our thread's temporary file
+        // Write the factor to temporary file
         write_factor(current_factor, ctx.temp_file_path, file_mutexes[ctx.thread_id]);
         
-        // Check for convergence if we're in the next thread's region
-        if (next_ctx && lambda_sufnum >= next_ctx->start_pos) {
-            size_t current_end = lambda_sufnum + l;
+        // Check for convergence when factor extends into next thread's region
+        // Use lambda_sufnum + l (exclusive end) to check against next thread's start
+        if (next_ctx && lambda_sufnum + l >= next_ctx->start_pos) {
+            size_t current_end = lambda_sufnum + l;  // Exclusive end position
             if (check_convergence(current_end, *next_ctx, file_mutexes[next_ctx->thread_id])) {
-                // We've converged, stop this thread's factorization
-                break;
+                break;  // Convergence detected
             }
         }
         
