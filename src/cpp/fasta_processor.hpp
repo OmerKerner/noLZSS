@@ -8,18 +8,6 @@
 namespace noLZSS {
 
 /**
- * @brief Result of FASTA file processing containing concatenated sequences and metadata.
- */
-struct FastaProcessResult {
-    std::string sequence;      /**< Concatenated sequences with sentinels */
-    size_t num_sequences;      /**< Number of sequences processed */
-    std::vector<std::string> sequence_ids;  /**< IDs of processed sequences */
-    std::vector<size_t> sequence_lengths;   /**< Lengths of each sequence (excluding sentinels) */
-    std::vector<size_t> sequence_positions; /**< Start positions of each sequence in concatenated string */
-    std::vector<size_t> file_boundaries;    /**< End positions of each file in concatenated string */
-};
-
-/**
  * @brief Result of parsing FASTA file containing both sequences and IDs.
  */
 struct FastaParseResult {
@@ -46,15 +34,6 @@ struct FastaReferenceTargetResult {
     size_t num_target_sequences;                    /**< Number of target sequences */
     size_t target_start_index;                      /**< Start index of target sequences in prepared string */
 };
-
-/**
- * @brief Processes a nucleotide FASTA file into a concatenated string with sentinels.
- *
- * Reads a FASTA file containing nucleotide sequences and creates a single concatenated
- * string with sentinel characters separating sequences. Only A, C, T, G nucleotides
- * are allowed (case insensitive, converted to uppercase).
- */
-FastaProcessResult process_nucleotide_fasta(const std::string& fasta_path);
 
 /**
  * @brief Prepares reference and target DNA sequences from FASTA files without reverse complement.
@@ -85,15 +64,6 @@ FastaReferenceTargetResult prepare_ref_target_dna_no_rc_from_fasta(const std::st
  */
 FastaReferenceTargetResult prepare_ref_target_dna_w_rc_from_fasta(const std::string& reference_fasta_path,
                                                           const std::string& target_fasta_path);
-
-/**
- * @brief Processes an amino acid FASTA file into a concatenated string with sentinels.
- *
- * Reads a FASTA file containing amino acid sequences and creates a single concatenated
- * string with sentinel characters separating sequences. Only canonical amino acids
- * are allowed (case insensitive, converted to uppercase).
- */
-FastaProcessResult process_amino_acid_fasta(const std::string& fasta_path);
 
 /**
  * @brief Factorizes multiple DNA sequences from a FASTA file with reverse complement awareness.

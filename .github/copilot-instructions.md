@@ -64,7 +64,7 @@ def factorize(data, validate=True):
 ### Memory Management
 - **File-based processing**: Use `*_file()` functions for large datasets
 - **Reserve hints**: Pass `reserve_hint` parameter for known factor counts
-- **C++ implementations**: Direct memory-efficient processing (`process_nucleotide_fasta`)
+- **C++ implementations**: Direct memory-efficient processing for genomic data
 
 ### Genomics Specialization
 - **Sequence validation**: Strict nucleotide (A,C,T,G) and amino acid validation
@@ -104,9 +104,9 @@ return _cpp_function(str(filepath))
 
 ### Performance-Critical Paths
 For large datasets, prefer C++ implementations:
-- Use `process_nucleotide_fasta()` over Python `read_nucleotide_fasta()`
 - Use `*_file()` functions instead of loading into memory
 - Pass `reserve_hint` when factor count is known
+- Use `factorize_fasta_multiple_dna_w_rc()` for efficient FASTA processing
 
 ### Genomics Multi-Sequence Processing
 ```python

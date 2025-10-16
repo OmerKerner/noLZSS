@@ -17,8 +17,6 @@ from .._noLZSS import (
     count_factors_multiple_dna_w_rc,
     count_factors_file_multiple_dna_w_rc,
     write_factors_binary_file_multiple_dna_w_rc,
-    process_nucleotide_fasta,
-    process_amino_acid_fasta,
     factorize_fasta_multiple_dna_w_rc,
     prepare_multiple_dna_sequences_w_rc,
 )
