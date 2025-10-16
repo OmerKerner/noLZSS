@@ -22,18 +22,19 @@ size_t ParallelFactorizer::parallel_factorize(std::string_view text, const std::
     
     // Determine optimal thread count if not specified
     if (num_threads == 0) {
-        num_threads = std::thread::hardware_concurrency();
-        // Limit threads for small inputs
-        if (text.length() < 100000) {
-            num_threads = std::max(1UL, num_threads / 2);
-        }
+        // Minimum characters per thread to make parallelization worthwhile
+        constexpr size_t MIN_CHARS_PER_THREAD = 10000;
+        
+        // Calculate maximum useful threads based on text size
+        size_t max_useful_threads = text.length() / MIN_CHARS_PER_THREAD;
+        
+        // Use available hardware threads, but don't exceed what's useful for this input size
+        size_t hardware_threads = std::thread::hardware_concurrency();
+        num_threads = std::min(hardware_threads, max_useful_threads);
+        
+        // Ensure at least one thread
+        num_threads = std::max(1UL, num_threads);
     }
-    
-    // Ensure at least one thread
-    num_threads = std::max(1UL, num_threads);
-    // Limit threads if text is too small
-    num_threads = std::min(num_threads, text.length() / 10000);
-    if (num_threads == 0) num_threads = 1;
     
     // Create suffix tree for all threads to use
     std::string tmp(text);
