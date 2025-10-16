@@ -86,6 +86,10 @@ ehthumbs.db
 # Generated benchmark plots and results
 benchmarks/plots/
 benchmarks/fasta_results/
+benchmarks/core_results/
+benchmarks/dna_results/
+benchmarks/parallel_results/
+benchmarks/all_results/
 *.png
 *.pdf
 
