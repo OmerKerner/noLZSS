@@ -112,34 +112,38 @@ def parallel_factorize(text: Union[str, bytes], num_threads: int = 0, validate: 
     try:
         # Factorize to temporary file
         parallel_factorize_to_file(text, temp_path, num_threads, validate)
-        # Read factors back using a simple binary read
+        # Read factors back using the footer format
         import struct
-        from ._noLZSS import Factor as FactorClass
+        from collections import namedtuple
         
         factors = []
         with open(temp_path, 'rb') as f:
-            # Skip header (FactorFileHeader)
-            # struct FactorFileHeader {
-            #     char magic[8];           // "noLZSSv1"
+            # Read footer from the end (v2 format)
+            # struct FactorFileFooter {
+            #     char magic[8];           // "noLZSSv2"
             #     uint64_t num_factors;
             #     uint64_t num_sequences;
             #     uint64_t num_sentinels;
-            #     uint64_t header_size;
+            #     uint64_t footer_size;
             # }
-            header_data = f.read(40)  # 8 + 4 * 8 bytes
-            num_factors = struct.unpack('<Q', header_data[8:16])[0]  # Skip 8-byte magic
+            f.seek(-40, 2)  # Seek to 40 bytes before end
+            footer_data = f.read(40)  # 8 + 4 * 8 bytes
+            magic = footer_data[:8]
+            if magic != b'noLZSSv2':
+                raise ValueError(f"Invalid file format: expected v2 footer, got {magic}")
+            
+            num_factors = struct.unpack('<Q', footer_data[8:16])[0]
+            
+            # Seek back to beginning to read factors
+            f.seek(0)
             
             # Read factors
+            FactorTuple = namedtuple('Factor', ['start', 'length', 'ref'])
             for _ in range(num_factors):
                 factor_data = f.read(24)  # 3 * 8 bytes (start, length, ref)
                 if len(factor_data) < 24:
                     break
                 start, length, ref = struct.unpack('<QQQ', factor_data)
-                # Create Factor object (this will be the pybind11 Factor class)
-                # We'll use the _noLZSS module's factorize to get the proper Factor type
-                # For now, return tuples
-                from collections import namedtuple
-                FactorTuple = namedtuple('Factor', ['start', 'length', 'ref'])
                 factors.append(FactorTuple(start, length, ref))
         
         return factors

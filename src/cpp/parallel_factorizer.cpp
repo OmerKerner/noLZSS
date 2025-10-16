@@ -295,10 +295,8 @@ size_t ParallelFactorizer::merge_temp_files(const std::string& output_path,
         throw std::runtime_error("Cannot open output file for writing: " + output_path);
     }
     
-    // Reserve space for the header, we'll write it at the end
-    FactorFileHeader header;
-    ofs.seekp(sizeof(FactorFileHeader));
-    
+    // Write factors directly (no header space reservation)
+    // Footer will be written at the end
     size_t total_factors = 0;
     size_t current_position = 0;  // Track the current end position in the merged output
     size_t text_length = contexts.empty() ? 0 : contexts[0].text_length;
@@ -383,15 +381,15 @@ size_t ParallelFactorizer::merge_temp_files(const std::string& output_path,
         }
     }
     
-    // Update and write header
-    header.num_factors = total_factors;
-    header.num_sequences = 1;  // Default for general factorization
-    header.num_sentinels = 0;
-    header.header_size = sizeof(FactorFileHeader);
+    // Write footer at the end (v2 format)
+    FactorFileFooter footer;
+    footer.num_factors = total_factors;
+    footer.num_sequences = 0;  // Unknown for general (non-FASTA) factorization
+    footer.num_sentinels = 0;  // No sentinels for general factorization
+    footer.footer_size = sizeof(FactorFileFooter);
     
-    // Go back and write the header
-    ofs.seekp(0);
-    ofs.write(reinterpret_cast<const char*>(&header), sizeof(header));
+    // Write the footer at the end of the file
+    ofs.write(reinterpret_cast<const char*>(&footer), sizeof(footer));
     
     return total_factors;
 }
