@@ -242,30 +242,44 @@ FastaProcessResult process_nucleotide_fasta(const std::string& fasta_path) {
  */
 FastaReferenceTargetResult prepare_ref_target_dna_no_rc_from_fasta(const std::string& reference_fasta_path,
                                                            const std::string& target_fasta_path) {
-    std::vector<std::string> all_sequence_ids;
-    std::vector<std::string> all_original_sequences;
-    
     // Process reference FASTA file first
     FastaParseResult ref_parse_result = parse_fasta_sequences_and_ids(reference_fasta_path);
-    all_original_sequences.insert(all_original_sequences.end(), ref_parse_result.sequences.begin(), ref_parse_result.sequences.end());
-    all_sequence_ids.insert(all_sequence_ids.end(), ref_parse_result.sequence_ids.begin(), ref_parse_result.sequence_ids.end());
+    
+    // Calculate target start index BEFORE moving sequences
+    size_t target_start_index = 0;
+    for (const auto& seq : ref_parse_result.sequences) {
+        target_start_index += seq.length() + 1; // +1 for sentinel
+    }
+    
+    size_t num_ref_sequences = ref_parse_result.sequences.size();
     
     // Process target FASTA file second
     FastaParseResult target_parse_result = parse_fasta_sequences_and_ids(target_fasta_path);
-    all_original_sequences.insert(all_original_sequences.end(), target_parse_result.sequences.begin(), target_parse_result.sequences.end());
-    all_sequence_ids.insert(all_sequence_ids.end(), target_parse_result.sequence_ids.begin(), target_parse_result.sequence_ids.end());
+    
+    size_t num_target_sequences = target_parse_result.sequences.size();
+    
+    // Reserve and move sequences (avoid copying)
+    std::vector<std::string> all_original_sequences;
+    all_original_sequences.reserve(num_ref_sequences + num_target_sequences);
+    all_original_sequences.insert(all_original_sequences.end(),
+                                 std::make_move_iterator(ref_parse_result.sequences.begin()),
+                                 std::make_move_iterator(ref_parse_result.sequences.end()));
+    all_original_sequences.insert(all_original_sequences.end(),
+                                 std::make_move_iterator(target_parse_result.sequences.begin()),
+                                 std::make_move_iterator(target_parse_result.sequences.end()));
+    
+    // Reserve and move IDs
+    std::vector<std::string> all_sequence_ids;
+    all_sequence_ids.reserve(num_ref_sequences + num_target_sequences);
+    all_sequence_ids.insert(all_sequence_ids.end(),
+                           std::make_move_iterator(ref_parse_result.sequence_ids.begin()),
+                           std::make_move_iterator(ref_parse_result.sequence_ids.end()));
+    all_sequence_ids.insert(all_sequence_ids.end(),
+                           std::make_move_iterator(target_parse_result.sequence_ids.begin()),
+                           std::make_move_iterator(target_parse_result.sequence_ids.end()));
 
     if (all_original_sequences.empty()) {
         throw std::runtime_error("No valid sequences found in FASTA files");
-    }
-
-    size_t num_ref_sequences = ref_parse_result.sequences.size();
-    size_t num_target_sequences = target_parse_result.sequences.size();
-
-    // Calculate the index where target sequences start in the prepared string
-    size_t target_start_index = 0;
-    for (size_t i = 0; i < num_ref_sequences; ++i) {
-        target_start_index += all_original_sequences[i].length() + 1; // +1 for sentinel
     }
 
     // Use prepare_multiple_dna_sequences_no_rc directly with collected sequences
@@ -286,30 +300,44 @@ FastaReferenceTargetResult prepare_ref_target_dna_no_rc_from_fasta(const std::st
  */
 FastaReferenceTargetResult prepare_ref_target_dna_w_rc_from_fasta(const std::string& reference_fasta_path,
                                                           const std::string& target_fasta_path) {
-    std::vector<std::string> all_sequence_ids;
-    std::vector<std::string> all_original_sequences;
-    
     // Process reference FASTA file first
     FastaParseResult ref_parse_result = parse_fasta_sequences_and_ids(reference_fasta_path);
-    all_original_sequences.insert(all_original_sequences.end(), ref_parse_result.sequences.begin(), ref_parse_result.sequences.end());
-    all_sequence_ids.insert(all_sequence_ids.end(), ref_parse_result.sequence_ids.begin(), ref_parse_result.sequence_ids.end());
+    
+    // Calculate target start index BEFORE moving sequences
+    size_t target_start_index = 0;
+    for (const auto& seq : ref_parse_result.sequences) {
+        target_start_index += seq.length() + 1; // +1 for sentinel
+    }
+    
+    size_t num_ref_sequences = ref_parse_result.sequences.size();
     
     // Process target FASTA file second
     FastaParseResult target_parse_result = parse_fasta_sequences_and_ids(target_fasta_path);
-    all_original_sequences.insert(all_original_sequences.end(), target_parse_result.sequences.begin(), target_parse_result.sequences.end());
-    all_sequence_ids.insert(all_sequence_ids.end(), target_parse_result.sequence_ids.begin(), target_parse_result.sequence_ids.end());
+    
+    size_t num_target_sequences = target_parse_result.sequences.size();
+    
+    // Reserve and move sequences (avoid copying)
+    std::vector<std::string> all_original_sequences;
+    all_original_sequences.reserve(num_ref_sequences + num_target_sequences);
+    all_original_sequences.insert(all_original_sequences.end(),
+                                 std::make_move_iterator(ref_parse_result.sequences.begin()),
+                                 std::make_move_iterator(ref_parse_result.sequences.end()));
+    all_original_sequences.insert(all_original_sequences.end(),
+                                 std::make_move_iterator(target_parse_result.sequences.begin()),
+                                 std::make_move_iterator(target_parse_result.sequences.end()));
+    
+    // Reserve and move IDs
+    std::vector<std::string> all_sequence_ids;
+    all_sequence_ids.reserve(num_ref_sequences + num_target_sequences);
+    all_sequence_ids.insert(all_sequence_ids.end(),
+                           std::make_move_iterator(ref_parse_result.sequence_ids.begin()),
+                           std::make_move_iterator(ref_parse_result.sequence_ids.end()));
+    all_sequence_ids.insert(all_sequence_ids.end(),
+                           std::make_move_iterator(target_parse_result.sequence_ids.begin()),
+                           std::make_move_iterator(target_parse_result.sequence_ids.end()));
 
     if (all_original_sequences.empty()) {
         throw std::runtime_error("No valid sequences found in FASTA files");
-    }
-
-    size_t num_ref_sequences = ref_parse_result.sequences.size();
-    size_t num_target_sequences = target_parse_result.sequences.size();
-
-    // Calculate the index where target sequences start in the prepared string
-    size_t target_start_index = 0;
-    for (size_t i = 0; i < num_ref_sequences; ++i) {
-        target_start_index += all_original_sequences[i].length() + 1; // +1 for sentinel
     }
 
     // Use prepare_multiple_dna_sequences_w_rc directly with collected sequences
