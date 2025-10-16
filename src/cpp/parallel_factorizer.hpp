@@ -28,6 +28,10 @@ struct ThreadContext {
     size_t text_length;             // Total text length
     std::string temp_file_path;     // Path to temporary file for this thread
     bool is_last_thread;            // Flag indicating if this is the last thread
+    
+    // Convergence tracking state
+    size_t next_thread_factor_index = 0;  // Index of next factor to read from next thread
+    std::optional<Factor> last_read_factor;  // Last factor read from next thread's file
 };
 
 /**
@@ -113,13 +117,23 @@ private:
                          std::vector<std::mutex>& file_mutexes);
     
     /**
+     * @brief Read a single factor from a file at a specific index
+     * 
+     * @param file_path Path to the factor file
+     * @param factor_index Index of the factor to read (0-based)
+     * @return Factor if successful, std::nullopt if index is out of bounds
+     */
+    std::optional<Factor> read_factor_at_index(const std::string& file_path, size_t factor_index);
+    
+    /**
      * @brief Check if current thread has converged with next thread
      * 
      * Checks if the current factor's end position matches the start of any
-     * factor in the next thread, indicating convergence.
+     * factor in the next thread, indicating convergence. Uses stateful reading
+     * to efficiently read factors one at a time.
      * 
      * @param current_end Current factorization end position
-     * @param next_ctx Next thread context
+     * @param next_ctx Next thread context (contains state tracking)
      * @param next_file_mutex Mutex for next thread's file
      * @return true if convergence detected, false otherwise
      */

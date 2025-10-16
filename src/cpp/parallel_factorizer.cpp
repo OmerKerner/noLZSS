@@ -178,19 +178,80 @@ void ParallelFactorizer::factorize_thread(const cst_t& cst, const sdsl::rmq_succ
     }
 }
 
-bool ParallelFactorizer::check_convergence(size_t current_end, ThreadContext& next_ctx,
-                                        std::mutex& next_file_mutex) {
-    // Read all factors from the next thread's file
-    auto next_factors = read_factors(next_ctx.temp_file_path, next_file_mutex);
-    
-    // Look for a factor that starts exactly where our current factorization ends
-    for (const auto& factor : next_factors) {
-        if (factor.start == current_end) {
-            return true; // Found convergence
-        }
+std::optional<Factor> ParallelFactorizer::read_factor_at_index(const std::string& file_path, 
+                                                                size_t factor_index) {
+    std::ifstream ifs(file_path, std::ios::binary);
+    if (!ifs) {
+        return std::nullopt;
     }
     
-    return false;
+    // Seek to the position of the requested factor
+    ifs.seekg(factor_index * sizeof(Factor), std::ios::beg);
+    if (!ifs) {
+        return std::nullopt; // Index out of bounds
+    }
+    
+    // Read the factor
+    Factor factor;
+    ifs.read(reinterpret_cast<char*>(&factor), sizeof(Factor));
+    if (!ifs || ifs.gcount() != sizeof(Factor)) {
+        return std::nullopt; // Failed to read complete factor
+    }
+    
+    return factor;
+}
+
+bool ParallelFactorizer::check_convergence(size_t current_end, ThreadContext& next_ctx,
+                                        std::mutex& next_file_mutex) {
+    // If we have a cached factor, check it first
+    if (next_ctx.last_read_factor.has_value()) {
+        const auto& cached_factor = next_ctx.last_read_factor.value();
+        size_t cached_end = cached_factor.start + cached_factor.length;
+        
+        if (cached_end > current_end) {
+            // The cached factor ends beyond our current position,
+            // so we haven't reached convergence yet
+            return false;
+        }
+        
+        if (cached_factor.start == current_end) {
+            // Found convergence: next thread's factor starts exactly where we end
+            return true;
+        }
+        
+        // cached_end <= current_end but cached_factor.start < current_end
+        // Need to read the next factor
+    }
+    
+    // Read factors one at a time until we find convergence or go past current_end
+    while (true) {
+        std::lock_guard<std::mutex> lock(next_file_mutex);
+        
+        auto factor_opt = read_factor_at_index(next_ctx.temp_file_path, 
+                                               next_ctx.next_thread_factor_index);
+        
+        if (!factor_opt.has_value()) {
+            // No more factors in next thread's file - convergence not found yet
+            return false;
+        }
+        
+        Factor factor = factor_opt.value();
+        next_ctx.last_read_factor = factor;
+        next_ctx.next_thread_factor_index++;
+        
+        if (factor.start == current_end) {
+            // Found convergence
+            return true;
+        }
+        
+        if (factor.start > current_end) {
+            // Next thread's factor starts beyond our current position
+            // We haven't reached convergence yet
+            return false;
+        }
+        
+        // factor.start < current_end, keep reading next factors
+    }
 }
 
 void ParallelFactorizer::write_factor(const Factor& factor, const std::string& file_path, 
@@ -258,68 +319,86 @@ size_t ParallelFactorizer::merge_temp_files(const std::string& output_path,
     ofs.seekp(sizeof(FactorFileHeader));
     
     size_t total_factors = 0;
-    std::vector<size_t> convergence_points(contexts.size());
+    size_t current_position = 0;  // Track the current end position in the merged output
+    size_t text_length = contexts.empty() ? 0 : contexts[0].text_length;
+    std::optional<Factor> last_written_factor;
     
-    // Find the convergence points between threads
-    for (size_t i = 0; i < contexts.size() - 1; i++) {
-        std::vector<Factor> current_factors;
-        std::vector<Factor> next_factors;
-        
-        // Read all factors from current and next thread
-        {
-            std::mutex dummy_mutex;
-            current_factors = read_factors(contexts[i].temp_file_path, dummy_mutex);
-            next_factors = read_factors(contexts[i+1].temp_file_path, dummy_mutex);
-        }
-        
-        if (current_factors.empty()) {
-            convergence_points[i] = 0;
-            continue;
-        }
-        
-        // Default convergence point is the start of next thread
-        convergence_points[i] = contexts[i+1].start_pos;
-        
-        // Look for the actual convergence point
-        for (size_t j = 0; j < current_factors.size(); j++) {
-            const auto& current_factor = current_factors[j];
-            size_t current_end = current_factor.start + current_factor.length;
-            
-            // If this factor ends beyond the next thread's start, check for convergence
-            if (current_factor.start >= contexts[i+1].start_pos) {
-                for (const auto& next_factor : next_factors) {
-                    if (next_factor.start == current_end) {
-                        // Found convergence point - use the position of this factor
-                        convergence_points[i] = current_factor.start;
-                        break;
-                    }
-                }
-                
-                // If we found a convergence point, break out of the loop
-                if (convergence_points[i] != contexts[i+1].start_pos) {
-                    break;
-                }
-            }
-        }
-    }
-    
-    // Set the convergence point for the last thread to the end of text
-    if (!contexts.empty()) {
-        convergence_points[contexts.size() - 1] = contexts.back().text_length;
-    }
-    
-    // Now merge the files, only including factors up to the convergence point
+    // Process each thread's temp file
     for (size_t i = 0; i < contexts.size(); i++) {
+        // Check if we've already covered the entire sequence
+        if (current_position >= text_length) {
+            break;  // Stop merging - sequence is complete
+        }
+        
         std::ifstream ifs(contexts[i].temp_file_path, std::ios::binary);
         if (!ifs) continue;
         
         Factor factor;
-        while (ifs.read(reinterpret_cast<char*>(&factor), sizeof(Factor))) {
-            // Only include factors that start before the convergence point
-            if (factor.start < convergence_points[i]) {
+        bool found_convergence = false;
+        
+        // For first thread (i == 0), copy all factors until convergence or end
+        if (i == 0) {
+            // Copy all factors directly to output
+            while (ifs.read(reinterpret_cast<char*>(&factor), sizeof(Factor))) {
                 ofs.write(reinterpret_cast<const char*>(&factor), sizeof(Factor));
                 total_factors++;
+                last_written_factor = factor;
+                
+                size_t factor_end = factor.start + factor.length;
+                if (factor_end > current_position) {
+                    current_position = factor_end;
+                }
+                
+                // Stop if we've covered the entire sequence
+                if (current_position >= text_length) {
+                    break;
+                }
             }
+        } else {
+            // For subsequent threads, skip factors until we find convergence point
+            // Convergence: last_written_factor.end == current_factor.start
+            
+            if (!last_written_factor.has_value()) {
+                // No last written factor - shouldn't happen, but handle gracefully
+                continue;
+            }
+            
+            size_t last_end = last_written_factor->start + last_written_factor->length;
+            
+            // Read factors and look for convergence
+            while (ifs.read(reinterpret_cast<char*>(&factor), sizeof(Factor))) {
+                if (!found_convergence) {
+                    // Still looking for convergence point
+                    if (factor.start == last_end) {
+                        // Found convergence! Start copying from this factor onwards
+                        found_convergence = true;
+                    } else {
+                        // Skip this factor - it's before convergence
+                        continue;
+                    }
+                }
+                
+                // Write factor to output (either we found convergence or we're continuing)
+                ofs.write(reinterpret_cast<const char*>(&factor), sizeof(Factor));
+                total_factors++;
+                last_written_factor = factor;
+                
+                size_t factor_end = factor.start + factor.length;
+                if (factor_end > current_position) {
+                    current_position = factor_end;
+                }
+                last_end = factor_end;  // Update for next iteration
+                
+                // Stop if we've covered the entire sequence
+                if (current_position >= text_length) {
+                    break;
+                }
+            }
+        }
+        
+        // If we've covered the entire sequence, stop processing more threads
+        if (current_position >= text_length) {
+            break;
         }
     }
     

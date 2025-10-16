@@ -120,13 +120,14 @@ def parallel_factorize(text: Union[str, bytes], num_threads: int = 0, validate: 
         with open(temp_path, 'rb') as f:
             # Skip header (FactorFileHeader)
             # struct FactorFileHeader {
+            #     char magic[8];           // "noLZSSv1"
             #     uint64_t num_factors;
             #     uint64_t num_sequences;
             #     uint64_t num_sentinels;
             #     uint64_t header_size;
             # }
-            header_data = f.read(32)  # 4 * 8 bytes
-            num_factors = struct.unpack('<Q', header_data[0:8])[0]
+            header_data = f.read(40)  # 8 + 4 * 8 bytes
+            num_factors = struct.unpack('<Q', header_data[8:16])[0]  # Skip 8-byte magic
             
             # Read factors
             for _ in range(num_factors):
