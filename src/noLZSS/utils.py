@@ -122,19 +122,20 @@ def read_factors_binary_file(filepath: Union[str, Path]) -> List[Tuple[int, int,
     
     try:
         with open(filepath, 'rb') as f:
-            # Read header
-            header_data = f.read(40)  # magic 8 + 4*8 = 40
-            if len(header_data) != 40:
-                raise NoLZSSError("File too small to contain valid header")
+            # Read footer from the end of file
+            f.seek(-40, 2)  # Seek to 40 bytes before end (footer size)
+            footer_data = f.read(40)  # magic 8 + 4*8 = 40
+            if len(footer_data) != 40:
+                raise NoLZSSError("File too small to contain valid footer")
             
-            magic = header_data[:8]
-            if magic != b'noLZSSv1':
-                raise NoLZSSError("Invalid file format: missing noLZSS magic header")
+            magic = footer_data[:8]
+            if magic != b'noLZSSv2':
+                raise NoLZSSError("Invalid file format: missing noLZSS magic footer (expected v2 format)")
             
-            num_factors, num_sequences, num_sentinels, header_size = struct.unpack('<QQQQ', header_data[8:40])
+            num_factors, num_sequences, num_sentinels, footer_size = struct.unpack('<QQQQ', footer_data[8:40])
             
-            # Seek to after header
-            f.seek(header_size)
+            # Seek to beginning of file to read factors
+            f.seek(0)
             
             # Read factors
             factors = []
@@ -184,52 +185,57 @@ def read_factors_binary_file_with_metadata(filepath: Union[str, Path]) -> Dict[s
     
     try:
         with open(filepath, 'rb') as f:
-            # Read header
-            header_data = f.read(48)  # FactorFileHeader is 8+8+8+8+8 = 40 bytes + padding
-            if len(header_data) < 40:
-                raise NoLZSSError("File too small to contain valid header")
+            # Read footer from the end of file
+            f.seek(-40, 2)  # Seek to 40 bytes before end (footer struct size)
+            footer_basic = f.read(40)
+            if len(footer_basic) < 40:
+                raise NoLZSSError("File too small to contain valid footer")
             
-            # Unpack header (magic is 8 chars, then 4 uint64_t)
-            magic = header_data[:8]
-            if magic != b'noLZSSv1':
-                raise NoLZSSError("Invalid file format: missing noLZSS magic header")
+            # Unpack basic footer (magic is 8 chars, then 4 uint64_t)
+            magic = footer_basic[:8]
+            if magic != b'noLZSSv2':
+                raise NoLZSSError("Invalid file format: missing noLZSS magic footer (expected v2 format)")
             
-            num_factors, num_sequences, num_sentinels, header_size = struct.unpack('<QQQQ', header_data[8:40])
+            num_factors, num_sequences, num_sentinels, footer_size = struct.unpack('<QQQQ', footer_basic[8:40])
             
-            # Seek to beginning of header to read the full header
-            f.seek(0)
-            full_header = f.read(header_size)
-            if len(full_header) != header_size:
-                raise NoLZSSError(f"Could not read full header: expected {header_size}, got {len(full_header)}")
+            # Seek to the beginning of the full footer (footer_size bytes from end)
+            f.seek(-footer_size, 2)
+            full_footer = f.read(footer_size)
+            if len(full_footer) != footer_size:
+                raise NoLZSSError(f"Could not read full footer: expected {footer_size}, got {len(full_footer)}")
             
-            # Skip the basic header structure
-            offset = 40
+            # Parse footer metadata (everything before the basic footer struct at the end)
+            # Skip the basic footer structure at the end (40 bytes)
+            metadata_size = footer_size - 40
+            metadata = full_footer[:metadata_size]
+            offset = 0
             
             # Read sequence names
             sequence_names = []
             for i in range(num_sequences):
                 # Find null terminator
                 name_start = offset
-                while offset < len(full_header) and full_header[offset] != 0:
+                while offset < len(metadata) and metadata[offset] != 0:
                     offset += 1
-                if offset >= len(full_header):
+                if offset >= len(metadata):
                     raise NoLZSSError("Invalid sequence name format")
                 
-                name = full_header[name_start:offset].decode('utf-8')
+                name = metadata[name_start:offset].decode('utf-8')
                 sequence_names.append(name)
                 offset += 1  # Skip null terminator
             
             # Read sentinel factor indices
             sentinel_indices = []
             for i in range(num_sentinels):
-                if offset + 8 > len(full_header):
+                if offset + 8 > len(metadata):
                     raise NoLZSSError("Insufficient data for sentinel indices")
                 
-                idx = struct.unpack('<Q', full_header[offset:offset+8])[0]
+                idx = struct.unpack('<Q', metadata[offset:offset+8])[0]
                 sentinel_indices.append(idx)
                 offset += 8
             
-            # Read factors
+            # Now read factors from the beginning of the file
+            f.seek(0)
             factors = []
             for i in range(num_factors):
                 factor_data = f.read(24)  # Each factor is 3 * uint64_t = 24 bytes

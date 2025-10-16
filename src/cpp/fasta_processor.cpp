@@ -500,13 +500,13 @@ size_t write_factors_binary_file_fasta_multiple_dna_w_rc(const std::string& fast
     // Get factorization result with sentinel information
     FastaFactorizationResult factorization_result = factorize_fasta_multiple_dna_w_rc(fasta_path);
     
-    // Calculate header size
+    // Calculate footer size
     size_t names_size = 0;
     for (const auto& name : factorization_result.sequence_ids) {
         names_size += name.length() + 1;  // +1 for null terminator
     }
     
-    size_t header_size = sizeof(FactorFileHeader) + names_size + 
+    size_t footer_size = sizeof(FactorFileFooter) + names_size + 
                         factorization_result.sentinel_factor_indices.size() * sizeof(uint64_t);
     
     // Write to file
@@ -518,14 +518,10 @@ size_t write_factors_binary_file_fasta_multiple_dna_w_rc(const std::string& fast
     std::vector<char> buf(1<<20); // 1 MB buffer for performance
     os.rdbuf()->pubsetbuf(buf.data(), static_cast<std::streamsize>(buf.size()));
     
-    // Write header
-    FactorFileHeader header;
-    header.num_factors = factorization_result.factors.size();
-    header.num_sequences = factorization_result.sequence_ids.size();
-    header.num_sentinels = factorization_result.sentinel_factor_indices.size();
-    header.header_size = header_size;
-    
-    os.write(reinterpret_cast<const char*>(&header), sizeof(header));
+    // Write factors first
+    for (const Factor& f : factorization_result.factors) {
+        os.write(reinterpret_cast<const char*>(&f), sizeof(Factor));
+    }
     
     // Write sequence names
     for (const auto& name : factorization_result.sequence_ids) {
@@ -537,10 +533,14 @@ size_t write_factors_binary_file_fasta_multiple_dna_w_rc(const std::string& fast
         os.write(reinterpret_cast<const char*>(&idx), sizeof(idx));
     }
     
-    // Write factors (existing format)
-    for (const Factor& f : factorization_result.factors) {
-        os.write(reinterpret_cast<const char*>(&f), sizeof(Factor));
-    }
+    // Write footer at the end
+    FactorFileFooter footer;
+    footer.num_factors = factorization_result.factors.size();
+    footer.num_sequences = factorization_result.sequence_ids.size();
+    footer.num_sentinels = factorization_result.sentinel_factor_indices.size();
+    footer.footer_size = footer_size;
+    
+    os.write(reinterpret_cast<const char*>(&footer), sizeof(footer));
     
     return factorization_result.factors.size();
 }
@@ -557,13 +557,13 @@ size_t write_factors_binary_file_fasta_multiple_dna_no_rc(const std::string& fas
     // Get factorization result with sentinel information
     FastaFactorizationResult factorization_result = factorize_fasta_multiple_dna_no_rc(fasta_path);
     
-    // Calculate header size
+    // Calculate footer size
     size_t names_size = 0;
     for (const auto& name : factorization_result.sequence_ids) {
         names_size += name.length() + 1;  // +1 for null terminator
     }
     
-    size_t header_size = sizeof(FactorFileHeader) + names_size + 
+    size_t footer_size = sizeof(FactorFileFooter) + names_size + 
                         factorization_result.sentinel_factor_indices.size() * sizeof(uint64_t);
     
     // Write to file
@@ -575,14 +575,10 @@ size_t write_factors_binary_file_fasta_multiple_dna_no_rc(const std::string& fas
     std::vector<char> buf(1<<20); // 1 MB buffer for performance
     os.rdbuf()->pubsetbuf(buf.data(), static_cast<std::streamsize>(buf.size()));
     
-    // Write header
-    FactorFileHeader header;
-    header.num_factors = factorization_result.factors.size();
-    header.num_sequences = factorization_result.sequence_ids.size();
-    header.num_sentinels = factorization_result.sentinel_factor_indices.size();
-    header.header_size = header_size;
-    
-    os.write(reinterpret_cast<const char*>(&header), sizeof(header));
+    // Write factors first
+    for (const Factor& f : factorization_result.factors) {
+        os.write(reinterpret_cast<const char*>(&f), sizeof(Factor));
+    }
     
     // Write sequence names
     for (const auto& name : factorization_result.sequence_ids) {
@@ -594,10 +590,14 @@ size_t write_factors_binary_file_fasta_multiple_dna_no_rc(const std::string& fas
         os.write(reinterpret_cast<const char*>(&idx), sizeof(idx));
     }
     
-    // Write factors (existing format)
-    for (const Factor& f : factorization_result.factors) {
-        os.write(reinterpret_cast<const char*>(&f), sizeof(Factor));
-    }
+    // Write footer at the end
+    FactorFileFooter footer;
+    footer.num_factors = factorization_result.factors.size();
+    footer.num_sequences = factorization_result.sequence_ids.size();
+    footer.num_sentinels = factorization_result.sentinel_factor_indices.size();
+    footer.footer_size = footer_size;
+    
+    os.write(reinterpret_cast<const char*>(&footer), sizeof(footer));
     
     return factorization_result.factors.size();
 }
@@ -636,13 +636,13 @@ size_t write_factors_dna_w_reference_fasta_files_to_binary(const std::string& re
     // Get factorization result with sentinel information
     FastaFactorizationResult factorization_result = factorize_dna_rc_w_ref_fasta_files(reference_fasta_path, target_fasta_path);
 
-    // Calculate header size
+    // Calculate footer size
     size_t names_size = 0;
     for (const auto& name : factorization_result.sequence_ids) {
         names_size += name.length() + 1;  // +1 for null terminator
     }
 
-    size_t header_size = sizeof(FactorFileHeader) + names_size + 
+    size_t footer_size = sizeof(FactorFileFooter) + names_size + 
                         factorization_result.sentinel_factor_indices.size() * sizeof(uint64_t);
 
     // Write to file
@@ -651,14 +651,10 @@ size_t write_factors_dna_w_reference_fasta_files_to_binary(const std::string& re
         throw std::runtime_error("Cannot create output file: " + out_path);
     }
 
-    // Write header
-    FactorFileHeader header;
-    header.num_factors = factorization_result.factors.size();
-    header.num_sequences = factorization_result.sequence_ids.size();
-    header.num_sentinels = factorization_result.sentinel_factor_indices.size();
-    header.header_size = header_size;
-
-    os.write(reinterpret_cast<const char*>(&header), sizeof(header));
+    // Write factors first
+    for (const Factor& f : factorization_result.factors) {
+        os.write(reinterpret_cast<const char*>(&f), sizeof(Factor));
+    }
 
     // Write sequence IDs
     for (const auto& name : factorization_result.sequence_ids) {
@@ -669,10 +665,14 @@ size_t write_factors_dna_w_reference_fasta_files_to_binary(const std::string& re
     os.write(reinterpret_cast<const char*>(factorization_result.sentinel_factor_indices.data()),
              factorization_result.sentinel_factor_indices.size() * sizeof(uint64_t));
 
-    // Write factors
-    for (const Factor& f : factorization_result.factors) {
-        os.write(reinterpret_cast<const char*>(&f), sizeof(Factor));
-    }
+    // Write footer at the end
+    FactorFileFooter footer;
+    footer.num_factors = factorization_result.factors.size();
+    footer.num_sequences = factorization_result.sequence_ids.size();
+    footer.num_sentinels = factorization_result.sentinel_factor_indices.size();
+    footer.footer_size = footer_size;
+
+    os.write(reinterpret_cast<const char*>(&footer), sizeof(footer));
 
     return factorization_result.factors.size();
 }

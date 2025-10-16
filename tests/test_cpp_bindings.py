@@ -126,13 +126,13 @@ def test_write_factors_binary_file():
         with open(out_path, 'rb') as f:
             binary_data = f.read()
         
-        # Binary file has 40-byte header + factors (24 bytes each)
-        header_size = 40
-        factor_data = binary_data[header_size:]
+        # Binary file has 40-byte footer at the end + factors (24 bytes each)
+        footer_size = 40
+        factor_data = binary_data[:-footer_size]
         actual_count = len(factor_data) // 24
         assert actual_count == expected_count
         
-        # Parse binary data (skip header)
+        # Parse binary data (skip footer at end)
         binary_factors = []
         for i in range(actual_count):
             start, length, ref = struct.unpack('<QQQ', factor_data[i*24:(i+1)*24])
@@ -144,7 +144,7 @@ def test_write_factors_binary_file():
         noLZSS.write_factors_binary_file(in_path, out_path)
         with open(out_path, 'rb') as f:
             binary_data2 = f.read()
-        factor_data2 = binary_data2[header_size:]
+        factor_data2 = binary_data2[:-footer_size]
         actual_count2 = len(factor_data2) // 24
         assert actual_count2 == expected_count
         
@@ -822,9 +822,9 @@ TTTTAAAA
         with open(binary_path, 'rb') as f:
             binary_data = f.read()
         
-        # Read header size from the file (stored at offset 32-40)
-        header_size = int.from_bytes(binary_data[32:40], byteorder='little')
-        expected_size = header_size + num_factors * 24  # header + 24 bytes per factor
+        # Read footer size from the end of file (stored in last 8 bytes of the 40-byte footer)
+        footer_size = int.from_bytes(binary_data[-8:], byteorder='little')
+        expected_size = num_factors * 24 + footer_size  # factors + footer
         assert len(binary_data) == expected_size
         
         # Compare with regular factorization
@@ -877,9 +877,9 @@ TTTTAAAA
         with open(binary_path, 'rb') as f:
             binary_data = f.read()
         
-        # Read header size from the file (stored at offset 32-40)
-        header_size = int.from_bytes(binary_data[32:40], byteorder='little')
-        expected_size = header_size + num_factors * 24  # header + 24 bytes per factor
+        # Read footer size from the end of file (stored in last 8 bytes of the 40-byte footer)
+        footer_size = int.from_bytes(binary_data[-8:], byteorder='little')
+        expected_size = num_factors * 24 + footer_size  # factors + footer
         assert len(binary_data) == expected_size
         
         # Compare with regular factorization
