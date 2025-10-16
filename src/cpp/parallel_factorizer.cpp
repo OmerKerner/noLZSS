@@ -1,4 +1,5 @@
 #include "parallel_factorizer.hpp"
+#include "factorizer_helpers.hpp"
 #include <algorithm>
 #include <iostream>
 #include <string>
@@ -6,19 +7,7 @@
 
 namespace fs = std::filesystem;
 namespace noLZSS {
-
-// Forward declarations of helper functions from factorizer.cpp
-static size_t lcp(const cst_t& cst, size_t i, size_t j) {
-    if (i == j) return cst.csa.size() - cst.csa[i];
-    auto lca = cst.lca(cst.select_leaf(cst.csa.isa[i]+1), cst.select_leaf(cst.csa.isa[j]+1));
-    return cst.depth(lca);
-}
-
-static cst_t::node_type next_leaf(const cst_t& cst, cst_t::node_type lambda, size_t iterations = 1) {
-    auto lambda_rank = cst.lb(lambda);
-    for (size_t i = 0; i < iterations; i++) lambda_rank = cst.csa.psi[lambda_rank];
-    return cst.select_leaf(lambda_rank + 1);
-}
+// Helper functions lcp() and next_leaf() are now in factorizer_helpers.hpp
 
 std::string ParallelFactorizer::create_temp_file_path(size_t thread_id) {
     auto timestamp = std::chrono::system_clock::now().time_since_epoch().count();
