@@ -71,10 +71,6 @@ import noLZSS.genomics
 results = noLZSS.genomics.read_nucleotide_fasta("sequences.fasta")
 for seq_id, factors in results:
     print(f"Sequence {seq_id}: {len(factors)} factors")
-
-# High-performance processing for large genomic datasets
-result = noLZSS.genomics.process_nucleotide_fasta("large_genome.fasta")
-factors = noLZSS.factorize(result["sequence"])
 ```
 
 ## Algorithm Details
