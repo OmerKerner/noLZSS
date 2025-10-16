@@ -266,25 +266,6 @@ void ParallelFactorizer::write_factor(const Factor& factor, const std::string& f
     ofs.write(reinterpret_cast<const char*>(&factor), sizeof(Factor));
 }
 
-std::vector<Factor> ParallelFactorizer::read_factors(const std::string& file_path, 
-                                                 std::mutex& file_mutex) {
-    std::lock_guard<std::mutex> lock(file_mutex);
-    
-    std::vector<Factor> factors;
-    std::ifstream ifs(file_path, std::ios::binary);
-    
-    if (!ifs) {
-        return factors; // Return empty vector if file can't be opened
-    }
-    
-    Factor factor;
-    while (ifs.read(reinterpret_cast<char*>(&factor), sizeof(Factor))) {
-        factors.push_back(factor);
-    }
-    
-    return factors;
-}
-
 std::optional<Factor> ParallelFactorizer::read_factor_at(const std::string& file_path, 
                                                      size_t index, 
                                                      std::mutex& file_mutex) {

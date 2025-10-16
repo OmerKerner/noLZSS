@@ -174,16 +174,7 @@ private:
      */
     void write_factor(const Factor& factor, const std::string& file_path, 
                       std::mutex& file_mutex);
-    
-    /**
-     * @brief Read all factors from a temporary file
-     * 
-     * @param file_path Path to temporary file
-     * @param file_mutex Mutex for protecting file access
-     * @return Vector of factors from the file
-     */
-    std::vector<Factor> read_factors(const std::string& file_path, std::mutex& file_mutex);
-    
+
     /**
      * @brief Read a specific factor from a temporary file
      * 
