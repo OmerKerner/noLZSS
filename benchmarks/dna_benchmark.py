@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
 """
-FASTA function benchmark script for noLZSS.
+DNA factorization benchmark script for noLZSS.
 
-This script benchmarks the FASTA-specific functions with time, memory, and disk space estimation
-across different input sizes (1 kbp to 1 mbp). Creates log-log plots with trend lines and saves
-coefficients for use by other scripts.
+This script benchmarks DNA-specific factorization functions including reverse complement
+support across different input sizes. Creates log-log plots with trend lines.
 
 Functions benchmarked:
-- factorize_fasta_multiple_dna_w_rc()
-- factorize_fasta_multiple_dna_no_rc()
-- write_factors_binary_file_fasta_multiple_dna_w_rc()
-- write_factors_binary_file_fasta_multiple_dna_no_rc()
+- factorize_dna_w_rc() - DNA factorization with reverse complement
+- factorize_file_dna_w_rc() - File-based DNA factorization with RC
+- count_factors_dna_w_rc() - DNA factor counting with RC
+- count_factors_file_dna_w_rc() - File-based DNA factor counting with RC
+- write_factors_binary_file_dna_w_rc() - Binary output with RC
 """
 
 import time
@@ -36,57 +36,33 @@ except ImportError:
     exit(1)
 
 
-def generate_fasta_content(total_size: int, num_sequences: int = 5) -> str:
+def generate_dna_sequence(size: int) -> str:
     """
-    Generate FASTA content with random nucleotide sequences.
+    Generate random DNA sequence.
     
     Args:
-        total_size: Total size of all sequences combined (in nucleotides)
-        num_sequences: Number of sequences to generate
+        size: Size of the sequence in nucleotides
         
     Returns:
-        FASTA format string
+        Random DNA string
     """
-    # Ensure each sequence is at least 10 nucleotides
-    min_seq_size = max(10, total_size // (num_sequences * 2))
-    
-    sequences = []
-    remaining_size = total_size
-    
-    for i in range(num_sequences):
-        if i == num_sequences - 1:
-            # Last sequence gets all remaining size
-            seq_size = remaining_size
-        else:
-            # Random size between min and half remaining
-            max_seq_size = min(remaining_size - (num_sequences - i - 1) * min_seq_size, 
-                              remaining_size // 2)
-            seq_size = random.randint(min_seq_size, max(min_seq_size, max_seq_size))
-        
-        if seq_size <= 0:
-            break
-            
-        sequence = ''.join(random.choices('ACGT', k=seq_size))
-        sequences.append(f">seq{i+1}\n{sequence}")
-        remaining_size -= seq_size
-    
-    return '\n'.join(sequences) + '\n'
+    return ''.join(random.choices('ACGT', k=size))
 
 
-def create_temp_fasta(content: str) -> str:
-    """Create a temporary FASTA file and return its path."""
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.fasta', delete=False) as f:
+def create_temp_file(content: str) -> str:
+    """Create a temporary text file and return its path."""
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
         f.write(content)
         return f.name
 
 
-def benchmark_factorize_function(func, fasta_path: str, runs: int = 3) -> Dict[str, Any]:
+def benchmark_function(func, *args, runs: int = 3) -> Dict[str, Any]:
     """
-    Benchmark a factorization function.
+    Benchmark a function that returns factors or a count.
     
     Args:
         func: Function to benchmark
-        fasta_path: Path to FASTA file
+        *args: Arguments to pass to the function
         runs: Number of runs to average
         
     Returns:
@@ -94,20 +70,35 @@ def benchmark_factorize_function(func, fasta_path: str, runs: int = 3) -> Dict[s
     """
     times = []
     memories = []
-    num_factors_list = []
+    result_values = []
+    
+    # Convert string arguments to bytes for C++ functions
+    converted_args = []
+    for arg in args:
+        if isinstance(arg, str):
+            converted_args.append(arg.encode('utf-8'))
+        else:
+            converted_args.append(arg)
     
     for _ in range(runs):
         tracemalloc.start()
         start_time = time.perf_counter()
         
         try:
-            factors = func(fasta_path)
+            result = func(*converted_args)
             end_time = time.perf_counter()
             current, peak = tracemalloc.get_traced_memory()
             
             times.append(end_time - start_time)
             memories.append(peak)
-            num_factors_list.append(len(factors))
+            
+            # Store result value (either factor count or number of factors)
+            if isinstance(result, int):
+                result_values.append(result)
+            elif isinstance(result, list):
+                result_values.append(len(result))
+            else:
+                result_values.append(0)
             
         except Exception as e:
             print(f"Error in benchmark: {e}")
@@ -122,19 +113,19 @@ def benchmark_factorize_function(func, fasta_path: str, runs: int = 3) -> Dict[s
         'max_time': max(times),
         'mean_memory_mb': stats.mean(memories) / (1024 * 1024),
         'max_memory_mb': max(memories) / (1024 * 1024),
-        'mean_factors': stats.mean(num_factors_list),
+        'mean_result': stats.mean(result_values),
         'all_times': times,
         'all_memories': memories
     }
 
 
-def benchmark_binary_function(func, fasta_path: str, runs: int = 3) -> Dict[str, Any]:
+def benchmark_binary_function(func, input_path: str, runs: int = 3) -> Dict[str, Any]:
     """
     Benchmark a binary file writing function.
     
     Args:
         func: Function to benchmark
-        fasta_path: Path to FASTA file  
+        input_path: Path to input text file
         runs: Number of runs to average
         
     Returns:
@@ -143,7 +134,6 @@ def benchmark_binary_function(func, fasta_path: str, runs: int = 3) -> Dict[str,
     times = []
     memories = []
     file_sizes = []
-    num_factors_list = []
     
     for _ in range(runs):
         # Create temporary binary output file
@@ -154,7 +144,7 @@ def benchmark_binary_function(func, fasta_path: str, runs: int = 3) -> Dict[str,
             tracemalloc.start()
             start_time = time.perf_counter()
             
-            num_factors = func(fasta_path, binary_path)
+            func(input_path, binary_path)
             
             end_time = time.perf_counter()
             current, peak = tracemalloc.get_traced_memory()
@@ -165,7 +155,6 @@ def benchmark_binary_function(func, fasta_path: str, runs: int = 3) -> Dict[str,
             times.append(end_time - start_time)
             memories.append(peak)
             file_sizes.append(file_size)
-            num_factors_list.append(num_factors)
             
         except Exception as e:
             print(f"Error in binary benchmark: {e}")
@@ -186,8 +175,6 @@ def benchmark_binary_function(func, fasta_path: str, runs: int = 3) -> Dict[str,
         'mean_memory_mb': stats.mean(memories) / (1024 * 1024),
         'max_memory_mb': max(memories) / (1024 * 1024),
         'mean_file_size_mb': stats.mean(file_sizes) / (1024 * 1024),
-        'file_size_per_factor': stats.mean(file_sizes) / stats.mean(num_factors_list),
-        'mean_factors': stats.mean(num_factors_list),
         'all_times': times,
         'all_memories': memories,
         'all_file_sizes': file_sizes
@@ -210,7 +197,6 @@ def fit_trend_line(x_data: List[float], y_data: List[float], log_scale: bool = T
     if log_scale:
         valid_indices = [i for i, y in enumerate(y_data) if y > 0]
         if len(valid_indices) < 2:
-            # Not enough valid data points for log scale, fallback to linear
             log_scale = False
         else:
             x_data = [x_data[i] for i in valid_indices]
@@ -258,12 +244,12 @@ def predict_from_trend(size: float, trend_params: Dict[str, float]) -> float:
         return trend_params['slope'] * size + trend_params['intercept']
 
 
-def run_benchmark_suite(sizes: List[int], runs: int = 3, output_dir: str = "benchmarks/fasta_results") -> Dict[str, Any]:
+def run_benchmark_suite(sizes: List[int], runs: int = 3, output_dir: str = "benchmarks/dna_results") -> Dict[str, Any]:
     """
-    Run the complete benchmark suite for all FASTA functions.
+    Run the complete benchmark suite for DNA factorization functions.
     
     Args:
-        sizes: List of input sizes in nucleotides (e.g., [1000, 10000, 100000])
+        sizes: List of input sizes in nucleotides
         runs: Number of runs per benchmark
         output_dir: Directory to save results
         
@@ -272,30 +258,27 @@ def run_benchmark_suite(sizes: List[int], runs: int = 3, output_dir: str = "benc
     """
     Path(output_dir).mkdir(parents=True, exist_ok=True)
     
-    # Functions to benchmark
-    functions = {
-        'factorize_fasta_multiple_dna_w_rc': (cpp.factorize_fasta_multiple_dna_w_rc, benchmark_factorize_function),
-        'factorize_fasta_multiple_dna_no_rc': (cpp.factorize_fasta_multiple_dna_no_rc, benchmark_factorize_function),
-        'write_factors_binary_file_fasta_multiple_dna_w_rc': (cpp.write_factors_binary_file_fasta_multiple_dna_w_rc, benchmark_binary_function),
-        'write_factors_binary_file_fasta_multiple_dna_no_rc': (cpp.write_factors_binary_file_fasta_multiple_dna_no_rc, benchmark_binary_function)
-    }
-    
     results = {}
     
-    for func_name, (func, benchmark_func) in functions.items():
+    # Benchmark string-based functions
+    string_functions = {
+        'factorize_dna_w_rc': cpp.factorize_dna_w_rc,
+        'count_factors_dna_w_rc': cpp.count_factors_dna_w_rc,
+    }
+    
+    for func_name, func in string_functions.items():
         print(f"\n=== Benchmarking {func_name} ===")
         results[func_name] = {'sizes': sizes, 'results': []}
         
         for size in sizes:
-            print(f"  Size: {size:,} nucleotides ({size/1000:.1f} kbp)")
+            print(f"  Size: {size:,} nucleotides")
             
-            # Generate FASTA content
-            fasta_content = generate_fasta_content(size)
-            fasta_path = create_temp_fasta(fasta_content)
+            # Generate DNA sequence
+            dna_sequence = generate_dna_sequence(size)
             
             try:
                 # Run benchmark
-                result = benchmark_func(func, fasta_path, runs)
+                result = benchmark_function(func, dna_sequence, runs=runs)
                 if result:
                     result['input_size'] = size
                     results[func_name]['results'].append(result)
@@ -304,19 +287,87 @@ def run_benchmark_suite(sizes: List[int], runs: int = 3, output_dir: str = "benc
                     time_ms = result['mean_time'] * 1000
                     mem_mb = result['mean_memory_mb']
                     print(f"    Time: {time_ms:.2f} ms, Memory: {mem_mb:.2f} MB")
+                else:
+                    print(f"    Failed to benchmark size {size}")
                     
-                    if 'mean_file_size_mb' in result:
-                        file_mb = result['mean_file_size_mb']
-                        print(f"    File size: {file_mb:.2f} MB")
+            except Exception as e:
+                print(f"    Error: {e}")
+    
+    # Benchmark file-based functions
+    file_functions = {
+        'factorize_file_dna_w_rc': (cpp.factorize_file_dna_w_rc, True),
+        'count_factors_file_dna_w_rc': (cpp.count_factors_file_dna_w_rc, False),
+    }
+    
+    for func_name, (func, needs_reserve_hint) in file_functions.items():
+        print(f"\n=== Benchmarking {func_name} ===")
+        results[func_name] = {'sizes': sizes, 'results': []}
+        
+        for size in sizes:
+            print(f"  Size: {size:,} nucleotides")
+            
+            # Generate DNA sequence and create file
+            dna_sequence = generate_dna_sequence(size)
+            dna_path = create_temp_file(dna_sequence)
+            
+            try:
+                # Run benchmark with appropriate arguments
+                if needs_reserve_hint:
+                    result = benchmark_function(func, dna_path, 0, runs=runs)
+                else:
+                    result = benchmark_function(func, dna_path, runs=runs)
+                
+                if result:
+                    result['input_size'] = size
+                    results[func_name]['results'].append(result)
+                    
+                    # Print quick summary
+                    time_ms = result['mean_time'] * 1000
+                    mem_mb = result['mean_memory_mb']
+                    print(f"    Time: {time_ms:.2f} ms, Memory: {mem_mb:.2f} MB")
                 else:
                     print(f"    Failed to benchmark size {size}")
                     
             finally:
-                # Clean up temporary FASTA file
+                # Clean up temporary file
                 try:
-                    os.unlink(fasta_path)
+                    os.unlink(dna_path)
                 except:
                     pass
+    
+    # Benchmark binary file writing function
+    print(f"\n=== Benchmarking write_factors_binary_file_dna_w_rc ===")
+    results['write_factors_binary_file_dna_w_rc'] = {'sizes': sizes, 'results': []}
+    
+    for size in sizes:
+        print(f"  Size: {size:,} nucleotides")
+        
+        # Generate DNA sequence and create file
+        dna_sequence = generate_dna_sequence(size)
+        dna_path = create_temp_file(dna_sequence)
+        
+        try:
+            # Run benchmark
+            result = benchmark_binary_function(cpp.write_factors_binary_file_dna_w_rc, dna_path, runs=runs)
+            
+            if result:
+                result['input_size'] = size
+                results['write_factors_binary_file_dna_w_rc']['results'].append(result)
+                
+                # Print quick summary
+                time_ms = result['mean_time'] * 1000
+                mem_mb = result['mean_memory_mb']
+                file_mb = result['mean_file_size_mb']
+                print(f"    Time: {time_ms:.2f} ms, Memory: {mem_mb:.2f} MB, File: {file_mb:.2f} MB")
+            else:
+                print(f"    Failed to benchmark size {size}")
+                
+        finally:
+            # Clean up temporary file
+            try:
+                os.unlink(dna_path)
+            except:
+                pass
     
     return results
 
@@ -337,11 +388,11 @@ def create_plots_and_trends(results: Dict[str, Any], output_dir: str) -> Dict[st
     trends = {}
     
     # Set up the plot
-    fig, axes = plt.subplots(2, 3, figsize=(18, 12))
-    fig.suptitle('FASTA Function Benchmarks', fontsize=16)
+    fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+    fig.suptitle('DNA Factorization with Reverse Complement Benchmarks', fontsize=16)
     
-    colors = ['blue', 'red', 'green', 'orange']
-    markers = ['o', 's', '^', 'D']
+    colors = ['blue', 'red', 'green', 'orange', 'purple']
+    markers = ['o', 's', '^', 'D', 'v']
     
     # Plot 1: Time vs Size
     ax = axes[0, 0]
@@ -399,37 +450,7 @@ def create_plots_and_trends(results: Dict[str, Any], output_dir: str) -> Dict[st
     ax.grid(True, alpha=0.3)
     ax.legend()
     
-    # Plot 3: Disk Space vs Size (for binary functions only)
-    ax = axes[0, 2]
-    binary_functions = [name for name in results.keys() if 'write_factors_binary_file' in name]
-    for i, func_name in enumerate(binary_functions):
-        data = results[func_name]
-        if not data['results']:
-            continue
-            
-        sizes = [r['input_size'] for r in data['results']]
-        file_sizes = [r['mean_file_size_mb'] for r in data['results']]
-        
-        ax.loglog(sizes, file_sizes, color=colors[i % len(colors)], 
-                 marker=markers[i % len(markers)], label=func_name.replace('_', ' '), linewidth=2)
-        
-        # Fit trend line
-        if len(sizes) >= 2:
-            trend = fit_trend_line(sizes, file_sizes, log_scale=True)
-            trends[f"{func_name}_disk_space"] = trend
-            
-            # Plot trend line
-            x_trend = np.logspace(np.log10(min(sizes)), np.log10(max(sizes)), 100)
-            y_trend = [predict_from_trend(x, trend) for x in x_trend]
-            ax.loglog(x_trend, y_trend, '--', color=colors[i % len(colors)], alpha=0.7)
-    
-    ax.set_xlabel('Input Size (nucleotides)')
-    ax.set_ylabel('File Size (MB)')
-    ax.set_title('Disk Space vs Input Size')
-    ax.grid(True, alpha=0.3)
-    ax.legend()
-    
-    # Plot 4: Throughput vs Size
+    # Plot 3: Throughput vs Size
     ax = axes[1, 0]
     for i, (func_name, data) in enumerate(results.items()):
         if not data['results']:
@@ -447,46 +468,36 @@ def create_plots_and_trends(results: Dict[str, Any], output_dir: str) -> Dict[st
     ax.grid(True, alpha=0.3)
     ax.legend()
     
-    # Plot 5: Factors per Nucleotide vs Size
+    # Plot 4: File Size vs Input Size (for binary function)
     ax = axes[1, 1]
-    for i, (func_name, data) in enumerate(results.items()):
-        if not data['results']:
-            continue
+    if 'write_factors_binary_file_dna_w_rc' in results:
+        data = results['write_factors_binary_file_dna_w_rc']
+        if data['results']:
+            sizes = [r['input_size'] for r in data['results']]
+            file_sizes = [r['mean_file_size_mb'] for r in data['results']]
             
-        sizes = [r['input_size'] for r in data['results']]
-        factor_ratios = [r['mean_factors'] / size for size, r in zip(sizes, data['results'])]
-        
-        ax.semilogx(sizes, factor_ratios, color=colors[i % len(colors)], 
-                   marker=markers[i % len(markers)], label=func_name.replace('_', ' '), linewidth=2)
+            ax.loglog(sizes, file_sizes, color='blue', marker='o', label='Binary file size', linewidth=2)
+            
+            # Fit trend line
+            if len(sizes) >= 2:
+                trend = fit_trend_line(sizes, file_sizes, log_scale=True)
+                trends["write_factors_binary_file_dna_w_rc_disk_space"] = trend
+                
+                # Plot trend line
+                x_trend = np.logspace(np.log10(min(sizes)), np.log10(max(sizes)), 100)
+                y_trend = [predict_from_trend(x, trend) for x in x_trend]
+                ax.loglog(x_trend, y_trend, '--', color='blue', alpha=0.7)
     
     ax.set_xlabel('Input Size (nucleotides)')
-    ax.set_ylabel('Factors per Nucleotide')
-    ax.set_title('Compression Ratio vs Input Size')
-    ax.grid(True, alpha=0.3)
-    ax.legend()
-    
-    # Plot 6: Time per Factor vs Size
-    ax = axes[1, 2]
-    for i, (func_name, data) in enumerate(results.items()):
-        if not data['results']:
-            continue
-            
-        sizes = [r['input_size'] for r in data['results']]
-        time_per_factor = [(r['mean_time'] * 1000) / r['mean_factors'] for r in data['results']]  # ms per factor
-        
-        ax.loglog(sizes, time_per_factor, color=colors[i % len(colors)], 
-                 marker=markers[i % len(markers)], label=func_name.replace('_', ' '), linewidth=2)
-    
-    ax.set_xlabel('Input Size (nucleotides)')
-    ax.set_ylabel('Time per Factor (ms)')
-    ax.set_title('Processing Efficiency vs Input Size')
+    ax.set_ylabel('File Size (MB)')
+    ax.set_title('Disk Space vs Input Size')
     ax.grid(True, alpha=0.3)
     ax.legend()
     
     plt.tight_layout()
-    plt.savefig(f"{output_dir}/fasta_benchmark_plots.png", dpi=300, bbox_inches='tight')
-    plt.savefig(f"{output_dir}/fasta_benchmark_plots.pdf", bbox_inches='tight')
-    plt.show()
+    plt.savefig(f"{output_dir}/dna_benchmark_plots.png", dpi=300, bbox_inches='tight')
+    plt.savefig(f"{output_dir}/dna_benchmark_plots.pdf", bbox_inches='tight')
+    print(f"\nPlots saved to {output_dir}/dna_benchmark_plots.png and .pdf")
     
     return trends
 
@@ -526,22 +537,16 @@ def print_summary_table(results: Dict[str, Any], trends: Dict[str, Any]):
             
         print(f"\n{func_name.upper().replace('_', ' ')}")
         print("-" * 80)
-        print(f"{'Size (kbp)':<12} {'Time (ms)':<12} {'Memory (MB)':<12} {'Throughput (MB/s)':<18}")
-        if 'write_factors_binary_file' in func_name:
-            print(f"{'':12} {'':12} {'':12} {'File Size (MB)':<18}")
+        print(f"{'Size (nt)':<15} {'Time (ms)':<12} {'Memory (MB)':<12} {'Throughput (MB/s)':<18}")
         print("-" * 80)
         
         for result in data['results']:
-            size_kbp = result['input_size'] / 1000
+            size = result['input_size']
             time_ms = result['mean_time'] * 1000
             memory_mb = result['mean_memory_mb']
             throughput = result['input_size'] / (result['mean_time'] * 1e6)
             
-            print(f"{size_kbp:<12.1f} {time_ms:<12.2f} {memory_mb:<12.2f} {throughput:<18.2f}")
-            
-            if 'mean_file_size_mb' in result:
-                file_size_mb = result['mean_file_size_mb']
-                print(f"{'':12} {'':12} {'':12} {file_size_mb:<18.2f}")
+            print(f"{size:<15,} {time_ms:<12.2f} {memory_mb:<12.2f} {throughput:<18.2f}")
     
     print("\n" + "="*100)
     print("TREND ANALYSIS")
@@ -557,18 +562,18 @@ def print_summary_table(results: Dict[str, Any], trends: Dict[str, Any]):
 
 
 def main():
-    """Main function to run the FASTA benchmark suite."""
-    parser = argparse.ArgumentParser(description="Benchmark FASTA functions with trend analysis")
+    """Main function to run the DNA factorization benchmark suite."""
+    parser = argparse.ArgumentParser(description="Benchmark DNA factorization functions with trend analysis")
     parser.add_argument("--min-size", type=int, default=1000, 
-                       help="Minimum input size in nucleotides (default: 1000 = 1 kbp)")
+                       help="Minimum input size in nucleotides (default: 1000)")
     parser.add_argument("--max-size", type=int, default=1000000,
-                       help="Maximum input size in nucleotides (default: 1000000 = 1 mbp)")
+                       help="Maximum input size in nucleotides (default: 1000000)")
     parser.add_argument("--num-sizes", type=int, default=10,
                        help="Number of different sizes to test (default: 10)")
     parser.add_argument("--runs", type=int, default=3,
                        help="Number of runs per benchmark (default: 3)")
-    parser.add_argument("--output-dir", default="benchmarks/fasta_results",
-                       help="Output directory for results (default: benchmarks/fasta_results)")
+    parser.add_argument("--output-dir", default="benchmarks/dna_results",
+                       help="Output directory for results (default: benchmarks/dna_results)")
     parser.add_argument("--custom-sizes", nargs="+", type=int,
                        help="Custom list of sizes to benchmark (overrides min-size, max-size, num-sizes)")
     
@@ -582,7 +587,7 @@ def main():
         sizes = np.logspace(np.log10(args.min_size), np.log10(args.max_size), args.num_sizes)
         sizes = [int(size) for size in sizes]
     
-    print("FASTA Function Benchmark Suite")
+    print("DNA Factorization with Reverse Complement Benchmark Suite")
     print("="*50)
     print(f"Size range: {min(sizes):,} to {max(sizes):,} nucleotides")
     print(f"Number of sizes: {len(sizes)}")
