@@ -430,10 +430,11 @@ size_t write_factors_binary_file_multiple_dna_w_rc(const std::string& in_path, c
  * @tparam Sink Callable type that accepts Factor objects
  * @param text Input DNA text string with multiple sequences and sentinels
  * @param sink Callable that receives each computed factor
+ * @param start_pos Starting position for factorization (default: 0)
  * @return Number of factors emitted
  */
 template<class Sink>
-size_t factorize_stream_multiple_dna_w_rc(std::string_view text, Sink&& sink);
+size_t factorize_stream_multiple_dna_w_rc(std::string_view text, Sink&& sink, size_t start_pos = 0);
 
 /**
  * @brief Advanced factorization function for DNA files with reverse complement awareness for multiple sequences.
@@ -444,10 +445,11 @@ size_t factorize_stream_multiple_dna_w_rc(std::string_view text, Sink&& sink);
  * @tparam Sink Callable type that accepts Factor objects
  * @param path Path to input file containing DNA text with multiple sequences
  * @param sink Callable that receives each computed factor
+ * @param start_pos Starting position for factorization (default: 0)
  * @return Number of factors emitted
  */
 template<class Sink>
-size_t factorize_file_stream_multiple_dna_w_rc(const std::string& path, Sink&& sink);
+size_t factorize_file_stream_multiple_dna_w_rc(const std::string& path, Sink&& sink, size_t start_pos = 0);
 
 // Reference sequence factorization functions
 
