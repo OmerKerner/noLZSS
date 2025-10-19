@@ -9,6 +9,16 @@ namespace fs = std::filesystem;
 namespace noLZSS {
 // Helper functions lcp() and next_leaf() are now in factorizer_helpers.hpp
 
+/**
+ * @brief Creates a unique temporary file path for a worker thread
+ * 
+ * Generates a unique temporary file path in the system's temp directory using
+ * a timestamp and thread ID to ensure uniqueness across concurrent operations.
+ * Thread 0 doesn't use this (writes directly to output), but threads 1+ use it.
+ * 
+ * @param thread_id The ID of the thread requesting a temp file path
+ * @return std::string Absolute path to a unique temporary file
+ */
 std::string ParallelFactorizer::create_temp_file_path(size_t thread_id) {
     auto timestamp = std::chrono::system_clock::now().time_since_epoch().count();
     std::string temp_dir = fs::temp_directory_path().string();
@@ -16,6 +26,31 @@ std::string ParallelFactorizer::create_temp_file_path(size_t thread_id) {
            std::to_string(thread_id) + ".bin";
 }
 
+/**
+ * @brief Main parallel factorization function
+ * 
+ * Performs non-overlapping LZSS factorization using multiple threads with convergence
+ * detection. The algorithm:
+ * 1. Auto-detects optimal thread count based on input size (if num_threads=0)
+ * 2. Builds a single compressed suffix tree (CST) shared by all threads
+ * 3. Divides input text into chunks, one per thread
+ * 4. Each thread factorizes its chunk independently, with thread 0 writing directly
+ *    to the final output file for efficiency
+ * 5. Threads detect convergence by monitoring when their factors align with the
+ *    next thread's factors, allowing early termination
+ * 6. Merges results from thread 1+ into the output file (thread 0 already there)
+ * 7. Appends binary footer with metadata
+ * 
+ * OPTIMIZATION: Thread 0 writes directly to output_path, avoiding a copy operation.
+ * For single-threaded execution, this means no temp files and no merge step.
+ * 
+ * @param text Input text to factorize (string_view for zero-copy efficiency)
+ * @param output_path Path where the binary factor file will be written
+ * @param num_threads Number of threads to use (0 = auto-detect based on input size)
+ * @return size_t Total number of factors produced
+ * 
+ * @throws std::runtime_error If file I/O operations fail
+ */
 size_t ParallelFactorizer::parallel_factorize(std::string_view text, const std::string& output_path, 
                                            size_t num_threads) {
     if (text.empty()) return 0;
@@ -85,6 +120,32 @@ size_t ParallelFactorizer::parallel_factorize(std::string_view text, const std::
     return total_factors;
 }
 
+/**
+ * @brief Worker thread function that performs factorization on a text chunk
+ * 
+ * This is the core worker function executed by each thread. It performs non-overlapping
+ * LZSS factorization on a specific chunk of the input text using the shared CST.
+ * 
+ * Algorithm details:
+ * 1. Initializes at the thread's start position in the text
+ * 2. Creates/truncates its output file (thread 0 uses final output, others use temp files)
+ * 3. Iteratively computes factors using CST traversal:
+ *    - Finds the longest previous match using level ancestors and RMQ
+ *    - Ensures non-overlapping constraint (reference position + length <= current position)
+ *    - Writes each factor to its designated file
+ * 4. Checks for convergence with the next thread after each factor
+ * 5. Stops when reaching text end or detecting convergence
+ * 
+ * Convergence detection: When a thread's factor extends into or past the next thread's
+ * region, it checks if the next thread has reached the same factorization state. If so,
+ * both threads will produce identical factors from that point, so this thread can stop.
+ * 
+ * @param cst Compressed suffix tree built from the entire input text (shared, read-only)
+ * @param rmq Range minimum query structure for finding leftmost occurrences (shared, read-only)
+ * @param ctx Thread's context containing start/end positions and file path
+ * @param all_contexts Vector of all thread contexts (for accessing next thread's state)
+ * @param file_mutexes Mutexes protecting file access for each thread
+ */
 void ParallelFactorizer::factorize_thread(const cst_t& cst, const sdsl::rmq_succinct_sct<>& rmq,
                                         ThreadContext& ctx,
                                         std::vector<ThreadContext>& all_contexts,
@@ -179,6 +240,18 @@ void ParallelFactorizer::factorize_thread(const cst_t& cst, const sdsl::rmq_succ
     }
 }
 
+/**
+ * @brief Reads a single factor from a binary file at a specific index
+ * 
+ * Seeks to the byte position corresponding to the given factor index and reads
+ * one Factor struct. Used during convergence checking to read factors from the
+ * next thread's file without holding a lock for the entire read operation.
+ * 
+ * @param file_path Path to the binary factor file
+ * @param factor_index Zero-based index of the factor to read
+ * @return std::optional<Factor> The factor if successfully read, std::nullopt otherwise
+ *         (file doesn't exist, index out of bounds, or incomplete read)
+ */
 std::optional<Factor> ParallelFactorizer::read_factor_at_index(const std::string& file_path, 
                                                                 size_t factor_index) {
     std::ifstream ifs(file_path, std::ios::binary);
@@ -202,6 +275,28 @@ std::optional<Factor> ParallelFactorizer::read_factor_at_index(const std::string
     return factor;
 }
 
+/**
+ * @brief Checks if this thread has converged with the next thread's factorization
+ * 
+ * Convergence occurs when the current thread's position aligns with the next thread's
+ * factorization such that both would produce identical factors from that point forward.
+ * This allows the current thread to stop early, avoiding redundant computation.
+ * 
+ * The algorithm:
+ * 1. First checks the cached factor from the next thread (if available)
+ * 2. If cache is insufficient, reads factors from the next thread's file sequentially
+ * 3. Looks for exact alignment: next_factor.start == current_end
+ * 4. Caches the last read factor for future checks
+ * 
+ * This function is called after each factor is written, when that factor extends into
+ * or past the next thread's starting region.
+ * 
+ * @param current_end The exclusive end position of the current thread's last factor
+ * @param next_ctx Reference to the next thread's context (for reading its factors)
+ * @param next_file_mutex Mutex protecting access to the next thread's file
+ * @return true if convergence is detected (current thread should stop)
+ * @return false if convergence not yet reached (current thread should continue)
+ */
 bool ParallelFactorizer::check_convergence(size_t current_end, ThreadContext& next_ctx,
                                         std::mutex& next_file_mutex) {
     // If we have a cached factor, check it first
@@ -255,6 +350,20 @@ bool ParallelFactorizer::check_convergence(size_t current_end, ThreadContext& ne
     }
 }
 
+/**
+ * @brief Writes a single factor to a binary file (thread-safe)
+ * 
+ * Appends a Factor struct to the specified file in binary format. Uses a mutex
+ * to ensure thread-safe access when multiple threads might write to the same file
+ * (though in practice, each thread writes to its own file).
+ * 
+ * The factor is written as a raw binary struct with no serialization overhead.
+ * 
+ * @param factor The Factor struct to write
+ * @param file_path Path to the output file (opened in append mode)
+ * @param file_mutex Mutex protecting access to this file
+ * @throws std::runtime_error If the file cannot be opened for writing
+ */
 void ParallelFactorizer::write_factor(const Factor& factor, const std::string& file_path, 
                                    std::mutex& file_mutex) {
     std::lock_guard<std::mutex> lock(file_mutex);
@@ -267,6 +376,20 @@ void ParallelFactorizer::write_factor(const Factor& factor, const std::string& f
     ofs.write(reinterpret_cast<const char*>(&factor), sizeof(Factor));
 }
 
+/**
+ * @brief Reads a factor from a file at a specific index (thread-safe version)
+ * 
+ * Similar to read_factor_at_index(), but acquires a mutex before reading.
+ * This ensures thread-safe access when multiple threads might read from the same file.
+ * 
+ * NOTE: Currently unused in favor of read_factor_at_index() which doesn't hold
+ * the lock during the entire read operation for better concurrency.
+ * 
+ * @param file_path Path to the binary factor file
+ * @param index Zero-based index of the factor to read
+ * @param file_mutex Mutex protecting access to this file
+ * @return std::optional<Factor> The factor if successfully read, std::nullopt otherwise
+ */
 std::optional<Factor> ParallelFactorizer::read_factor_at(const std::string& file_path, 
                                                      size_t index, 
                                                      std::mutex& file_mutex) {
@@ -288,6 +411,28 @@ std::optional<Factor> ParallelFactorizer::read_factor_at(const std::string& file
     return std::nullopt;
 }
 
+/**
+ * @brief Merges temporary factor files and appends footer to create final output
+ * 
+ * This function handles the final stage of parallel factorization by:
+ * 1. Reading thread 0's factors (already in output_path) to count them and find the end position
+ * 2. If multiple threads and sequence not complete: appending factors from threads 1+ after
+ *    finding the convergence point where their factorization aligns with prior threads
+ * 3. Writing the binary footer with metadata (factor count, sequences, sentinels)
+ * 
+ * OPTIMIZATION: Thread 0 wrote directly to output_path during factorization, so we only
+ * need to append from other threads. For single-threaded execution, we just count factors
+ * and add the footer.
+ * 
+ * Convergence-based merging: For each subsequent thread, we skip factors until we find
+ * one that starts exactly where the previous thread's last factor ended. From that point,
+ * we copy all remaining factors (they represent new coverage of the text).
+ * 
+ * @param output_path Path to the output file (already contains thread 0's factors)
+ * @param contexts Vector of all thread contexts (for accessing temp file paths)
+ * @return size_t Total number of factors in the final output
+ * @throws std::runtime_error If file I/O operations fail
+ */
 size_t ParallelFactorizer::merge_temp_files(const std::string& output_path,
                                          std::vector<ThreadContext>& contexts) {
     // Thread 0 already wrote to output_path, so we open in append mode
@@ -402,6 +547,17 @@ size_t ParallelFactorizer::merge_temp_files(const std::string& output_path,
     return total_factors;
 }
 
+/**
+ * @brief Removes temporary files created by worker threads
+ * 
+ * Deletes temporary factor files created by threads 1 and higher. Thread 0's "file"
+ * is actually the final output file, so it's skipped during cleanup.
+ * 
+ * Errors during cleanup are logged as warnings but don't cause failure, since the
+ * factorization has already completed successfully.
+ * 
+ * @param contexts Vector of all thread contexts (containing temp file paths)
+ */
 void ParallelFactorizer::cleanup_temp_files(const std::vector<ThreadContext>& contexts) {
     for (const auto& ctx : contexts) {
         // Skip thread 0 - it wrote directly to the output file
@@ -416,6 +572,21 @@ void ParallelFactorizer::cleanup_temp_files(const std::vector<ThreadContext>& co
     }
 }
 
+/**
+ * @brief Performs parallel factorization on a file
+ * 
+ * Convenience wrapper that reads an entire file into memory and then factorizes it
+ * using the in-memory parallel_factorize() function.
+ * 
+ * NOTE: For very large files, this may consume significant memory. Consider using
+ * streaming approaches for files larger than available RAM.
+ * 
+ * @param input_path Path to the input text file
+ * @param output_path Path where the binary factor file will be written
+ * @param num_threads Number of threads to use (0 = auto-detect)
+ * @return size_t Total number of factors produced
+ * @throws std::runtime_error If the input file cannot be opened
+ */
 size_t ParallelFactorizer::parallel_factorize_file(const std::string& input_path, 
                                                 const std::string& output_path,
                                                 size_t num_threads) {
@@ -429,6 +600,21 @@ size_t ParallelFactorizer::parallel_factorize_file(const std::string& input_path
     return parallel_factorize(data, output_path, num_threads);
 }
 
+/**
+ * @brief Performs parallel DNA factorization with reverse complement support
+ * 
+ * PLACEHOLDER: This function is not yet implemented.
+ * 
+ * When implemented, this will perform parallel factorization on DNA sequences with
+ * reverse complement awareness, allowing factors to reference either the forward
+ * strand or the reverse complement. The MSB of the reference field will indicate
+ * whether the match is to the reverse complement.
+ * 
+ * @param text Input DNA text to factorize (should contain only A, C, G, T)
+ * @param output_path Path where the binary factor file will be written
+ * @param num_threads Number of threads to use (0 = auto-detect)
+ * @return size_t Total number of factors produced (currently returns 0)
+ */
 size_t ParallelFactorizer::parallel_factorize_dna_w_rc(std::string_view text, 
                                                     const std::string& output_path,
                                                     size_t num_threads) {
@@ -439,6 +625,20 @@ size_t ParallelFactorizer::parallel_factorize_dna_w_rc(std::string_view text,
     return 0;
 }
 
+/**
+ * @brief Performs parallel DNA factorization with reverse complement on a file
+ * 
+ * PLACEHOLDER: This function is not yet implemented.
+ * 
+ * File-based wrapper for parallel_factorize_dna_w_rc(). Reads the entire file
+ * into memory and processes it.
+ * 
+ * @param input_path Path to the input DNA file
+ * @param output_path Path where the binary factor file will be written
+ * @param num_threads Number of threads to use (0 = auto-detect)
+ * @return size_t Total number of factors produced (currently returns 0)
+ * @throws std::runtime_error If the input file cannot be opened
+ */
 size_t ParallelFactorizer::parallel_factorize_file_dna_w_rc(const std::string& input_path, 
                                                          const std::string& output_path,
                                                          size_t num_threads) {
