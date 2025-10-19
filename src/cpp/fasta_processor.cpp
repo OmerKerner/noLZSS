@@ -1,8 +1,12 @@
 #include "fasta_processor.hpp"
 #include "factorizer.hpp"
+#include "factorizer_helpers.hpp"  // For cst_t and lcp
+#include <sdsl/rmq_succinct_sct.hpp>
+#include <sdsl/construct.hpp>
 #include <iostream>
 #include <algorithm>
 #include <set>
+#include <fstream>
 
 namespace noLZSS {
 
@@ -277,6 +281,180 @@ FastaFactorizationResult factorize_fasta_multiple_dna_no_rc(const std::string& f
     return {factors, sentinel_factor_indices, parse_result.sequence_ids};
 }
 
+// Local helpers for streaming factorization
+// These are defined here (not in factorizer.cpp) to avoid template instantiation issues across compilation units
+namespace {
+
+// Basic nolzss for non-RC factorization
+template<class Sink>
+size_t nolzss_local(cst_t& cst, Sink&& sink, size_t start_pos = 0) {
+    sdsl::rmq_succinct_sct<> rmq(&cst.csa);
+    const size_t str_len = cst.size() - 1;
+
+    auto lambda = cst.select_leaf(cst.csa.isa[start_pos] + 1);
+    size_t lambda_node_depth = cst.node_depth(lambda);
+    size_t lambda_sufnum = start_pos;
+
+    cst_t::node_type v;
+    size_t v_min_leaf_sufnum = 0;
+    size_t u_min_leaf_sufnum = 0;
+    size_t count = 0;
+
+    while (lambda_sufnum < str_len) {
+        size_t d = 1;
+        size_t l = 1;
+        while (true) {
+            v = cst.bp_support.level_anc(lambda, lambda_node_depth - d);
+            v_min_leaf_sufnum = cst.csa[rmq(cst.lb(v), cst.rb(v))];
+            l = cst.depth(v);
+
+            if (v_min_leaf_sufnum + l - 1 < lambda_sufnum) {
+                u_min_leaf_sufnum = v_min_leaf_sufnum;
+                ++d; continue;
+            }
+            auto u = cst.parent(v);
+            size_t u_min_leaf_sufnum_new = cst.csa[rmq(cst.lb(u), cst.rb(u))];
+            if (u_min_leaf_sufnum_new + cst.depth(u) - 1 < lambda_sufnum) {
+                break;
+            }
+            ++d;
+        }
+
+        l = std::min(l, lambda_sufnum - u_min_leaf_sufnum);
+        Factor f{static_cast<uint64_t>(lambda_sufnum), static_cast<uint64_t>(l), static_cast<uint64_t>(u_min_leaf_sufnum)};
+        sink(f);
+        count++;
+
+        lambda = next_leaf(cst, lambda, l);
+        lambda_node_depth = cst.node_depth(lambda);
+        lambda_sufnum = cst.sn(lambda);
+    }
+
+    return count;
+}
+
+template<class Sink>
+size_t nolzss_multiple_dna_w_rc_local(const std::string& S, Sink&& sink, size_t start_pos = 0) {
+    const size_t N = (S.size() / 2) - 1;
+    if (N == 0) return 0;
+    
+    if (start_pos >= N) {
+        throw std::invalid_argument("start_pos must be less than the original sequence length");
+    }
+
+    cst_t cst; construct_im(cst, S, 1);
+
+    const uint64_t INF = std::numeric_limits<uint64_t>::max()/2ULL;
+    sdsl::int_vector<64> fwd_starts(cst.csa.size(), INF);
+    sdsl::int_vector<64> rc_ends(cst.csa.size(), INF);
+
+    const size_t T_end = N;
+    const size_t R_beg = N;
+    const size_t R_end = S.size();
+
+    for (size_t k = 0; k < cst.csa.size(); ++k) {
+        size_t posS = cst.csa[k];
+        if (posS < T_end) {
+            fwd_starts[k] = posS;
+        } else if (posS >= R_beg && posS < R_end) {
+            size_t jR0 = posS - R_beg;
+            size_t endT0 = N - jR0 - 1;
+            rc_ends[k] = endT0;
+        }
+    }
+    sdsl::rmq_succinct_sct<> rmqF(&fwd_starts);
+    sdsl::rmq_succinct_sct<> rmqRcEnd(&rc_ends);
+
+    auto lambda = cst.select_leaf(cst.csa.isa[start_pos] + 1);
+    size_t lambda_node_depth = cst.node_depth(lambda);
+    size_t i = cst.sn(lambda);
+    size_t factors = 0;
+
+    while (i < N) {
+        size_t best_len_depth = 0;
+        bool best_is_rc = false;
+        size_t best_fwd_start = 0;
+        size_t best_rc_end = 0;
+        size_t best_rc_posS = 0;
+
+        for (size_t step = 1; step <= lambda_node_depth; ++step) {
+            auto v = cst.bp_support.level_anc(lambda, lambda_node_depth - step);
+            size_t ell = cst.depth(v);
+            if (ell == 0) break;
+
+            auto lb = cst.lb(v), rb = cst.rb(v);
+
+            size_t kF = rmqF(lb, rb);
+            uint64_t jF = fwd_starts[kF];
+            bool okF = (jF != INF) && (jF + ell - 1 < i);
+
+            size_t kR = rmqRcEnd(lb, rb);
+            uint64_t endRC = rc_ends[kR];
+            bool okR = (endRC != INF) && (endRC < i);
+
+            if (!okF && !okR) break;
+
+            if (okF) {
+                if (ell > best_len_depth ||
+                    (ell == best_len_depth && !best_is_rc && (jF + ell - 1) < (best_fwd_start + best_len_depth - 1))) {
+                    best_len_depth = ell;
+                    best_is_rc = false;
+                    best_fwd_start = jF;
+                }
+            }
+            if (okR) {
+                size_t posS_R = cst.csa[kR];
+                if (ell > best_len_depth ||
+                    (ell == best_len_depth && (best_is_rc ? (endRC < best_rc_end) : true))) {
+                    best_len_depth = ell;
+                    best_is_rc = true;
+                    best_rc_end = endRC;
+                    best_rc_posS = posS_R;
+                }
+            }
+        }
+
+        size_t emit_len = 1;
+        uint64_t emit_ref = i;
+        if (best_len_depth == 0) {
+            Factor f{static_cast<uint64_t>(i), static_cast<uint64_t>(emit_len), static_cast<uint64_t>(emit_ref)};
+            sink(f);
+            ++factors;
+            lambda = next_leaf(cst, lambda, emit_len);
+            lambda_node_depth = cst.node_depth(lambda);
+            i = cst.sn(lambda);
+            continue;
+        }
+
+        if (!best_is_rc) {
+            size_t cap = i - best_fwd_start;
+            size_t L = lcp(cst, i, best_fwd_start);
+            emit_len = std::min(L, cap);
+            emit_ref = static_cast<uint64_t>(best_fwd_start);
+        } else {
+            size_t L = lcp(cst, i, best_rc_posS);
+            emit_len = L;
+            size_t start_pos_val = best_rc_end - L + 2;
+            emit_ref = RC_MASK | static_cast<uint64_t>(start_pos_val);
+        }
+        
+        if (emit_len <= 0) {
+            throw std::runtime_error("emit_len must be positive to ensure factorization progress");
+        }
+
+        Factor f{static_cast<uint64_t>(i), static_cast<uint64_t>(emit_len), emit_ref};
+        sink(f);
+        ++factors;
+
+        lambda = next_leaf(cst, lambda, emit_len);
+        lambda_node_depth = cst.node_depth(lambda);
+        i = cst.sn(lambda);
+    }
+
+    return factors;
+}
+} // anonymous namespace
+
 /**
  * @brief Writes noLZSS factors from multiple DNA sequences in a FASTA file with reverse complement awareness to a binary output file.
  *
@@ -284,21 +462,16 @@ FastaFactorizationResult factorize_fasta_multiple_dna_no_rc(const std::string& f
  * prepares them for factorization using prepare_multiple_dna_sequences_w_rc(), performs 
  * factorization with reverse complement awareness, and writes the resulting factors in 
  * binary format to an output file with metadata including sequence IDs and sentinel factor indices.
+ * Uses streaming to avoid storing all factors in memory.
  */
 size_t write_factors_binary_file_fasta_multiple_dna_w_rc(const std::string& fasta_path, const std::string& out_path) {
-    // Get factorization result with sentinel information
-    FastaFactorizationResult factorization_result = factorize_fasta_multiple_dna_w_rc(fasta_path);
+    // Parse FASTA file into individual sequences with IDs
+    FastaParseResult parse_result = parse_fasta_sequences_and_ids(fasta_path);
+
+    // Prepare sequences for factorization (this will validate nucleotides)
+    PreparedSequenceResult prep_result = prepare_multiple_dna_sequences_w_rc(parse_result.sequences);
     
-    // Calculate footer size
-    size_t names_size = 0;
-    for (const auto& name : factorization_result.sequence_ids) {
-        names_size += name.length() + 1;  // +1 for null terminator
-    }
-    
-    size_t footer_size = sizeof(FactorFileFooter) + names_size + 
-                        factorization_result.sentinel_factor_indices.size() * sizeof(uint64_t);
-    
-    // Write to file
+    // Open output file with buffering
     std::ofstream os(out_path, std::ios::binary);
     if (!os) {
         throw std::runtime_error("Cannot create output file: " + out_path);
@@ -307,55 +480,79 @@ size_t write_factors_binary_file_fasta_multiple_dna_w_rc(const std::string& fast
     std::vector<char> buf(1<<20); // 1 MB buffer for performance
     os.rdbuf()->pubsetbuf(buf.data(), static_cast<std::streamsize>(buf.size()));
     
-    // Write factors first
-    for (const Factor& f : factorization_result.factors) {
+    // Track sentinel factors as we stream
+    std::vector<uint64_t> sentinel_factor_indices;
+    size_t sentinel_idx = 0;
+    size_t factor_count = 0;
+    
+    // Stream factors directly to file
+    nolzss_multiple_dna_w_rc_local(prep_result.prepared_string, [&](const Factor& f) {
+        // Write factor to file immediately
         os.write(reinterpret_cast<const char*>(&f), sizeof(Factor));
+        
+        // Check if this is a sentinel factor
+        while (sentinel_idx < prep_result.sentinel_positions.size() &&
+               prep_result.sentinel_positions[sentinel_idx] < f.start) {
+            sentinel_idx++;
+        }
+        
+        if (sentinel_idx < prep_result.sentinel_positions.size() &&
+            f.start == prep_result.sentinel_positions[sentinel_idx]) {
+            sentinel_factor_indices.push_back(factor_count);
+            sentinel_idx++;
+        }
+        
+        factor_count++;
+    }, 0);
+    
+    // Calculate footer size
+    size_t names_size = 0;
+    for (const auto& name : parse_result.sequence_ids) {
+        names_size += name.length() + 1;  // +1 for null terminator
     }
     
+    size_t footer_size = sizeof(FactorFileFooter) + names_size + 
+                        sentinel_factor_indices.size() * sizeof(uint64_t);
+    
     // Write sequence names
-    for (const auto& name : factorization_result.sequence_ids) {
+    for (const auto& name : parse_result.sequence_ids) {
         os.write(name.c_str(), name.length() + 1);  // Include null terminator
     }
     
     // Write sentinel factor indices
-    for (uint64_t idx : factorization_result.sentinel_factor_indices) {
+    for (uint64_t idx : sentinel_factor_indices) {
         os.write(reinterpret_cast<const char*>(&idx), sizeof(idx));
     }
     
     // Write footer at the end
     FactorFileFooter footer;
-    footer.num_factors = factorization_result.factors.size();
-    footer.num_sequences = factorization_result.sequence_ids.size();
-    footer.num_sentinels = factorization_result.sentinel_factor_indices.size();
+    footer.num_factors = factor_count;
+    footer.num_sequences = parse_result.sequence_ids.size();
+    footer.num_sentinels = sentinel_factor_indices.size();
     footer.footer_size = footer_size;
     
     os.write(reinterpret_cast<const char*>(&footer), sizeof(footer));
     
-    return factorization_result.factors.size();
+    return factor_count;
 }
 
 /**
  * @brief Writes noLZSS factors from multiple DNA sequences in a FASTA file without reverse complement awareness to a binary output file.
  *
  * This function reads DNA sequences from a FASTA file, parses them into individual sequences,
- * prepares them for factorization using prepare_multiple_dna_sequences_no_rc_with_sentinels(), performs 
+ * prepares them for factorization using prepare_multiple_dna_sequences_no_rc(), performs 
  * factorization without reverse complement awareness, and writes the resulting factors in 
  * binary format to an output file with metadata including sequence IDs and sentinel factor indices.
+ * Uses streaming to avoid storing all factors in memory.
  */
 size_t write_factors_binary_file_fasta_multiple_dna_no_rc(const std::string& fasta_path, const std::string& out_path) {
-    // Get factorization result with sentinel information
-    FastaFactorizationResult factorization_result = factorize_fasta_multiple_dna_no_rc(fasta_path);
+    // Parse FASTA file into individual sequences with IDs
+    FastaParseResult parse_result = parse_fasta_sequences_and_ids(fasta_path);
+
+    // Prepare sequences for factorization (this will validate nucleotides)
+    PreparedSequenceResult prep_result = prepare_multiple_dna_sequences_no_rc(parse_result.sequences);
     
-    // Calculate footer size
-    size_t names_size = 0;
-    for (const auto& name : factorization_result.sequence_ids) {
-        names_size += name.length() + 1;  // +1 for null terminator
-    }
-    
-    size_t footer_size = sizeof(FactorFileFooter) + names_size + 
-                        factorization_result.sentinel_factor_indices.size() * sizeof(uint64_t);
-    
-    // Write to file
+    // Open output file with buffering
     std::ofstream os(out_path, std::ios::binary);
     if (!os) {
         throw std::runtime_error("Cannot create output file: " + out_path);
@@ -364,31 +561,62 @@ size_t write_factors_binary_file_fasta_multiple_dna_no_rc(const std::string& fas
     std::vector<char> buf(1<<20); // 1 MB buffer for performance
     os.rdbuf()->pubsetbuf(buf.data(), static_cast<std::streamsize>(buf.size()));
     
-    // Write factors first
-    for (const Factor& f : factorization_result.factors) {
+    // Track sentinel factors as we stream
+    std::vector<uint64_t> sentinel_factor_indices;
+    size_t sentinel_idx = 0;
+    size_t factor_count = 0;
+    
+    // Stream factors directly to file
+    std::string tmp(prep_result.prepared_string);
+    cst_t cst; construct_im(cst, tmp, 1);
+    nolzss_local(cst, [&](const Factor& f) {
+        // Write factor to file immediately
         os.write(reinterpret_cast<const char*>(&f), sizeof(Factor));
+        
+        // Check if this is a sentinel factor
+        while (sentinel_idx < prep_result.sentinel_positions.size() &&
+               prep_result.sentinel_positions[sentinel_idx] < f.start) {
+            sentinel_idx++;
+        }
+        
+        if (sentinel_idx < prep_result.sentinel_positions.size() &&
+            f.start == prep_result.sentinel_positions[sentinel_idx]) {
+            sentinel_factor_indices.push_back(factor_count);
+            sentinel_idx++;
+        }
+        
+        factor_count++;
+    });
+    
+    // Calculate footer size
+    size_t names_size = 0;
+    for (const auto& name : parse_result.sequence_ids) {
+        names_size += name.length() + 1;  // +1 for null terminator
     }
     
+    size_t footer_size = sizeof(FactorFileFooter) + names_size + 
+                        sentinel_factor_indices.size() * sizeof(uint64_t);
+    
     // Write sequence names
-    for (const auto& name : factorization_result.sequence_ids) {
+    for (const auto& name : parse_result.sequence_ids) {
         os.write(name.c_str(), name.length() + 1);  // Include null terminator
     }
     
     // Write sentinel factor indices
-    for (uint64_t idx : factorization_result.sentinel_factor_indices) {
+    for (uint64_t idx : sentinel_factor_indices) {
         os.write(reinterpret_cast<const char*>(&idx), sizeof(idx));
     }
     
     // Write footer at the end
     FactorFileFooter footer;
-    footer.num_factors = factorization_result.factors.size();
-    footer.num_sequences = factorization_result.sequence_ids.size();
-    footer.num_sentinels = factorization_result.sentinel_factor_indices.size();
+    footer.num_factors = factor_count;
+    footer.num_sequences = parse_result.sequence_ids.size();
+    footer.num_sentinels = sentinel_factor_indices.size();
     footer.footer_size = footer_size;
     
     os.write(reinterpret_cast<const char*>(&footer), sizeof(footer));
     
-    return factorization_result.factors.size();
+    return factor_count;
 }
 
 /**
@@ -422,48 +650,76 @@ FastaFactorizationResult factorize_dna_rc_w_ref_fasta_files(const std::string& r
 size_t write_factors_dna_w_reference_fasta_files_to_binary(const std::string& reference_fasta_path, 
                                                           const std::string& target_fasta_path, 
                                                           const std::string& out_path) {
-    // Get factorization result with sentinel information
-    FastaFactorizationResult factorization_result = factorize_dna_rc_w_ref_fasta_files(reference_fasta_path, target_fasta_path);
-
-    // Calculate footer size
-    size_t names_size = 0;
-    for (const auto& name : factorization_result.sequence_ids) {
-        names_size += name.length() + 1;  // +1 for null terminator
-    }
-
-    size_t footer_size = sizeof(FactorFileFooter) + names_size + 
-                        factorization_result.sentinel_factor_indices.size() * sizeof(uint64_t);
-
-    // Write to file
+    // Process both FASTA files and get prepared sequence with reverse complement
+    FastaReferenceTargetResult ref_target_concat_w_rc = prepare_ref_target_dna_w_rc_from_fasta(reference_fasta_path, target_fasta_path);
+    
+    // Open output file with buffering
     std::ofstream os(out_path, std::ios::binary);
     if (!os) {
         throw std::runtime_error("Cannot create output file: " + out_path);
     }
-
-    // Write factors first
-    for (const Factor& f : factorization_result.factors) {
-        os.write(reinterpret_cast<const char*>(&f), sizeof(Factor));
+    
+    std::vector<char> buf(1<<20); // 1 MB buffer for performance
+    os.rdbuf()->pubsetbuf(buf.data(), static_cast<std::streamsize>(buf.size()));
+    
+    // Track sentinel factors as we stream
+    std::vector<uint64_t> sentinel_factor_indices;
+    size_t sentinel_idx = 0;
+    size_t factor_count = 0;
+    
+    // Stream factors directly to file starting from target position
+    nolzss_multiple_dna_w_rc_local(
+        ref_target_concat_w_rc.concatinated_sequences.prepared_string,
+        [&](const Factor& f) {
+            // Write factor to file immediately
+            os.write(reinterpret_cast<const char*>(&f), sizeof(Factor));
+            
+            // Check if this is a sentinel factor
+            while (sentinel_idx < ref_target_concat_w_rc.concatinated_sequences.sentinel_positions.size() &&
+                   ref_target_concat_w_rc.concatinated_sequences.sentinel_positions[sentinel_idx] < f.start) {
+                sentinel_idx++;
+            }
+            
+            if (sentinel_idx < ref_target_concat_w_rc.concatinated_sequences.sentinel_positions.size() &&
+                f.start == ref_target_concat_w_rc.concatinated_sequences.sentinel_positions[sentinel_idx]) {
+                sentinel_factor_indices.push_back(factor_count);
+                sentinel_idx++;
+            }
+            
+            factor_count++;
+        },
+        ref_target_concat_w_rc.target_start_index  // Start from target position
+    );
+    
+    // Calculate footer size
+    size_t names_size = 0;
+    for (const auto& name : ref_target_concat_w_rc.sequence_ids) {
+        names_size += name.length() + 1;  // +1 for null terminator
     }
-
+    
+    size_t footer_size = sizeof(FactorFileFooter) + names_size + 
+                        sentinel_factor_indices.size() * sizeof(uint64_t);
+    
     // Write sequence IDs
-    for (const auto& name : factorization_result.sequence_ids) {
+    for (const auto& name : ref_target_concat_w_rc.sequence_ids) {
         os.write(name.c_str(), name.length() + 1);  // +1 for null terminator
     }
-
+    
     // Write sentinel factor indices
-    os.write(reinterpret_cast<const char*>(factorization_result.sentinel_factor_indices.data()),
-             factorization_result.sentinel_factor_indices.size() * sizeof(uint64_t));
-
+    for (uint64_t idx : sentinel_factor_indices) {
+        os.write(reinterpret_cast<const char*>(&idx), sizeof(idx));
+    }
+    
     // Write footer at the end
     FactorFileFooter footer;
-    footer.num_factors = factorization_result.factors.size();
-    footer.num_sequences = factorization_result.sequence_ids.size();
-    footer.num_sentinels = factorization_result.sentinel_factor_indices.size();
+    footer.num_factors = factor_count;
+    footer.num_sequences = ref_target_concat_w_rc.sequence_ids.size();
+    footer.num_sentinels = sentinel_factor_indices.size();
     footer.footer_size = footer_size;
-
+    
     os.write(reinterpret_cast<const char*>(&footer), sizeof(footer));
-
-    return factorization_result.factors.size();
+    
+    return factor_count;
 }
 
 } // namespace noLZSS
