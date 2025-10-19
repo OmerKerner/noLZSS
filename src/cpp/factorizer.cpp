@@ -708,6 +708,37 @@ size_t write_factors_binary_file_multiple_dna_w_rc(const std::string& in_path, c
 
 // Reference sequence factorization functions
 
+/**
+ * @brief Factorizes a target DNA sequence using a reference DNA sequence with reverse complement awareness.
+ *
+ * This function allows factorization of a target DNA sequence where factors can reference
+ * positions in a reference sequence (or its reverse complement). This is useful for:
+ * - Comparing related genomes (e.g., different strains of the same organism)
+ * - Identifying similarities and differences between sequences
+ * - Compression where a reference genome is available
+ *
+ * Algorithm:
+ * 1. Prepares both sequences with reverse complements: REF[s1]TARGET[s2]RC(TARGET)[s3]RC(REF)[s4]
+ * 2. Builds a single suffix tree containing all sequences
+ * 3. Factorizes starting from the TARGET sequence position
+ * 4. Factors can reference any position in REF, TARGET, or their reverse complements
+ *
+ * The MSB of the reference field indicates reverse complement matches.
+ *
+ * @param reference_seq Reference DNA sequence (should contain only A, C, T, G)
+ * @param target_seq Target DNA sequence to factorize (should contain only A, C, T, G)
+ * @return Vector of factors representing the target sequence
+ *
+ * @note Factors cover only the target sequence, but can reference the reference sequence
+ * @note The reference field in factors points to positions in the combined prepared string
+ * @note Both sequences are converted to uppercase
+ *
+ * @throws std::invalid_argument If sequences contain invalid nucleotides
+ * @throws std::runtime_error If sequence preparation fails
+ *
+ * @see factorize_dna_w_reference_seq_file() for file output version
+ * @see factorize_w_reference() for general (non-DNA) reference factorization
+ */
 std::vector<Factor> factorize_dna_w_reference_seq(const std::string& reference_seq, const std::string& target_seq) {
     // Prepare reference and target sequences together
     std::vector<std::string> sequences = {reference_seq, target_seq};
@@ -727,6 +758,37 @@ std::vector<Factor> factorize_dna_w_reference_seq(const std::string& reference_s
     return factors;
 }
 
+/**
+ * @brief Factorizes a target DNA sequence using a reference sequence and writes factors to a binary file.
+ *
+ * This is the file output version of factorize_dna_w_reference_seq(). It performs the same
+ * reference-based DNA factorization but writes the results directly to a binary file in the
+ * noLZSS factor format with metadata footer.
+ *
+ * The output file format:
+ * - Factors: Binary array of Factor structs (24 bytes each: start, length, reference)
+ * - Footer: Metadata including factor count, sequence count (2), sentinel count (1)
+ *
+ * This is useful for:
+ * - Processing large sequences without storing all factors in memory
+ * - Saving factorization results for later analysis
+ * - Feeding results into other tools that read noLZSS binary format
+ *
+ * @param reference_seq Reference DNA sequence (should contain only A, C, T, G)
+ * @param target_seq Target DNA sequence to factorize (should contain only A, C, T, G)
+ * @param out_path Path to output binary file (will be overwritten if exists)
+ * @return Number of factors written to the file
+ *
+ * @note Output file includes footer with num_sequences=2, num_sentinels=1
+ * @note File uses buffered I/O (1MB buffer) for performance
+ * @note The reference field in factors points to positions in the combined prepared string
+ *
+ * @throws std::runtime_error If output file cannot be created
+ * @throws std::invalid_argument If sequences contain invalid nucleotides
+ *
+ * @see factorize_dna_w_reference_seq() for in-memory version
+ * @see factorize_w_reference_file() for general (non-DNA) reference factorization to file
+ */
 size_t factorize_dna_w_reference_seq_file(const std::string& reference_seq, const std::string& target_seq, const std::string& out_path) {
     // Set up binary output file with buffering
     std::ofstream os(out_path, std::ios::binary);
@@ -760,6 +822,34 @@ size_t factorize_dna_w_reference_seq_file(const std::string& reference_seq, cons
 
 // General reference sequence factorization functions (no reverse complement)
 
+/**
+ * @brief Factorizes a target sequence using a reference sequence (general, non-DNA version).
+ *
+ * This is the general-purpose version of reference-based factorization that works with
+ * any text, not just DNA. Unlike the DNA version, it does NOT consider reverse complements.
+ * This is useful for:
+ * - Non-genomic text compression with a reference document
+ * - Finding similarities between general text documents
+ * - Analyzing protein sequences or other non-DNA biological data
+ *
+ * Algorithm:
+ * 1. Concatenates reference and target with a sentinel (ASCII 1) between them
+ * 2. Builds a compressed suffix tree on the combined string
+ * 3. Factorizes starting from the target sequence position
+ * 4. Factors can reference any position in the reference or target
+ *
+ * @param reference_seq Reference sequence (any text)
+ * @param target_seq Target sequence to factorize (any text)
+ * @return Vector of factors representing the target sequence
+ *
+ * @note Factors cover only the target sequence, but can reference the reference sequence
+ * @note The reference field in factors points to positions in the combined string
+ * @note Sentinel character (ASCII 1) separates reference from target
+ * @note No reverse complement awareness - use factorize_dna_w_reference_seq() for DNA
+ *
+ * @see factorize_w_reference_file() for file output version
+ * @see factorize_dna_w_reference_seq() for DNA-specific version with reverse complement
+ */
 std::vector<Factor> factorize_w_reference(const std::string& reference_seq, const std::string& target_seq) {
     // Concatenate reference and target with a sentinel (use ASCII character 1)
     std::string combined = reference_seq + '\x01' + target_seq;
@@ -777,6 +867,37 @@ std::vector<Factor> factorize_w_reference(const std::string& reference_seq, cons
     return factors;
 }
 
+/**
+ * @brief Factorizes a target sequence using a reference sequence and writes factors to a binary file (general version).
+ *
+ * This is the file output version of factorize_w_reference(). It performs general
+ * reference-based factorization (no reverse complement) and writes results directly
+ * to a binary file in the noLZSS factor format with metadata footer.
+ *
+ * The output file format:
+ * - Factors: Binary array of Factor structs (24 bytes each: start, length, reference)
+ * - Footer: Metadata including factor count, sequence count (2), sentinel count (1)
+ *
+ * Use cases:
+ * - Processing large non-DNA sequences without storing all factors in memory
+ * - Saving factorization results for later analysis
+ * - Comparing general text documents with a reference
+ *
+ * @param reference_seq Reference sequence (any text)
+ * @param target_seq Target sequence to factorize (any text)
+ * @param out_path Path to output binary file (will be overwritten if exists)
+ * @return Number of factors written to the file
+ *
+ * @note Output file includes footer with num_sequences=2, num_sentinels=1
+ * @note File uses buffered I/O (1MB buffer) for performance
+ * @note The reference field in factors points to positions in the combined string
+ * @note No reverse complement awareness - this is for general text, not DNA
+ *
+ * @throws std::runtime_error If output file cannot be created
+ *
+ * @see factorize_w_reference() for in-memory version
+ * @see factorize_dna_w_reference_seq_file() for DNA-specific version with reverse complement
+ */
 size_t factorize_w_reference_file(const std::string& reference_seq, const std::string& target_seq, const std::string& out_path) {
     // Set up binary output file with buffering
     std::ofstream os(out_path, std::ios::binary);
