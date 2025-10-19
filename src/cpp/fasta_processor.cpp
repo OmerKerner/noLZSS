@@ -1,5 +1,6 @@
 #include "fasta_processor.hpp"
 #include "factorizer.hpp"
+#include "factorizer_core.hpp"      // Template implementations in detail:: namespace
 #include "factorizer_helpers.hpp"  // For cst_t and lcp
 #include <sdsl/rmq_succinct_sct.hpp>
 #include <sdsl/construct.hpp>
@@ -281,179 +282,8 @@ FastaFactorizationResult factorize_fasta_multiple_dna_no_rc(const std::string& f
     return {factors, sentinel_factor_indices, parse_result.sequence_ids};
 }
 
-// Local helpers for streaming factorization
-// These are defined here (not in factorizer.cpp) to avoid template instantiation issues across compilation units
-namespace {
-
-// Basic nolzss for non-RC factorization
-template<class Sink>
-size_t nolzss_local(cst_t& cst, Sink&& sink, size_t start_pos = 0) {
-    sdsl::rmq_succinct_sct<> rmq(&cst.csa);
-    const size_t str_len = cst.size() - 1;
-
-    auto lambda = cst.select_leaf(cst.csa.isa[start_pos] + 1);
-    size_t lambda_node_depth = cst.node_depth(lambda);
-    size_t lambda_sufnum = start_pos;
-
-    cst_t::node_type v;
-    size_t v_min_leaf_sufnum = 0;
-    size_t u_min_leaf_sufnum = 0;
-    size_t count = 0;
-
-    while (lambda_sufnum < str_len) {
-        size_t d = 1;
-        size_t l = 1;
-        while (true) {
-            v = cst.bp_support.level_anc(lambda, lambda_node_depth - d);
-            v_min_leaf_sufnum = cst.csa[rmq(cst.lb(v), cst.rb(v))];
-            l = cst.depth(v);
-
-            if (v_min_leaf_sufnum + l - 1 < lambda_sufnum) {
-                u_min_leaf_sufnum = v_min_leaf_sufnum;
-                ++d; continue;
-            }
-            auto u = cst.parent(v);
-            size_t u_min_leaf_sufnum_new = cst.csa[rmq(cst.lb(u), cst.rb(u))];
-            if (u_min_leaf_sufnum_new + cst.depth(u) - 1 < lambda_sufnum) {
-                break;
-            }
-            ++d;
-        }
-
-        l = std::min(l, lambda_sufnum - u_min_leaf_sufnum);
-        Factor f{static_cast<uint64_t>(lambda_sufnum), static_cast<uint64_t>(l), static_cast<uint64_t>(u_min_leaf_sufnum)};
-        sink(f);
-        count++;
-
-        lambda = next_leaf(cst, lambda, l);
-        lambda_node_depth = cst.node_depth(lambda);
-        lambda_sufnum = cst.sn(lambda);
-    }
-
-    return count;
-}
-
-template<class Sink>
-size_t nolzss_multiple_dna_w_rc_local(const std::string& S, Sink&& sink, size_t start_pos = 0) {
-    const size_t N = (S.size() / 2) - 1;
-    if (N == 0) return 0;
-    
-    if (start_pos >= N) {
-        throw std::invalid_argument("start_pos must be less than the original sequence length");
-    }
-
-    cst_t cst; construct_im(cst, S, 1);
-
-    const uint64_t INF = std::numeric_limits<uint64_t>::max()/2ULL;
-    sdsl::int_vector<64> fwd_starts(cst.csa.size(), INF);
-    sdsl::int_vector<64> rc_ends(cst.csa.size(), INF);
-
-    const size_t T_end = N;
-    const size_t R_beg = N;
-    const size_t R_end = S.size();
-
-    for (size_t k = 0; k < cst.csa.size(); ++k) {
-        size_t posS = cst.csa[k];
-        if (posS < T_end) {
-            fwd_starts[k] = posS;
-        } else if (posS >= R_beg && posS < R_end) {
-            size_t jR0 = posS - R_beg;
-            size_t endT0 = N - jR0 - 1;
-            rc_ends[k] = endT0;
-        }
-    }
-    sdsl::rmq_succinct_sct<> rmqF(&fwd_starts);
-    sdsl::rmq_succinct_sct<> rmqRcEnd(&rc_ends);
-
-    auto lambda = cst.select_leaf(cst.csa.isa[start_pos] + 1);
-    size_t lambda_node_depth = cst.node_depth(lambda);
-    size_t i = cst.sn(lambda);
-    size_t factors = 0;
-
-    while (i < N) {
-        size_t best_len_depth = 0;
-        bool best_is_rc = false;
-        size_t best_fwd_start = 0;
-        size_t best_rc_end = 0;
-        size_t best_rc_posS = 0;
-
-        for (size_t step = 1; step <= lambda_node_depth; ++step) {
-            auto v = cst.bp_support.level_anc(lambda, lambda_node_depth - step);
-            size_t ell = cst.depth(v);
-            if (ell == 0) break;
-
-            auto lb = cst.lb(v), rb = cst.rb(v);
-
-            size_t kF = rmqF(lb, rb);
-            uint64_t jF = fwd_starts[kF];
-            bool okF = (jF != INF) && (jF + ell - 1 < i);
-
-            size_t kR = rmqRcEnd(lb, rb);
-            uint64_t endRC = rc_ends[kR];
-            bool okR = (endRC != INF) && (endRC < i);
-
-            if (!okF && !okR) break;
-
-            if (okF) {
-                if (ell > best_len_depth ||
-                    (ell == best_len_depth && !best_is_rc && (jF + ell - 1) < (best_fwd_start + best_len_depth - 1))) {
-                    best_len_depth = ell;
-                    best_is_rc = false;
-                    best_fwd_start = jF;
-                }
-            }
-            if (okR) {
-                size_t posS_R = cst.csa[kR];
-                if (ell > best_len_depth ||
-                    (ell == best_len_depth && (best_is_rc ? (endRC < best_rc_end) : true))) {
-                    best_len_depth = ell;
-                    best_is_rc = true;
-                    best_rc_end = endRC;
-                    best_rc_posS = posS_R;
-                }
-            }
-        }
-
-        size_t emit_len = 1;
-        uint64_t emit_ref = i;
-        if (best_len_depth == 0) {
-            Factor f{static_cast<uint64_t>(i), static_cast<uint64_t>(emit_len), static_cast<uint64_t>(emit_ref)};
-            sink(f);
-            ++factors;
-            lambda = next_leaf(cst, lambda, emit_len);
-            lambda_node_depth = cst.node_depth(lambda);
-            i = cst.sn(lambda);
-            continue;
-        }
-
-        if (!best_is_rc) {
-            size_t cap = i - best_fwd_start;
-            size_t L = lcp(cst, i, best_fwd_start);
-            emit_len = std::min(L, cap);
-            emit_ref = static_cast<uint64_t>(best_fwd_start);
-        } else {
-            size_t L = lcp(cst, i, best_rc_posS);
-            emit_len = L;
-            size_t start_pos_val = best_rc_end - L + 2;
-            emit_ref = RC_MASK | static_cast<uint64_t>(start_pos_val);
-        }
-        
-        if (emit_len <= 0) {
-            throw std::runtime_error("emit_len must be positive to ensure factorization progress");
-        }
-
-        Factor f{static_cast<uint64_t>(i), static_cast<uint64_t>(emit_len), emit_ref};
-        sink(f);
-        ++factors;
-
-        lambda = next_leaf(cst, lambda, emit_len);
-        lambda_node_depth = cst.node_depth(lambda);
-        i = cst.sn(lambda);
-    }
-
-    return factors;
-}
-} // anonymous namespace
+// Note: Template implementations now in factorizer_core.hpp in the detail:: namespace
+// No more local duplicates needed!
 
 /**
  * @brief Writes noLZSS factors from multiple DNA sequences in a FASTA file with reverse complement awareness to a binary output file.
@@ -486,7 +316,7 @@ size_t write_factors_binary_file_fasta_multiple_dna_w_rc(const std::string& fast
     size_t factor_count = 0;
     
     // Stream factors directly to file
-    nolzss_multiple_dna_w_rc_local(prep_result.prepared_string, [&](const Factor& f) {
+    detail::nolzss_multiple_dna_w_rc(prep_result.prepared_string, [&](const Factor& f) {
         // Write factor to file immediately
         os.write(reinterpret_cast<const char*>(&f), sizeof(Factor));
         
@@ -569,7 +399,7 @@ size_t write_factors_binary_file_fasta_multiple_dna_no_rc(const std::string& fas
     // Stream factors directly to file
     std::string tmp(prep_result.prepared_string);
     cst_t cst; construct_im(cst, tmp, 1);
-    nolzss_local(cst, [&](const Factor& f) {
+    detail::nolzss(cst, [&](const Factor& f) {
         // Write factor to file immediately
         os.write(reinterpret_cast<const char*>(&f), sizeof(Factor));
         
@@ -668,7 +498,7 @@ size_t write_factors_dna_w_reference_fasta_files_to_binary(const std::string& re
     size_t factor_count = 0;
     
     // Stream factors directly to file starting from target position
-    nolzss_multiple_dna_w_rc_local(
+    detail::nolzss_multiple_dna_w_rc(
         ref_target_concat_w_rc.concatinated_sequences.prepared_string,
         [&](const Factor& f) {
             // Write factor to file immediately
