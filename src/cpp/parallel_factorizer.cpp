@@ -54,7 +54,8 @@ size_t ParallelFactorizer::parallel_factorize(std::string_view text, const std::
         contexts[i].start_pos = i * chunk_size;
         contexts[i].end_pos = (i + 1 < num_threads) ? (i + 1) * chunk_size : text.length();
         contexts[i].text_length = text.length();
-        contexts[i].temp_file_path = create_temp_file_path(i);
+        // Thread 0 writes directly to output file; others use temp files
+        contexts[i].temp_file_path = (i == 0) ? output_path : create_temp_file_path(i);
         contexts[i].is_last_thread = (i == num_threads - 1);
     }
     
@@ -289,51 +290,54 @@ std::optional<Factor> ParallelFactorizer::read_factor_at(const std::string& file
 
 size_t ParallelFactorizer::merge_temp_files(const std::string& output_path,
                                          std::vector<ThreadContext>& contexts) {
-    // Open output file
-    std::ofstream ofs(output_path, std::ios::binary);
-    if (!ofs) {
-        throw std::runtime_error("Cannot open output file for writing: " + output_path);
-    }
+    // Thread 0 already wrote to output_path, so we open in append mode
+    // to add factors from other threads
     
-    // Write factors directly (no header space reservation)
-    // Footer will be written at the end
     size_t total_factors = 0;
     size_t current_position = 0;  // Track the current end position in the merged output
     size_t text_length = contexts.empty() ? 0 : contexts[0].text_length;
     std::optional<Factor> last_written_factor;
     
-    // Process each thread's temp file
-    for (size_t i = 0; i < contexts.size(); i++) {
-        // Check if we've already covered the entire sequence
-        if (current_position >= text_length) {
-            break;  // Stop merging - sequence is complete
+    // First, read thread 0's factors to find the last one and count them
+    {
+        std::ifstream ifs(output_path, std::ios::binary);
+        if (!ifs) {
+            throw std::runtime_error("Cannot open output file for reading: " + output_path);
         }
         
-        std::ifstream ifs(contexts[i].temp_file_path, std::ios::binary);
-        if (!ifs) continue;
-        
         Factor factor;
-        bool found_convergence = false;
-        
-        // For first thread (i == 0), copy all factors until convergence or end
-        if (i == 0) {
-            // Copy all factors directly to output
-            while (ifs.read(reinterpret_cast<char*>(&factor), sizeof(Factor))) {
-                ofs.write(reinterpret_cast<const char*>(&factor), sizeof(Factor));
-                total_factors++;
-                last_written_factor = factor;
-                
-                size_t factor_end = factor.start + factor.length;
-                if (factor_end > current_position) {
-                    current_position = factor_end;
-                }
-                
-                // Stop if we've covered the entire sequence
-                if (current_position >= text_length) {
-                    break;
-                }
+        while (ifs.read(reinterpret_cast<char*>(&factor), sizeof(Factor))) {
+            total_factors++;
+            last_written_factor = factor;
+            
+            size_t factor_end = factor.start + factor.length;
+            if (factor_end > current_position) {
+                current_position = factor_end;
             }
-        } else {
+        }
+    }
+    
+    // Process remaining threads if there are multiple threads and sequence isn't complete
+    if (contexts.size() > 1 && current_position < text_length) {
+        // Open output file in append mode for adding factors from other threads
+        std::ofstream ofs(output_path, std::ios::binary | std::ios::app);
+        if (!ofs) {
+            throw std::runtime_error("Cannot open output file for appending: " + output_path);
+        }
+        
+        // Process remaining threads (i >= 1)
+        for (size_t i = 1; i < contexts.size(); i++) {
+            // Check if we've already covered the entire sequence
+            if (current_position >= text_length) {
+                break;  // Stop merging - sequence is complete
+            }
+            
+            std::ifstream ifs(contexts[i].temp_file_path, std::ios::binary);
+            if (!ifs) continue;
+            
+            Factor factor;
+            bool found_convergence = false;
+            
             // For subsequent threads, skip factors until we find convergence point
             // Convergence: last_written_factor.end == current_factor.start
             
@@ -373,22 +377,26 @@ size_t ParallelFactorizer::merge_temp_files(const std::string& output_path,
                     break;
                 }
             }
-        }
-        
-        // If we've covered the entire sequence, stop processing more threads
-        if (current_position >= text_length) {
-            break;
+            
+            // If we've covered the entire sequence, stop processing more threads
+            if (current_position >= text_length) {
+                break;
+            }
         }
     }
     
-    // Write footer at the end (v2 format)
+    // Write footer at the end (v2 format) - single location for all cases
+    std::ofstream ofs(output_path, std::ios::binary | std::ios::app);
+    if (!ofs) {
+        throw std::runtime_error("Cannot open output file for appending footer: " + output_path);
+    }
+    
     FactorFileFooter footer;
     footer.num_factors = total_factors;
     footer.num_sequences = 0;  // Unknown for general (non-FASTA) factorization
     footer.num_sentinels = 0;  // No sentinels for general factorization
     footer.footer_size = sizeof(FactorFileFooter);
     
-    // Write the footer at the end of the file
     ofs.write(reinterpret_cast<const char*>(&footer), sizeof(footer));
     
     return total_factors;
@@ -396,6 +404,9 @@ size_t ParallelFactorizer::merge_temp_files(const std::string& output_path,
 
 void ParallelFactorizer::cleanup_temp_files(const std::vector<ThreadContext>& contexts) {
     for (const auto& ctx : contexts) {
+        // Skip thread 0 - it wrote directly to the output file
+        if (ctx.thread_id == 0) continue;
+        
         try {
             fs::remove(ctx.temp_file_path);
         } catch (const std::exception& e) {
