@@ -68,26 +68,26 @@ size_t parallel_write_factors_binary_file_fasta_multiple_dna_w_rc(
     // Prepare sequences for factorization (this will validate nucleotides)
     PreparedSequenceResult prep_result = prepare_multiple_dna_sequences_w_rc(parse_result.sequences);
     
-    // Track sentinel factors
-    std::vector<uint64_t> sentinel_factor_indices;
-    size_t factor_count = 0;
+    // Use the core parallel function with the prepared string
+    ParallelFactorizer factorizer;
+    size_t factor_count = factorizer.parallel_factorize_multiple_dna_w_rc(
+        prep_result.prepared_string,
+        prep_result.original_length,
+        out_path,
+        num_threads);
     
-    // Open output file with buffering
-    std::ofstream os(out_path, std::ios::binary);
-    if (!os) {
-        throw std::runtime_error("Cannot create output file: " + out_path);
+    // Now identify sentinel factors by reading back the factors
+    std::vector<uint64_t> sentinel_factor_indices;
+    
+    std::ifstream temp_is(out_path, std::ios::binary);
+    if (!temp_is) {
+        throw std::runtime_error("Cannot read output file to identify sentinels: " + out_path);
     }
     
-    std::vector<char> buf(1<<20); // 1 MB buffer for performance
-    os.rdbuf()->pubsetbuf(buf.data(), static_cast<std::streamsize>(buf.size()));
-    
     size_t sentinel_idx = 0;
-    
-    // For DNA with RC, we currently use sequential with streaming
-    // TODO: Implement proper parallel DNA w/ RC when parallel_factorizer supports it
-    detail::nolzss_multiple_dna_w_rc(prep_result.prepared_string, [&](const Factor& f) {
-        // Write factor to file immediately
-        os.write(reinterpret_cast<const char*>(&f), sizeof(Factor));
+    for (size_t i = 0; i < factor_count; ++i) {
+        Factor f;
+        temp_is.read(reinterpret_cast<char*>(&f), sizeof(Factor));
         
         // Check if this is a sentinel factor
         while (sentinel_idx < prep_result.sentinel_positions.size() &&
@@ -97,14 +97,18 @@ size_t parallel_write_factors_binary_file_fasta_multiple_dna_w_rc(
         
         if (sentinel_idx < prep_result.sentinel_positions.size() &&
             f.start == prep_result.sentinel_positions[sentinel_idx]) {
-            sentinel_factor_indices.push_back(factor_count);
+            sentinel_factor_indices.push_back(i);
             sentinel_idx++;
         }
-        
-        factor_count++;
-    }, 0);
+    }
+    temp_is.close();
     
-    // Write metadata
+    // Append metadata to the file
+    std::ofstream os(out_path, std::ios::binary | std::ios::app);
+    if (!os) {
+        throw std::runtime_error("Cannot append metadata to output file: " + out_path);
+    }
+    
     write_fasta_metadata(os, parse_result.sequence_ids, sentinel_factor_indices, factor_count);
     
     return factor_count;
@@ -174,48 +178,48 @@ size_t parallel_write_factors_dna_w_reference_fasta_files_to_binary(
     FastaReferenceTargetResult ref_target_concat_w_rc = 
         prepare_ref_target_dna_w_rc_from_fasta(reference_fasta_path, target_fasta_path);
     
-    // Track sentinel factors
-    std::vector<uint64_t> sentinel_factor_indices;
-    size_t factor_count = 0;
+    // Use the core parallel function with the prepared string and start position
+    ParallelFactorizer factorizer;
+    size_t factor_count = factorizer.parallel_factorize_multiple_dna_w_rc(
+        ref_target_concat_w_rc.concatinated_sequences.prepared_string,
+        ref_target_concat_w_rc.concatinated_sequences.original_length,
+        out_path,
+        num_threads,
+        ref_target_concat_w_rc.target_start_index);
     
-    // Open output file with buffering
-    std::ofstream os(out_path, std::ios::binary);
-    if (!os) {
-        throw std::runtime_error("Cannot create output file: " + out_path);
+    // Now identify sentinel factors by reading back the factors
+    std::vector<uint64_t> sentinel_factor_indices;
+    
+    std::ifstream temp_is(out_path, std::ios::binary);
+    if (!temp_is) {
+        throw std::runtime_error("Cannot read output file to identify sentinels: " + out_path);
     }
     
-    std::vector<char> buf(1<<20); // 1 MB buffer for performance
-    os.rdbuf()->pubsetbuf(buf.data(), static_cast<std::streamsize>(buf.size()));
-    
     size_t sentinel_idx = 0;
+    for (size_t i = 0; i < factor_count; ++i) {
+        Factor f;
+        temp_is.read(reinterpret_cast<char*>(&f), sizeof(Factor));
+        
+        // Check if this is a sentinel factor
+        while (sentinel_idx < ref_target_concat_w_rc.concatinated_sequences.sentinel_positions.size() &&
+               ref_target_concat_w_rc.concatinated_sequences.sentinel_positions[sentinel_idx] < f.start) {
+            sentinel_idx++;
+        }
+        
+        if (sentinel_idx < ref_target_concat_w_rc.concatinated_sequences.sentinel_positions.size() &&
+            f.start == ref_target_concat_w_rc.concatinated_sequences.sentinel_positions[sentinel_idx]) {
+            sentinel_factor_indices.push_back(i);
+            sentinel_idx++;
+        }
+    }
+    temp_is.close();
     
-    // Stream factors directly to file starting from target position
-    // For DNA with RC, we currently use sequential with streaming
-    // TODO: Implement proper parallel DNA w/ RC when parallel_factorizer supports it
-    detail::nolzss_multiple_dna_w_rc(
-        ref_target_concat_w_rc.concatinated_sequences.prepared_string,
-        [&](const Factor& f) {
-            // Write factor to file immediately
-            os.write(reinterpret_cast<const char*>(&f), sizeof(Factor));
-            
-            // Check if this is a sentinel factor
-            while (sentinel_idx < ref_target_concat_w_rc.concatinated_sequences.sentinel_positions.size() &&
-                   ref_target_concat_w_rc.concatinated_sequences.sentinel_positions[sentinel_idx] < f.start) {
-                sentinel_idx++;
-            }
-            
-            if (sentinel_idx < ref_target_concat_w_rc.concatinated_sequences.sentinel_positions.size() &&
-                f.start == ref_target_concat_w_rc.concatinated_sequences.sentinel_positions[sentinel_idx]) {
-                sentinel_factor_indices.push_back(factor_count);
-                sentinel_idx++;
-            }
-            
-            factor_count++;
-        },
-        ref_target_concat_w_rc.target_start_index  // Start from target position
-    );
+    // Append metadata to the file
+    std::ofstream os(out_path, std::ios::binary | std::ios::app);
+    if (!os) {
+        throw std::runtime_error("Cannot append metadata to output file: " + out_path);
+    }
     
-    // Write metadata
     write_fasta_metadata(os, ref_target_concat_w_rc.sequence_ids, sentinel_factor_indices, factor_count);
     
     return factor_count;

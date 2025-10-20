@@ -63,9 +63,6 @@ size_t ParallelFactorizer::parallel_factorize(std::string_view text, const std::
     
     // Determine optimal thread count if not specified
     if (num_threads == 0) {
-        // Minimum characters per thread to make parallelization worthwhile
-        constexpr size_t MIN_CHARS_PER_THREAD = 100000;
-        
         // Calculate maximum useful threads based on remaining text size
         size_t remaining_length = text.length() - start_pos;
         size_t max_useful_threads = remaining_length / MIN_CHARS_PER_THREAD;
@@ -758,46 +755,51 @@ size_t ParallelFactorizer::parallel_factorize_file(const std::string& input_path
 }
 
 /**
- * @brief Performs parallel DNA factorization with reverse complement support
+ * @brief Core parallel DNA factorization with reverse complement for prepared strings
  * 
- * Performs non-overlapping LZSS factorization on DNA sequences with reverse complement
- * awareness using multiple threads. The algorithm:
- * 1. Prepares the text with reverse complement: T + sentinel + RC(T) + sentinel
+ * Performs non-overlapping LZSS factorization on already-prepared DNA sequences with 
+ * reverse complement awareness using multiple threads. The algorithm:
+ * 1. Takes prepared string: T + sentinel + RC(T) + sentinel (already prepared by caller)
  * 2. Auto-detects optimal thread count based on input size (if num_threads=0)
  * 3. Builds a single compressed suffix tree (CST) over the prepared string
  * 4. Divides the original text into chunks (not including RC portion)
  * 5. Each thread factorizes its chunk independently using both forward and RC matches
  * 6. Merges results with convergence detection
  * 
- * NOTE: This implementation uses the DNA-specific algorithm from nolzss_multiple_dna_w_rc
- * adapted for parallel execution. Only the original sequence portion (not RC) is divided
- * among threads.
+ * NOTE: This is the core function used by both parallel_factorize_dna_w_rc() and
+ * FASTA processors. It expects an already-prepared string with reverse complement.
  * 
- * @param text Input DNA text to factorize (should contain only A, C, G, T)
+ * @param prepared_string Input prepared string (T + sentinel + RC(T) + sentinel)
+ * @param original_length Length of the original sequence (before RC, excluding final sentinel)
  * @param output_path Path where the binary factor file will be written
  * @param num_threads Number of threads to use (0 = auto-detect)
+ * @param start_pos Starting position in the original sequence for factorization (default: 0)
  * @return size_t Total number of factors produced
  */
-size_t ParallelFactorizer::parallel_factorize_dna_w_rc(std::string_view text, 
-                                                    const std::string& output_path,
-                                                    size_t num_threads) {
-    if (text.empty()) return 0;
+size_t ParallelFactorizer::parallel_factorize_multiple_dna_w_rc(const std::string& prepared_string,
+                                                                size_t original_length,
+                                                                const std::string& output_path,
+                                                                size_t num_threads,
+                                                                size_t start_pos) {
+    if (prepared_string.empty()) return 0;
     
-    // Prepare the DNA sequence with reverse complement
-    std::string text_str(text);
-    PreparedSequenceResult prep_result = prepare_multiple_dna_sequences_w_rc({text_str});
-    std::string S = prep_result.prepared_string;
+    const std::string& S = prepared_string;
     
     // The original sequence length (before adding RC)
-    const size_t N = prep_result.original_length - 1; // -1 for the sentinel
+    const size_t N = original_length - 1; // -1 for the sentinel
     
-    // For DNA w/ RC, we can only parallelize the original sequence part (0 to N)
+    // Ensure start_pos is within bounds
+    if (start_pos >= N) {
+        throw std::invalid_argument("start_pos must be less than the original sequence length");
+    }
+    
+    // For DNA w/ RC, we can only parallelize the original sequence part (start_pos to N)
     // The algorithm needs the full prepared string with RC for suffix tree
     
     // Determine optimal thread count if not specified
     if (num_threads == 0) {
-        constexpr size_t MIN_CHARS_PER_THREAD = 100000; // Lower threshold for DNA
-        size_t max_useful_threads = N / MIN_CHARS_PER_THREAD;
+        size_t remaining_length = N - start_pos;
+        size_t max_useful_threads = remaining_length / MIN_CHARS_PER_THREAD;
         size_t hardware_threads = std::thread::hardware_concurrency();
         num_threads = std::min(hardware_threads, max_useful_threads);
         num_threads = std::max(1UL, num_threads);
@@ -830,14 +832,15 @@ size_t ParallelFactorizer::parallel_factorize_dna_w_rc(std::string_view text,
     sdsl::rmq_succinct_sct<> rmqF(&fwd_starts);
     sdsl::rmq_succinct_sct<> rmqRcEnd(&rc_ends);
     
-    // Create contexts for each thread - divide only the original sequence (0 to N)
+    // Create contexts for each thread - divide only from start_pos to N
     std::vector<ThreadContext> contexts(num_threads);
-    const size_t chunk_size = N / num_threads;
+    const size_t remaining_length = N - start_pos;
+    const size_t chunk_size = remaining_length / num_threads;
     
     for (size_t i = 0; i < num_threads; ++i) {
         contexts[i].thread_id = i;
-        contexts[i].start_pos = i * chunk_size;
-        contexts[i].end_pos = (i + 1 < num_threads) ? (i + 1) * chunk_size : N;
+        contexts[i].start_pos = start_pos + (i * chunk_size);
+        contexts[i].end_pos = (i + 1 < num_threads) ? (start_pos + (i + 1) * chunk_size) : N;
         contexts[i].text_length = N; // Only the original sequence length
         contexts[i].temp_file_path = (i == 0) ? output_path : create_temp_file_path(i);
         contexts[i].is_last_thread = (i == num_threads - 1);
@@ -873,9 +876,40 @@ size_t ParallelFactorizer::parallel_factorize_dna_w_rc(std::string_view text,
 }
 
 /**
- * @brief Performs parallel DNA factorization with reverse complement on a file
+ * @brief Wrapper function that prepares DNA text and calls the core parallel function
  * 
- * PLACEHOLDER: This function is not yet implemented.
+ * Takes raw DNA text, prepares it with reverse complement using 
+ * prepare_multiple_dna_sequences_w_rc(), and then calls the core
+ * parallel_factorize_multiple_dna_w_rc() function.
+ * 
+ * Similar to the pattern of nolzss_dna_w_rc() calling nolzss_multiple_dna_w_rc().
+ * 
+ * @param text Input DNA text to factorize (should contain only A, C, G, T)
+ * @param output_path Path where the binary factor file will be written
+ * @param num_threads Number of threads to use (0 = auto-detect)
+ * @param start_pos Starting position in the text for factorization (default: 0)
+ * @return size_t Total number of factors produced
+ */
+size_t ParallelFactorizer::parallel_factorize_dna_w_rc(std::string_view text, 
+                                                    const std::string& output_path,
+                                                    size_t num_threads,
+                                                    size_t start_pos) {
+    if (text.empty()) return 0;
+    
+    // Prepare the DNA sequence with reverse complement
+    std::string text_str(text);
+    PreparedSequenceResult prep_result = prepare_multiple_dna_sequences_w_rc({text_str});
+    
+    // Call the core function with the prepared string
+    return parallel_factorize_multiple_dna_w_rc(prep_result.prepared_string,
+                                               prep_result.original_length,
+                                               output_path,
+                                               num_threads,
+                                               start_pos);
+}
+
+/**
+ * @brief Performs parallel DNA factorization with reverse complement on a file
  * 
  * File-based wrapper for parallel_factorize_dna_w_rc(). Reads the entire file
  * into memory and processes it.
@@ -883,7 +917,7 @@ size_t ParallelFactorizer::parallel_factorize_dna_w_rc(std::string_view text,
  * @param input_path Path to the input DNA file
  * @param output_path Path where the binary factor file will be written
  * @param num_threads Number of threads to use (0 = auto-detect)
- * @return size_t Total number of factors produced (currently returns 0)
+ * @return size_t Total number of factors produced
  * @throws std::runtime_error If the input file cannot be opened
  */
 size_t ParallelFactorizer::parallel_factorize_file_dna_w_rc(const std::string& input_path, 

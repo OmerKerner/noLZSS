@@ -44,6 +44,17 @@ struct ThreadContext {
 class ParallelFactorizer {
 public:
     /**
+     * @brief Minimum number of characters per thread to make parallelization worthwhile
+     * 
+     * If the input text is smaller than this value multiplied by the requested thread count,
+     * fewer threads will be used. This prevents excessive overhead from thread management
+     * when the per-thread workload would be too small.
+     * 
+     * Can be adjusted based on hardware characteristics and typical input sizes.
+     */
+    static constexpr size_t MIN_CHARS_PER_THREAD = 100000;
+
+    /**
      * @brief Constructor
      */
     ParallelFactorizer() = default;
@@ -84,13 +95,41 @@ public:
     /**
      * @brief DNA-specific parallel factorization with reverse complement support
      * 
-     * @param text Input DNA text
+     * Takes raw DNA text, prepares it with reverse complement, and calls the core
+     * parallel_factorize_multiple_dna_w_rc() function.
+     * 
+     * @param text Input DNA text (raw nucleotides)
      * @param output_path Path to output binary factor file
      * @param num_threads Number of threads to use (0 for auto-detection)
+     * @param start_pos Starting position in the text for factorization (default: 0)
      * @return Number of factors produced
      */
     size_t parallel_factorize_dna_w_rc(std::string_view text, const std::string& output_path,
-                                      size_t num_threads = 0);
+                                      size_t num_threads = 0, size_t start_pos = 0);
+    
+    /**
+     * @brief Core parallel DNA factorization with reverse complement for prepared strings
+     * 
+     * Performs parallel DNA factorization on already-prepared strings that include
+     * reverse complement. This is the core function that parallel_factorize_dna_w_rc()
+     * calls after preparing the input, and can be used directly by FASTA processors
+     * that have already prepared their strings.
+     * 
+     * The input string S should be in the format: T + sentinel + RC(T) + sentinel
+     * where T is the original sequence(s) concatenated with sentinels.
+     * 
+     * @param prepared_string The prepared string with reverse complement
+     * @param original_length Length of the original sequence (before RC, excluding final sentinel)
+     * @param output_path Path to output binary factor file
+     * @param num_threads Number of threads to use (0 for auto-detection)
+     * @param start_pos Starting position in the original sequence for factorization (default: 0)
+     * @return Number of factors produced
+     */
+    size_t parallel_factorize_multiple_dna_w_rc(const std::string& prepared_string,
+                                                size_t original_length,
+                                                const std::string& output_path,
+                                                size_t num_threads = 0,
+                                                size_t start_pos = 0);
     
     /**
      * @brief File-based DNA-specific parallel factorization with reverse complement support
@@ -102,6 +141,59 @@ public:
      */
     size_t parallel_factorize_file_dna_w_rc(const std::string& input_path, const std::string& output_path,
                                            size_t num_threads = 0);
+    
+    /**
+     * @brief Create temporary file path (public for use by fasta processor)
+     * 
+     * @param thread_id Thread identifier
+     * @return Unique temporary file path
+     */
+    std::string create_temp_file_path(size_t thread_id);
+    
+    /**
+     * @brief Merge temporary files into final output (public for use by fasta processor)
+     * 
+     * @param output_path Path to final output file
+     * @param contexts Thread contexts containing temporary file info
+     * @return Number of factors in final output
+     */
+    size_t merge_temp_files(const std::string& output_path,
+                           std::vector<ThreadContext>& contexts);
+    
+    /**
+     * @brief Clean up temporary files (public for use by fasta processor)
+     * 
+     * @param contexts Thread contexts containing temporary file paths
+     */
+    void cleanup_temp_files(const std::vector<ThreadContext>& contexts);
+    
+    /**
+     * @brief Thread worker function for DNA factorization with reverse complement (public for use by fasta processor)
+     * 
+     * Worker thread that performs DNA-specific factorization with reverse complement
+     * awareness. Similar to factorize_thread() but uses the DNA w/ RC algorithm.
+     * 
+     * @param cst The compressed suffix tree (shared by all threads)
+     * @param rmqF RMQ for forward starts
+     * @param rmqRcEnd RMQ for reverse complement ends
+     * @param fwd_starts Forward start positions vector
+     * @param rc_ends Reverse complement end positions vector
+     * @param INF Infinity value for invalid positions
+     * @param N Original sequence length
+     * @param ctx Thread context
+     * @param all_contexts All thread contexts (for convergence checking)
+     * @param file_mutexes Mutexes for protecting file access
+     */
+    void factorize_dna_w_rc_thread(const cst_t& cst,
+                                   const sdsl::rmq_succinct_sct<>& rmqF,
+                                   const sdsl::rmq_succinct_sct<>& rmqRcEnd,
+                                   const sdsl::int_vector<64>& fwd_starts,
+                                   const sdsl::int_vector<64>& rc_ends,
+                                   uint64_t INF,
+                                   size_t N,
+                                   ThreadContext& ctx,
+                                   std::vector<ThreadContext>& all_contexts,
+                                   std::vector<std::mutex>& file_mutexes);
 
 private:
     /**
@@ -143,31 +235,6 @@ private:
                           std::mutex& next_file_mutex);
     
     /**
-     * @brief Merge temporary files into final output
-     * 
-     * @param output_path Path to final output file
-     * @param contexts Thread contexts containing temporary file info
-     * @return Number of factors in final output
-     */
-    size_t merge_temp_files(const std::string& output_path,
-                           std::vector<ThreadContext>& contexts);
-    
-    /**
-     * @brief Create temporary file path
-     * 
-     * @param thread_id Thread identifier
-     * @return Unique temporary file path
-     */
-    std::string create_temp_file_path(size_t thread_id);
-    
-    /**
-     * @brief Clean up temporary files
-     * 
-     * @param contexts Thread contexts containing temporary file paths
-     */
-    void cleanup_temp_files(const std::vector<ThreadContext>& contexts);
-    
-    /**
      * @brief Thread-safe factor writing to temporary file
      * 
      * @param factor Factor to write
@@ -188,34 +255,6 @@ private:
     std::optional<Factor> read_factor_at(const std::string& file_path, 
                                       size_t index, 
                                       std::mutex& file_mutex);
-    
-    /**
-     * @brief Thread worker function for DNA factorization with reverse complement
-     * 
-     * Worker thread that performs DNA-specific factorization with reverse complement
-     * awareness. Similar to factorize_thread() but uses the DNA w/ RC algorithm.
-     * 
-     * @param cst The compressed suffix tree (shared by all threads)
-     * @param rmqF RMQ for forward starts
-     * @param rmqRcEnd RMQ for reverse complement ends
-     * @param fwd_starts Forward start positions vector
-     * @param rc_ends Reverse complement end positions vector
-     * @param INF Infinity value for invalid positions
-     * @param N Original sequence length
-     * @param ctx Thread context
-     * @param all_contexts All thread contexts (for convergence checking)
-     * @param file_mutexes Mutexes for protecting file access
-     */
-    void factorize_dna_w_rc_thread(const cst_t& cst,
-                                   const sdsl::rmq_succinct_sct<>& rmqF,
-                                   const sdsl::rmq_succinct_sct<>& rmqRcEnd,
-                                   const sdsl::int_vector<64>& fwd_starts,
-                                   const sdsl::int_vector<64>& rc_ends,
-                                   uint64_t INF,
-                                   size_t N,
-                                   ThreadContext& ctx,
-                                   std::vector<ThreadContext>& all_contexts,
-                                   std::vector<std::mutex>& file_mutexes);
 };
 
 } // namespace noLZSS
