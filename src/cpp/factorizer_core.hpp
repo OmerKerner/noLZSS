@@ -189,7 +189,6 @@ size_t nolzss_multiple_dna_w_rc(const std::string& S, Sink&& sink, size_t start_
     sdsl::int_vector<64> fwd_starts(cst.csa.size(), INF);
     sdsl::int_vector<64> rc_ends   (cst.csa.size(), INF);
 
-    const size_t T_beg = 0;
     const size_t T_end = N;           // end of original
     const size_t R_beg = N;       // first char of rc
     const size_t R_end = S.size();   // end of S

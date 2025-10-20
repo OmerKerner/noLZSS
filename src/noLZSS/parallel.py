@@ -23,6 +23,7 @@ from .utils import validate_input, read_factors_binary_file_with_metadata
 def parallel_factorize_to_file(text: Union[str, bytes], 
                               output_path: Union[str, Path], 
                               num_threads: int = 0,
+                              start_pos: int = 0,
                               validate: bool = True) -> int:
     """
     Factorize text in parallel and write factors to a binary file.
@@ -31,6 +32,7 @@ def parallel_factorize_to_file(text: Union[str, bytes],
         text: Input text to factorize
         output_path: Path to output binary file
         num_threads: Number of threads to use (0 = auto-detect)
+        start_pos: Starting position in the text for factorization (default: 0)
         validate: Whether to validate input
         
     Returns:
@@ -49,12 +51,13 @@ def parallel_factorize_to_file(text: Union[str, bytes],
         text = validate_input(text)
     
     output_path = Path(output_path)
-    return _parallel_factorize_to_file(text, str(output_path), num_threads)
+    return _parallel_factorize_to_file(text, str(output_path), num_threads, start_pos)
 
 
 def parallel_factorize_file_to_file(input_path: Union[str, Path], 
                                    output_path: Union[str, Path], 
-                                   num_threads: int = 0) -> int:
+                                   num_threads: int = 0,
+                                   start_pos: int = 0) -> int:
     """
     Factorize text from file in parallel and write factors to a binary file.
     
@@ -62,6 +65,7 @@ def parallel_factorize_file_to_file(input_path: Union[str, Path],
         input_path: Path to input text file
         output_path: Path to output binary file
         num_threads: Number of threads to use (0 = auto-detect)
+        start_pos: Starting position in the text for factorization (default: 0)
         
     Returns:
         Number of factors produced
@@ -79,10 +83,10 @@ def parallel_factorize_file_to_file(input_path: Union[str, Path],
         raise FileNotFoundError(f"Input file not found: {input_path}")
     
     output_path = Path(output_path)
-    return _parallel_factorize_file_to_file(str(input_path), str(output_path), num_threads)
+    return _parallel_factorize_file_to_file(str(input_path), str(output_path), num_threads, start_pos)
 
 
-def parallel_factorize(text: Union[str, bytes], num_threads: int = 0, validate: bool = True) -> List[Factor]:
+def parallel_factorize(text: Union[str, bytes], num_threads: int = 0, start_pos: int = 0, validate: bool = True) -> List[Factor]:
     """
     Factorize text in parallel and return the factors.
     
@@ -91,6 +95,7 @@ def parallel_factorize(text: Union[str, bytes], num_threads: int = 0, validate: 
     Args:
         text: Input text to factorize
         num_threads: Number of threads to use (0 = auto-detect)
+        start_pos: Starting position in the text for factorization (default: 0)
         validate: Whether to validate input
         
     Returns:
@@ -111,7 +116,7 @@ def parallel_factorize(text: Union[str, bytes], num_threads: int = 0, validate: 
     
     try:
         # Factorize to temporary file
-        parallel_factorize_to_file(text, temp_path, num_threads, validate)
+        parallel_factorize_to_file(text, temp_path, num_threads, start_pos, validate)
         # Read factors back using the footer format
         import struct
         from collections import namedtuple

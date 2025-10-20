@@ -22,6 +22,7 @@
 #include <stdexcept>
 #include "factorizer.hpp"
 #include "fasta_processor.hpp"
+#include "parallel_fasta_processor.hpp"
 
 namespace py = pybind11;
 
@@ -961,7 +962,7 @@ Warning:
 
     // Parallel factorization bindings
     m.def("parallel_factorize_to_file", &noLZSS::parallel_factorize_to_file,
-          py::arg("text"), py::arg("output_path"), py::arg("num_threads") = 0,
+          py::arg("text"), py::arg("output_path"), py::arg("num_threads") = 0, py::arg("start_pos") = 0,
           R"doc(
 Factorizes text in parallel and writes results to a binary file.
 
@@ -973,6 +974,7 @@ Args:
     text: Input text to factorize (str or bytes)
     output_path: Path to output binary file
     num_threads: Number of threads (0 for auto-detection based on CPU cores)
+    start_pos: Starting position in the text for factorization (default: 0)
 
 Returns:
     Number of factors produced
@@ -987,7 +989,7 @@ Note:
 )doc");
 
     m.def("parallel_factorize_file_to_file", &noLZSS::parallel_factorize_file_to_file,
-          py::arg("input_path"), py::arg("output_path"), py::arg("num_threads") = 0,
+          py::arg("input_path"), py::arg("output_path"), py::arg("num_threads") = 0, py::arg("start_pos") = 0,
           R"doc(
 Factorizes text from file in parallel and writes results to a binary file.
 
@@ -998,6 +1000,7 @@ Args:
     input_path: Path to input text file
     output_path: Path to output binary file
     num_threads: Number of threads (0 for auto-detection)
+    start_pos: Starting position in the text for factorization (default: 0)
 
 Returns:
     Number of factors produced
@@ -1061,6 +1064,109 @@ Raises:
 Note:
     - Optimized for large genomic datasets
     - Currently under development - may not be fully implemented
+)doc");
+
+    // =========================================================================
+    // Parallel FASTA Processing Bindings
+    // =========================================================================
+
+    m.def("parallel_write_factors_binary_file_fasta_multiple_dna_w_rc",
+          &noLZSS::parallel_write_factors_binary_file_fasta_multiple_dna_w_rc,
+          py::arg("fasta_path"),
+          py::arg("out_path"),
+          py::arg("num_threads") = 0,
+          R"doc(Parallel version of write_factors_binary_file_fasta_multiple_dna_w_rc.
+
+Reads a FASTA file containing DNA sequences, prepares them for factorization with
+reverse complement awareness, and performs parallel factorization writing results
+to a binary output file with metadata.
+
+Args:
+    fasta_path: Path to input FASTA file containing DNA sequences
+    out_path: Path to output file where binary factors will be written
+    num_threads: Number of threads to use (0 = auto-detect based on input size, default)
+
+Returns:
+    Number of factors written to the output file
+
+Raises:
+    RuntimeError: If FASTA file cannot be opened or contains no valid sequences
+    ValueError: If too many sequences (>125) or invalid nucleotides found
+
+Note:
+    - Binary format includes factors, sequence IDs, sentinel indices, and footer metadata
+    - Only A, C, T, G nucleotides are allowed (case insensitive)
+    - This function overwrites the output file if it exists
+    - Reverse complement matches are supported during factorization
+    - For single-threaded execution (num_threads=1), no temporary files are created
+    - GIL is released during computation for better performance
+)doc");
+
+    m.def("parallel_write_factors_binary_file_fasta_multiple_dna_no_rc",
+          &noLZSS::parallel_write_factors_binary_file_fasta_multiple_dna_no_rc,
+          py::arg("fasta_path"),
+          py::arg("out_path"),
+          py::arg("num_threads") = 0,
+          R"doc(Parallel version of write_factors_binary_file_fasta_multiple_dna_no_rc.
+
+Reads a FASTA file containing DNA sequences, prepares them for factorization without
+reverse complement awareness, and performs parallel factorization writing results
+to a binary output file with metadata.
+
+Args:
+    fasta_path: Path to input FASTA file containing DNA sequences
+    out_path: Path to output file where binary factors will be written
+    num_threads: Number of threads to use (0 = auto-detect based on input size, default)
+
+Returns:
+    Number of factors written to the output file
+
+Raises:
+    RuntimeError: If FASTA file cannot be opened or contains no valid sequences
+    ValueError: If too many sequences (>250) or invalid nucleotides found
+
+Note:
+    - Binary format includes factors, sequence IDs, sentinel indices, and footer metadata
+    - Only A, C, T, G nucleotides are allowed (case insensitive)
+    - This function overwrites the output file if it exists
+    - Reverse complement matches are NOT supported during factorization
+    - For single-threaded execution (num_threads=1), no temporary files are created
+    - GIL is released during computation for better performance
+)doc");
+
+    m.def("parallel_write_factors_dna_w_reference_fasta_files_to_binary",
+          &noLZSS::parallel_write_factors_dna_w_reference_fasta_files_to_binary,
+          py::arg("reference_fasta_path"),
+          py::arg("target_fasta_path"),
+          py::arg("out_path"),
+          py::arg("num_threads") = 0,
+          R"doc(Parallel version of write_factors_dna_w_reference_fasta_files_to_binary.
+
+Reads DNA sequences from reference and target FASTA files, concatenates them with
+sentinels, and performs parallel factorization starting from target sequences,
+writing results to a binary output file with metadata.
+
+Args:
+    reference_fasta_path: Path to FASTA file containing reference DNA sequences
+    target_fasta_path: Path to FASTA file containing target DNA sequences
+    out_path: Path to output file where binary factors will be written
+    num_threads: Number of threads to use (0 = auto-detect based on input size, default)
+
+Returns:
+    Number of factors written to the output file
+
+Raises:
+    RuntimeError: If FASTA files cannot be opened or contain no valid sequences
+    ValueError: If too many sequences total or invalid nucleotides found
+
+Note:
+    - Binary format includes factors, sequence IDs, sentinel indices, and footer metadata
+    - Only A, C, T, G nucleotides are allowed (case insensitive)
+    - This function overwrites the output file if it exists
+    - Reverse complement matches are supported during factorization
+    - Factorization starts from target sequence positions only
+    - For single-threaded execution (num_threads=1), no temporary files are created
+    - GIL is released during computation for better performance
 )doc");
 
     // Version information

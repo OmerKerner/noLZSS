@@ -61,10 +61,11 @@ public:
      * @param text Input text to factorize
      * @param output_path Path to output binary factor file
      * @param num_threads Number of threads to use (0 for auto-detection)
+     * @param start_pos Starting position in the text for factorization (default: 0)
      * @return Number of factors produced
      */
     size_t parallel_factorize(std::string_view text, const std::string& output_path, 
-                             size_t num_threads = 0);
+                             size_t num_threads = 0, size_t start_pos = 0);
     
     /**
      * @brief File-based parallel factorization
@@ -74,10 +75,11 @@ public:
      * @param input_path Path to input text file
      * @param output_path Path to output binary factor file
      * @param num_threads Number of threads to use (0 for auto-detection)
+     * @param start_pos Starting position in the text for factorization (default: 0)
      * @return Number of factors produced
      */
     size_t parallel_factorize_file(const std::string& input_path, const std::string& output_path,
-                                  size_t num_threads = 0);
+                                  size_t num_threads = 0, size_t start_pos = 0);
     
     /**
      * @brief DNA-specific parallel factorization with reverse complement support
@@ -186,6 +188,34 @@ private:
     std::optional<Factor> read_factor_at(const std::string& file_path, 
                                       size_t index, 
                                       std::mutex& file_mutex);
+    
+    /**
+     * @brief Thread worker function for DNA factorization with reverse complement
+     * 
+     * Worker thread that performs DNA-specific factorization with reverse complement
+     * awareness. Similar to factorize_thread() but uses the DNA w/ RC algorithm.
+     * 
+     * @param cst The compressed suffix tree (shared by all threads)
+     * @param rmqF RMQ for forward starts
+     * @param rmqRcEnd RMQ for reverse complement ends
+     * @param fwd_starts Forward start positions vector
+     * @param rc_ends Reverse complement end positions vector
+     * @param INF Infinity value for invalid positions
+     * @param N Original sequence length
+     * @param ctx Thread context
+     * @param all_contexts All thread contexts (for convergence checking)
+     * @param file_mutexes Mutexes for protecting file access
+     */
+    void factorize_dna_w_rc_thread(const cst_t& cst,
+                                   const sdsl::rmq_succinct_sct<>& rmqF,
+                                   const sdsl::rmq_succinct_sct<>& rmqRcEnd,
+                                   const sdsl::int_vector<64>& fwd_starts,
+                                   const sdsl::int_vector<64>& rc_ends,
+                                   uint64_t INF,
+                                   size_t N,
+                                   ThreadContext& ctx,
+                                   std::vector<ThreadContext>& all_contexts,
+                                   std::vector<std::mutex>& file_mutexes);
 };
 
 } // namespace noLZSS

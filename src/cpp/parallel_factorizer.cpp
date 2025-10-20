@@ -47,21 +47,28 @@ std::string ParallelFactorizer::create_temp_file_path(size_t thread_id) {
  * @param text Input text to factorize (string_view for zero-copy efficiency)
  * @param output_path Path where the binary factor file will be written
  * @param num_threads Number of threads to use (0 = auto-detect based on input size)
+ * @param start_pos Starting position in the text for factorization (default: 0)
  * @return size_t Total number of factors produced
  * 
  * @throws std::runtime_error If file I/O operations fail
  */
 size_t ParallelFactorizer::parallel_factorize(std::string_view text, const std::string& output_path, 
-                                           size_t num_threads) {
+                                           size_t num_threads, size_t start_pos) {
     if (text.empty()) return 0;
+    
+    // Ensure start_pos is within bounds
+    if (start_pos >= text.length()) {
+        throw std::invalid_argument("start_pos must be less than text length");
+    }
     
     // Determine optimal thread count if not specified
     if (num_threads == 0) {
         // Minimum characters per thread to make parallelization worthwhile
-        constexpr size_t MIN_CHARS_PER_THREAD = 10000;
+        constexpr size_t MIN_CHARS_PER_THREAD = 100000;
         
-        // Calculate maximum useful threads based on text size
-        size_t max_useful_threads = text.length() / MIN_CHARS_PER_THREAD;
+        // Calculate maximum useful threads based on remaining text size
+        size_t remaining_length = text.length() - start_pos;
+        size_t max_useful_threads = remaining_length / MIN_CHARS_PER_THREAD;
         
         // Use available hardware threads, but don't exceed what's useful for this input size
         size_t hardware_threads = std::thread::hardware_concurrency();
@@ -82,12 +89,13 @@ size_t ParallelFactorizer::parallel_factorize(std::string_view text, const std::
     // Create contexts for each thread
     std::vector<ThreadContext> contexts(num_threads);
     
-    // Divide work among threads
-    const size_t chunk_size = text.length() / num_threads;
+    // Divide work among threads, starting from start_pos
+    const size_t remaining_length = text.length() - start_pos;
+    const size_t chunk_size = remaining_length / num_threads;
     for (size_t i = 0; i < num_threads; ++i) {
         contexts[i].thread_id = i;
-        contexts[i].start_pos = i * chunk_size;
-        contexts[i].end_pos = (i + 1 < num_threads) ? (i + 1) * chunk_size : text.length();
+        contexts[i].start_pos = start_pos + (i * chunk_size);
+        contexts[i].end_pos = (i + 1 < num_threads) ? (start_pos + (i + 1) * chunk_size) : text.length();
         contexts[i].text_length = text.length();
         // Thread 0 writes directly to output file; others use temp files
         contexts[i].temp_file_path = (i == 0) ? output_path : create_temp_file_path(i);
@@ -237,6 +245,153 @@ void ParallelFactorizer::factorize_thread(const cst_t& cst, const sdsl::rmq_succ
         lambda = next_leaf(cst, lambda, l);
         lambda_node_depth = cst.node_depth(lambda);
         lambda_sufnum = cst.sn(lambda);
+    }
+}
+
+/**
+ * @brief Worker thread function for DNA factorization with reverse complement
+ * 
+ * This function implements the DNA-specific factorization algorithm with reverse
+ * complement support for parallel execution. It's based on nolzss_multiple_dna_w_rc
+ * but adapted to work on a chunk of the original sequence.
+ * 
+ * The algorithm:
+ * 1. Initializes at the thread's start position
+ * 2. For each position, walks up the CST to find the best match (forward or RC)
+ * 3. Checks both forward matches (using rmqF) and RC matches (using rmqRcEnd)
+ * 4. Selects the longest non-overlapping match
+ * 5. Writes factors and checks for convergence with the next thread
+ * 
+ * @param cst Compressed suffix tree built from T + sentinel + RC(T) + sentinel
+ * @param rmqF RMQ structure for finding minimum forward starts
+ * @param rmqRcEnd RMQ structure for finding minimum RC ends
+ * @param fwd_starts Vector of forward start positions (INF for RC positions)
+ * @param rc_ends Vector of RC end positions (INF for forward positions)
+ * @param INF Infinity value used for invalid positions
+ * @param N Length of the original sequence (not including RC or sentinels)
+ * @param ctx This thread's context
+ * @param all_contexts Vector of all thread contexts (for convergence checking)
+ * @param file_mutexes Mutexes for file access
+ */
+void ParallelFactorizer::factorize_dna_w_rc_thread(const cst_t& cst,
+                                                  const sdsl::rmq_succinct_sct<>& rmqF,
+                                                  const sdsl::rmq_succinct_sct<>& rmqRcEnd,
+                                                  const sdsl::int_vector<64>& fwd_starts,
+                                                  const sdsl::int_vector<64>& rc_ends,
+                                                  uint64_t INF,
+                                                  size_t N,
+                                                  ThreadContext& ctx,
+                                                  std::vector<ThreadContext>& all_contexts,
+                                                  std::vector<std::mutex>& file_mutexes) {
+    // Initialize to the leaf of suffix starting at position ctx.start_pos
+    auto lambda = cst.select_leaf(cst.csa.isa[ctx.start_pos] + 1);
+    size_t lambda_node_depth = cst.node_depth(lambda);
+    size_t i = cst.sn(lambda); // Current position in text
+    
+    // Create or truncate output file
+    {
+        std::lock_guard<std::mutex> lock(file_mutexes[ctx.thread_id]);
+        std::ofstream ofs(ctx.temp_file_path, std::ios::binary | std::ios::trunc);
+    }
+    
+    // Track the next thread for convergence checking
+    ThreadContext* next_ctx = nullptr;
+    if (!ctx.is_last_thread && ctx.thread_id + 1 < all_contexts.size()) {
+        next_ctx = &all_contexts[ctx.thread_id + 1];
+    }
+    
+    // Main factorization loop - only process the original sequence (0 to N)
+    while (i < N) {
+        // Walk up ancestors to find best candidate (forward or RC)
+        size_t best_len_depth = 0;
+        bool best_is_rc = false;
+        size_t best_fwd_start = 0;
+        size_t best_rc_end = 0;
+        size_t best_rc_posS = 0;
+        
+        // Walk from leaf to root via level_anc
+        for (size_t step = 1; step <= lambda_node_depth; ++step) {
+            auto v = cst.bp_support.level_anc(lambda, lambda_node_depth - step);
+            size_t ell = cst.depth(v);
+            if (ell == 0) break; // reached root
+            
+            auto lb = cst.lb(v), rb = cst.rb(v);
+            
+            // Forward candidate
+            size_t kF = rmqF(lb, rb);
+            uint64_t jF = fwd_starts[kF];
+            bool okF = (jF != INF) && (jF + ell - 1 < i); // non-overlap
+            
+            // RC candidate
+            size_t kR = rmqRcEnd(lb, rb);
+            uint64_t endRC = rc_ends[kR];
+            bool okR = (endRC != INF) && (endRC < i); // endRC <= i-1
+            
+            if (!okF && !okR) {
+                break; // No valid candidates at deeper levels
+            }
+            
+            // Choose better candidate
+            if (okF) {
+                if (ell > best_len_depth ||
+                    (ell == best_len_depth && !best_is_rc && (jF + ell - 1) < (best_fwd_start + best_len_depth - 1))) {
+                    best_len_depth = ell;
+                    best_is_rc = false;
+                    best_fwd_start = jF;
+                }
+            }
+            if (okR) {
+                size_t posS_R = cst.csa[kR];
+                if (ell > best_len_depth ||
+                    (ell == best_len_depth && (best_is_rc ? (endRC < best_rc_end) : true))) {
+                    best_len_depth = ell;
+                    best_is_rc = true;
+                    best_rc_end = endRC;
+                    best_rc_posS = posS_R;
+                }
+            }
+        }
+        
+        // Compute the factor to emit
+        size_t emit_len = 1;
+        uint64_t emit_ref = i; // default for literal
+        
+        if (best_len_depth == 0) {
+            // Literal of length 1
+            Factor f{static_cast<uint64_t>(i), static_cast<uint64_t>(emit_len), emit_ref};
+            write_factor(f, ctx.temp_file_path, file_mutexes[ctx.thread_id]);
+        } else if (!best_is_rc) {
+            // Forward match - finalize with LCP and non-overlap cap
+            size_t cap = i - best_fwd_start;
+            size_t L = lcp(cst, i, best_fwd_start);
+            emit_len = std::min(L, cap);
+            emit_ref = static_cast<uint64_t>(best_fwd_start);
+            
+            Factor f{static_cast<uint64_t>(i), static_cast<uint64_t>(emit_len), emit_ref};
+            write_factor(f, ctx.temp_file_path, file_mutexes[ctx.thread_id]);
+        } else {
+            // RC match - finalize with LCP
+            size_t L = lcp(cst, i, best_rc_posS);
+            emit_len = L;
+            size_t start_pos_val = best_rc_end - L + 2;
+            emit_ref = RC_MASK | static_cast<uint64_t>(start_pos_val);
+            
+            Factor f{static_cast<uint64_t>(i), static_cast<uint64_t>(emit_len), emit_ref};
+            write_factor(f, ctx.temp_file_path, file_mutexes[ctx.thread_id]);
+        }
+        
+        // Check for convergence
+        if (next_ctx && i + emit_len >= next_ctx->start_pos) {
+            size_t current_end = i + emit_len;
+            if (check_convergence(current_end, *next_ctx, file_mutexes[next_ctx->thread_id])) {
+                break; // Convergence detected
+            }
+        }
+        
+        // Advance to next position
+        lambda = next_leaf(cst, lambda, emit_len);
+        lambda_node_depth = cst.node_depth(lambda);
+        i = cst.sn(lambda);
     }
 }
 
@@ -584,12 +739,14 @@ void ParallelFactorizer::cleanup_temp_files(const std::vector<ThreadContext>& co
  * @param input_path Path to the input text file
  * @param output_path Path where the binary factor file will be written
  * @param num_threads Number of threads to use (0 = auto-detect)
+ * @param start_pos Starting position in the text for factorization (default: 0)
  * @return size_t Total number of factors produced
  * @throws std::runtime_error If the input file cannot be opened
  */
 size_t ParallelFactorizer::parallel_factorize_file(const std::string& input_path, 
                                                 const std::string& output_path,
-                                                size_t num_threads) {
+                                                size_t num_threads,
+                                                size_t start_pos) {
     // Read the file content
     std::ifstream is(input_path, std::ios::binary);
     if (!is) {
@@ -597,32 +754,122 @@ size_t ParallelFactorizer::parallel_factorize_file(const std::string& input_path
     }
     
     std::string data((std::istreambuf_iterator<char>(is)), std::istreambuf_iterator<char>());
-    return parallel_factorize(data, output_path, num_threads);
+    return parallel_factorize(data, output_path, num_threads, start_pos);
 }
 
 /**
  * @brief Performs parallel DNA factorization with reverse complement support
  * 
- * PLACEHOLDER: This function is not yet implemented.
+ * Performs non-overlapping LZSS factorization on DNA sequences with reverse complement
+ * awareness using multiple threads. The algorithm:
+ * 1. Prepares the text with reverse complement: T + sentinel + RC(T) + sentinel
+ * 2. Auto-detects optimal thread count based on input size (if num_threads=0)
+ * 3. Builds a single compressed suffix tree (CST) over the prepared string
+ * 4. Divides the original text into chunks (not including RC portion)
+ * 5. Each thread factorizes its chunk independently using both forward and RC matches
+ * 6. Merges results with convergence detection
  * 
- * When implemented, this will perform parallel factorization on DNA sequences with
- * reverse complement awareness, allowing factors to reference either the forward
- * strand or the reverse complement. The MSB of the reference field will indicate
- * whether the match is to the reverse complement.
+ * NOTE: This implementation uses the DNA-specific algorithm from nolzss_multiple_dna_w_rc
+ * adapted for parallel execution. Only the original sequence portion (not RC) is divided
+ * among threads.
  * 
  * @param text Input DNA text to factorize (should contain only A, C, G, T)
  * @param output_path Path where the binary factor file will be written
  * @param num_threads Number of threads to use (0 = auto-detect)
- * @return size_t Total number of factors produced (currently returns 0)
+ * @return size_t Total number of factors produced
  */
 size_t ParallelFactorizer::parallel_factorize_dna_w_rc(std::string_view text, 
                                                     const std::string& output_path,
                                                     size_t num_threads) {
-    // Implementation would be similar to parallel_factorize but using DNA-specific
-    // algorithms from the original code - this is a placeholder
-    // In a complete implementation, we'd use the nolzss_dna_w_rc algorithm
-    std::cerr << "DNA parallel factorization not yet implemented" << std::endl;
-    return 0;
+    if (text.empty()) return 0;
+    
+    // Prepare the DNA sequence with reverse complement
+    std::string text_str(text);
+    PreparedSequenceResult prep_result = prepare_multiple_dna_sequences_w_rc({text_str});
+    std::string S = prep_result.prepared_string;
+    
+    // The original sequence length (before adding RC)
+    const size_t N = prep_result.original_length - 1; // -1 for the sentinel
+    
+    // For DNA w/ RC, we can only parallelize the original sequence part (0 to N)
+    // The algorithm needs the full prepared string with RC for suffix tree
+    
+    // Determine optimal thread count if not specified
+    if (num_threads == 0) {
+        constexpr size_t MIN_CHARS_PER_THREAD = 100000; // Lower threshold for DNA
+        size_t max_useful_threads = N / MIN_CHARS_PER_THREAD;
+        size_t hardware_threads = std::thread::hardware_concurrency();
+        num_threads = std::min(hardware_threads, max_useful_threads);
+        num_threads = std::max(1UL, num_threads);
+    }
+    
+    // Build CST over the prepared string (T + sentinel + RC(T) + sentinel)
+    cst_t cst;
+    construct_im(cst, S, 1);
+    
+    // Build RMQ structures for DNA w/ RC algorithm
+    const uint64_t INF = std::numeric_limits<uint64_t>::max() / 2ULL;
+    sdsl::int_vector<64> fwd_starts(cst.csa.size(), INF);
+    sdsl::int_vector<64> rc_ends(cst.csa.size(), INF);
+    
+    const size_t T_end = N;
+    const size_t R_beg = N;  // first char of rc (after T and its sentinel)
+    const size_t R_end = S.size();
+    
+    for (size_t k = 0; k < cst.csa.size(); ++k) {
+        size_t posS = cst.csa[k];
+        if (posS < T_end) {
+            fwd_starts[k] = posS;
+        } else if (posS >= R_beg && posS < R_end) {
+            size_t jR0 = posS - R_beg;
+            size_t endT0 = N - jR0 - 1;
+            rc_ends[k] = endT0;
+        }
+    }
+    
+    sdsl::rmq_succinct_sct<> rmqF(&fwd_starts);
+    sdsl::rmq_succinct_sct<> rmqRcEnd(&rc_ends);
+    
+    // Create contexts for each thread - divide only the original sequence (0 to N)
+    std::vector<ThreadContext> contexts(num_threads);
+    const size_t chunk_size = N / num_threads;
+    
+    for (size_t i = 0; i < num_threads; ++i) {
+        contexts[i].thread_id = i;
+        contexts[i].start_pos = i * chunk_size;
+        contexts[i].end_pos = (i + 1 < num_threads) ? (i + 1) * chunk_size : N;
+        contexts[i].text_length = N; // Only the original sequence length
+        contexts[i].temp_file_path = (i == 0) ? output_path : create_temp_file_path(i);
+        contexts[i].is_last_thread = (i == num_threads - 1);
+    }
+    
+    // Create mutexes for file access
+    std::vector<std::mutex> file_mutexes(num_threads);
+    
+    // Lambda to pass RMQ structures to threads
+    auto factorize_dna_thread = [&](ThreadContext& ctx) {
+        factorize_dna_w_rc_thread(cst, rmqF, rmqRcEnd, fwd_starts, rc_ends, INF, N,
+                                 ctx, contexts, file_mutexes);
+    };
+    
+    // Create and start worker threads
+    std::vector<std::thread> threads;
+    for (size_t i = 0; i < num_threads; ++i) {
+        threads.emplace_back(factorize_dna_thread, std::ref(contexts[i]));
+    }
+    
+    // Wait for all threads to complete
+    for (auto& t : threads) {
+        if (t.joinable()) t.join();
+    }
+    
+    // Merge temporary files and create final output
+    size_t total_factors = merge_temp_files(output_path, contexts);
+    
+    // Cleanup temporary files
+    cleanup_temp_files(contexts);
+    
+    return total_factors;
 }
 
 /**

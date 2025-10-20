@@ -547,9 +547,10 @@ size_t factorize_w_reference_file(const std::string& reference_seq, const std::s
  * @param text Input text to factorize
  * @param output_path Path to output binary file
  * @param num_threads Number of threads (0 for auto-detection)
+ * @param start_pos Starting position in the text for factorization (default: 0)
  * @return Number of factors produced
  */
-size_t parallel_factorize_to_file(std::string_view text, const std::string& output_path, size_t num_threads = 0);
+size_t parallel_factorize_to_file(std::string_view text, const std::string& output_path, size_t num_threads = 0, size_t start_pos = 0);
 
 /**
  * @brief Factorizes text from file in parallel and writes results to a binary file
@@ -560,9 +561,10 @@ size_t parallel_factorize_to_file(std::string_view text, const std::string& outp
  * @param input_path Path to input text file
  * @param output_path Path to output binary file
  * @param num_threads Number of threads (0 for auto-detection)
+ * @param start_pos Starting position in the text for factorization (default: 0)
  * @return Number of factors produced
  */
-size_t parallel_factorize_file_to_file(const std::string& input_path, const std::string& output_path, size_t num_threads = 0);
+size_t parallel_factorize_file_to_file(const std::string& input_path, const std::string& output_path, size_t num_threads = 0, size_t start_pos = 0);
 
 /**
  * @brief Factorizes DNA text in parallel with reverse complement and writes results to a binary file

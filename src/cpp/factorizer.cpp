@@ -931,14 +931,14 @@ size_t factorize_w_reference_file(const std::string& reference_seq, const std::s
 
 // Parallel factorization implementations
 
-size_t parallel_factorize_to_file(::std::string_view text, const ::std::string& output_path, size_t num_threads) {
+size_t parallel_factorize_to_file(::std::string_view text, const ::std::string& output_path, size_t num_threads, size_t start_pos) {
     ParallelFactorizer factorizer;
-    return factorizer.parallel_factorize(text, output_path, num_threads);
+    return factorizer.parallel_factorize(text, output_path, num_threads, start_pos);
 }
 
-size_t parallel_factorize_file_to_file(const ::std::string& input_path, const ::std::string& output_path, size_t num_threads) {
+size_t parallel_factorize_file_to_file(const ::std::string& input_path, const ::std::string& output_path, size_t num_threads, size_t start_pos) {
     ParallelFactorizer factorizer;
-    return factorizer.parallel_factorize_file(input_path, output_path, num_threads);
+    return factorizer.parallel_factorize_file(input_path, output_path, num_threads, start_pos);
 }
 
 size_t parallel_factorize_dna_w_rc_to_file(::std::string_view text, const ::std::string& output_path, size_t num_threads) {

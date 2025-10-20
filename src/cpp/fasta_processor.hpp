@@ -16,6 +16,29 @@ struct FastaParseResult {
 };
 
 /**
+ * @brief Helper function to parse FASTA file into individual sequences and IDs.
+ * 
+ * Internal helper function exposed for use by parallel_fasta_processor.
+ * 
+ * @param fasta_path Path to the FASTA file
+ * @return FastaParseResult containing sequences and their IDs
+ * @throws std::runtime_error If file cannot be opened or contains no valid sequences
+ */
+FastaParseResult parse_fasta_sequences_and_ids(const std::string& fasta_path);
+
+/**
+ * @brief Helper function to identify sentinel factors from factorization results.
+ * 
+ * Internal helper function exposed for use by parallel_fasta_processor.
+ * 
+ * @param factors Vector of factors from factorization
+ * @param sentinel_positions Vector of positions where sentinels should occur
+ * @return Vector of indices identifying which factors are sentinels
+ */
+std::vector<uint64_t> identify_sentinel_factors(const std::vector<Factor>& factors, 
+                                                const std::vector<size_t>& sentinel_positions);
+
+/**
  * @brief Result of FASTA factorization containing factors and sentinel information.
  */
 struct FastaFactorizationResult {
