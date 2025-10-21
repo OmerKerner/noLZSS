@@ -11,7 +11,8 @@ from pathlib import Path
 
 from noLZSS.utils import (
     validate_input, analyze_alphabet, 
-    read_factors_binary_file, plot_factor_lengths,
+    read_factors_binary_file, read_binary_file_metadata,
+    plot_factor_lengths,
     InvalidInputError, NoLZSSError
 )
 from noLZSS.genomics import (
@@ -213,6 +214,74 @@ class TestBinaryFileIO:
         """Test reading non-existent binary file."""
         with pytest.raises(NoLZSSError):
             read_factors_binary_file("nonexistent.bin")
+    
+    def test_read_binary_file_metadata(self):
+        """Test reading only metadata from a binary file without loading factors."""
+        # Create mock binary data with metadata
+        # Factor 1: pos=0, len=3, ref=1
+        # Factor 2: pos=3, len=2, ref=2
+        # Factor 3: pos=5, len=4, ref=0 (sentinel)
+        factors_data = struct.pack('<QQQ', 0, 3, 1) + struct.pack('<QQQ', 3, 2, 2) + struct.pack('<QQQ', 5, 4, 0)
+        
+        # Create metadata section
+        # Sequence names (null-terminated)
+        seq_names = b'seq1\x00seq2\x00'
+        # Sentinel indices (uint64 array)
+        sentinel_indices = struct.pack('<Q', 2)  # Factor at index 2 is a sentinel
+        
+        metadata = seq_names + sentinel_indices
+        
+        # Create footer: magic, num_factors=3, num_sequences=2, num_sentinels=1, footer_size
+        footer_size = len(metadata) + 40  # metadata + basic footer struct
+        footer = metadata + b'noLZSSv2' + struct.pack('<QQQQ', 3, 2, 1, footer_size)
+        
+        binary_data = factors_data + footer
+        
+        with tempfile.NamedTemporaryFile(delete=False) as f:
+            f.write(binary_data)
+            temp_path = f.name
+        
+        try:
+            # Read only metadata (should be fast, not loading all factors)
+            metadata_result = read_binary_file_metadata(temp_path)
+            
+            # Verify metadata contents
+            assert metadata_result['num_factors'] == 3
+            assert metadata_result['num_sequences'] == 2
+            assert metadata_result['num_sentinels'] == 1
+            assert metadata_result['sequence_names'] == ['seq1', 'seq2']
+            assert metadata_result['sentinel_factor_indices'] == [2]
+        finally:
+            os.unlink(temp_path)
+    
+    def test_read_binary_file_metadata_no_sequences(self):
+        """Test reading metadata from a file with no sequences/sentinels."""
+        # Create mock binary data: 2 factors, no metadata
+        factors_data = struct.pack('<QQQ', 0, 3, 1) + struct.pack('<QQQ', 3, 2, 2)
+        
+        # Create footer with no metadata: magic, num_factors=2, num_sequences=0, num_sentinels=0, footer_size=40
+        footer = b'noLZSSv2' + struct.pack('<QQQQ', 2, 0, 0, 40)
+        binary_data = factors_data + footer
+        
+        with tempfile.NamedTemporaryFile(delete=False) as f:
+            f.write(binary_data)
+            temp_path = f.name
+        
+        try:
+            metadata_result = read_binary_file_metadata(temp_path)
+            
+            assert metadata_result['num_factors'] == 2
+            assert metadata_result['num_sequences'] == 0
+            assert metadata_result['num_sentinels'] == 0
+            assert metadata_result['sequence_names'] == []
+            assert metadata_result['sentinel_factor_indices'] == []
+        finally:
+            os.unlink(temp_path)
+    
+    def test_read_binary_file_metadata_nonexistent(self):
+        """Test reading metadata from non-existent file."""
+        with pytest.raises(NoLZSSError, match="File not found"):
+            read_binary_file_metadata("nonexistent.bin")
 
 
 class TestPlotting:

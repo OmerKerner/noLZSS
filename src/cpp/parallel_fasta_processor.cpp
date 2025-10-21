@@ -103,7 +103,11 @@ size_t parallel_write_factors_binary_file_fasta_multiple_dna_w_rc(
     }
     temp_is.close();
     
-    // Append metadata to the file
+    // Truncate file to remove the basic footer written by merge_temp_files
+    // We need to replace it with the metadata-enriched footer
+    fs::resize_file(out_path, factor_count * sizeof(Factor));
+    
+    // Append metadata footer to the file
     std::ofstream os(out_path, std::ios::binary | std::ios::app);
     if (!os) {
         throw std::runtime_error("Cannot append metadata to output file: " + out_path);
@@ -157,7 +161,11 @@ size_t parallel_write_factors_binary_file_fasta_multiple_dna_no_rc(
     }
     temp_is.close();
     
-    // Append metadata to the file
+    // Truncate file to remove the basic footer written by merge_temp_files
+    // We need to replace it with the metadata-enriched footer
+    fs::resize_file(out_path, factor_count * sizeof(Factor));
+    
+    // Append metadata footer to the file
     std::ofstream os(out_path, std::ios::binary | std::ios::app);
     if (!os) {
         throw std::runtime_error("Cannot append metadata to output file: " + out_path);
@@ -214,7 +222,11 @@ size_t parallel_write_factors_dna_w_reference_fasta_files_to_binary(
     }
     temp_is.close();
     
-    // Append metadata to the file
+    // Truncate file to remove the basic footer written by merge_temp_files
+    // We need to replace it with the metadata-enriched footer
+    fs::resize_file(out_path, factor_count * sizeof(Factor));
+    
+    // Append metadata footer to the file
     std::ofstream os(out_path, std::ios::binary | std::ios::app);
     if (!os) {
         throw std::runtime_error("Cannot append metadata to output file: " + out_path);

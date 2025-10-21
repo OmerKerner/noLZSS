@@ -155,6 +155,97 @@ def read_factors_binary_file(filepath: Union[str, Path]) -> List[Tuple[int, int,
     return factors
 
 
+def read_binary_file_metadata(filepath: Union[str, Path]) -> Dict[str, Any]:
+    """
+    Read only metadata from a binary file without loading all factors.
+    
+    This function efficiently reads just the metadata (sequence names, sentinel indices,
+    and counts) from the footer of binary files, without loading the factor data.
+    This is useful for quickly inspecting file contents or gathering statistics.
+    
+    Args:
+        filepath: Path to the binary factors file with metadata
+        
+    Returns:
+        Dictionary containing:
+        - 'sentinel_factor_indices': List of factor indices that are sentinels
+        - 'sequence_names': List of sequence names from FASTA headers
+        - 'num_sequences': Number of sequences
+        - 'num_sentinels': Number of sentinel factors
+        - 'num_factors': Total number of factors in the file
+        
+    Raises:
+        NoLZSSError: If file cannot be read or has invalid format
+    """
+    filepath = Path(filepath)
+    if not filepath.exists():
+        raise NoLZSSError(f"File not found: {filepath}")
+    
+    try:
+        with open(filepath, 'rb') as f:
+            # Read footer from the end of file
+            f.seek(-40, 2)  # Seek to 40 bytes before end (footer struct size)
+            footer_basic = f.read(40)
+            if len(footer_basic) < 40:
+                raise NoLZSSError("File too small to contain valid footer")
+            
+            # Unpack basic footer (magic is 8 chars, then 4 uint64_t)
+            magic = footer_basic[:8]
+            if magic != b'noLZSSv2':
+                raise NoLZSSError("Invalid file format: missing noLZSS magic footer (expected v2 format)")
+            
+            num_factors, num_sequences, num_sentinels, footer_size = struct.unpack('<QQQQ', footer_basic[8:40])
+            
+            # Seek to the beginning of the full footer (footer_size bytes from end)
+            f.seek(-footer_size, 2)
+            full_footer = f.read(footer_size)
+            if len(full_footer) != footer_size:
+                raise NoLZSSError(f"Could not read full footer: expected {footer_size}, got {len(full_footer)}")
+            
+            # Parse footer metadata (everything before the basic footer struct at the end)
+            # Skip the basic footer structure at the end (40 bytes)
+            metadata_size = footer_size - 40
+            metadata = full_footer[:metadata_size]
+            offset = 0
+            
+            # Read sequence names
+            sequence_names = []
+            for i in range(num_sequences):
+                # Find null terminator
+                name_start = offset
+                while offset < len(metadata) and metadata[offset] != 0:
+                    offset += 1
+                if offset >= len(metadata):
+                    raise NoLZSSError("Invalid sequence name format")
+                
+                name = metadata[name_start:offset].decode('utf-8')
+                sequence_names.append(name)
+                offset += 1  # Skip null terminator
+            
+            # Read sentinel factor indices
+            sentinel_indices = []
+            for i in range(num_sentinels):
+                if offset + 8 > len(metadata):
+                    raise NoLZSSError("Insufficient data for sentinel indices")
+                
+                idx = struct.unpack('<Q', metadata[offset:offset+8])[0]
+                sentinel_indices.append(idx)
+                offset += 8
+    
+    except IOError as e:
+        raise NoLZSSError(f"Error reading file {filepath}: {e}")
+    except struct.error as e:
+        raise NoLZSSError(f"Error unpacking binary data: {e}")
+    
+    return {
+        'sentinel_factor_indices': sentinel_indices,
+        'sequence_names': sequence_names,
+        'num_sequences': num_sequences,
+        'num_sentinels': num_sentinels,
+        'num_factors': num_factors
+    }
+
+
 def read_factors_binary_file_with_metadata(filepath: Union[str, Path]) -> Dict[str, Any]:
     """
     Read factors from an enhanced binary file with metadata (sequence names and sentinel indices).
