@@ -180,8 +180,9 @@ class TestBinaryFileIO:
         # Factor 1: pos=0, len=3, ref=1
         # Factor 2: pos=3, len=2, ref=2
         factors_data = struct.pack('<QQQ', 0, 3, 1) + struct.pack('<QQQ', 3, 2, 2)
-        # Create footer: magic, num_factors=2, num_sequences=0, num_sentinels=0, footer_size=40
-        footer = b'noLZSSv2' + struct.pack('<QQQQ', 2, 0, 0, 40)
+        total_length = 3 + 2  # Sum of factor lengths
+        # Create footer: magic, num_factors=2, num_sequences=0, num_sentinels=0, footer_size=48, total_length=5
+        footer = b'noLZSSv2' + struct.pack('<QQQQQ', 2, 0, 0, 48, total_length)
         binary_data = factors_data + footer
         
         with tempfile.NamedTemporaryFile(delete=False) as f:
@@ -222,6 +223,7 @@ class TestBinaryFileIO:
         # Factor 2: pos=3, len=2, ref=2
         # Factor 3: pos=5, len=4, ref=0 (sentinel)
         factors_data = struct.pack('<QQQ', 0, 3, 1) + struct.pack('<QQQ', 3, 2, 2) + struct.pack('<QQQ', 5, 4, 0)
+        total_length = 3 + 2 + 4  # Sum of factor lengths
         
         # Create metadata section
         # Sequence names (null-terminated)
@@ -231,9 +233,9 @@ class TestBinaryFileIO:
         
         metadata = seq_names + sentinel_indices
         
-        # Create footer: magic, num_factors=3, num_sequences=2, num_sentinels=1, footer_size
-        footer_size = len(metadata) + 40  # metadata + basic footer struct
-        footer = metadata + b'noLZSSv2' + struct.pack('<QQQQ', 3, 2, 1, footer_size)
+        # Create footer: magic, num_factors=3, num_sequences=2, num_sentinels=1, footer_size, total_length
+        footer_size = len(metadata) + 48  # metadata + basic footer struct (48 bytes now)
+        footer = metadata + b'noLZSSv2' + struct.pack('<QQQQQ', 3, 2, 1, footer_size, total_length)
         
         binary_data = factors_data + footer
         
@@ -251,6 +253,7 @@ class TestBinaryFileIO:
             assert metadata_result['num_sentinels'] == 1
             assert metadata_result['sequence_names'] == ['seq1', 'seq2']
             assert metadata_result['sentinel_factor_indices'] == [2]
+            assert metadata_result['total_length'] == total_length
         finally:
             os.unlink(temp_path)
     
@@ -258,9 +261,10 @@ class TestBinaryFileIO:
         """Test reading metadata from a file with no sequences/sentinels."""
         # Create mock binary data: 2 factors, no metadata
         factors_data = struct.pack('<QQQ', 0, 3, 1) + struct.pack('<QQQ', 3, 2, 2)
+        total_length = 3 + 2  # Sum of factor lengths
         
-        # Create footer with no metadata: magic, num_factors=2, num_sequences=0, num_sentinels=0, footer_size=40
-        footer = b'noLZSSv2' + struct.pack('<QQQQ', 2, 0, 0, 40)
+        # Create footer with no metadata: magic, num_factors=2, num_sequences=0, num_sentinels=0, footer_size=48, total_length=5
+        footer = b'noLZSSv2' + struct.pack('<QQQQQ', 2, 0, 0, 48, total_length)
         binary_data = factors_data + footer
         
         with tempfile.NamedTemporaryFile(delete=False) as f:
@@ -275,6 +279,7 @@ class TestBinaryFileIO:
             assert metadata_result['num_sentinels'] == 0
             assert metadata_result['sequence_names'] == []
             assert metadata_result['sentinel_factor_indices'] == []
+            assert metadata_result['total_length'] == total_length
         finally:
             os.unlink(temp_path)
     
