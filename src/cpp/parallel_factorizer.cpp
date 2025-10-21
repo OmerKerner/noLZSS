@@ -591,6 +591,7 @@ size_t ParallelFactorizer::merge_temp_files(const std::string& output_path,
     // to add factors from other threads
     
     size_t total_factors = 0;
+    uint64_t total_length = 0;
     size_t current_position = 0;  // Track the current end position in the merged output
     size_t text_length = contexts.empty() ? 0 : contexts[0].text_length;
     std::optional<Factor> last_written_factor;
@@ -605,6 +606,7 @@ size_t ParallelFactorizer::merge_temp_files(const std::string& output_path,
         Factor factor;
         while (ifs.read(reinterpret_cast<char*>(&factor), sizeof(Factor))) {
             total_factors++;
+            total_length += factor.length;
             last_written_factor = factor;
             
             size_t factor_end = factor.start + factor.length;
@@ -661,6 +663,7 @@ size_t ParallelFactorizer::merge_temp_files(const std::string& output_path,
                 // Write factor to output (either we found convergence or we're continuing)
                 ofs.write(reinterpret_cast<const char*>(&factor), sizeof(Factor));
                 total_factors++;
+                total_length += factor.length;
                 last_written_factor = factor;
                 
                 size_t factor_end = factor.start + factor.length;
@@ -693,6 +696,7 @@ size_t ParallelFactorizer::merge_temp_files(const std::string& output_path,
     footer.num_sequences = 0;  // Unknown for general (non-FASTA) factorization
     footer.num_sentinels = 0;  // No sentinels for general factorization
     footer.footer_size = sizeof(FactorFileFooter);
+    footer.total_length = total_length;
     
     ofs.write(reinterpret_cast<const char*>(&footer), sizeof(footer));
     

@@ -23,11 +23,13 @@ namespace noLZSS {
  * @param sequence_ids Vector of sequence ID strings
  * @param sentinel_factor_indices Vector of sentinel factor indices
  * @param factor_count Total number of factors written
+ * @param total_length Sum of all factor lengths
  */
 static void write_fasta_metadata(std::ofstream& os,
                                  const std::vector<std::string>& sequence_ids,
                                  const std::vector<uint64_t>& sentinel_factor_indices,
-                                 size_t factor_count) {
+                                 size_t factor_count,
+                                 uint64_t total_length) {
     // Calculate footer size
     size_t names_size = 0;
     for (const auto& name : sequence_ids) {
@@ -53,6 +55,7 @@ static void write_fasta_metadata(std::ofstream& os,
     footer.num_sequences = sequence_ids.size();
     footer.num_sentinels = sentinel_factor_indices.size();
     footer.footer_size = footer_size;
+    footer.total_length = total_length;
     
     os.write(reinterpret_cast<const char*>(&footer), sizeof(footer));
 }
@@ -78,6 +81,7 @@ size_t parallel_write_factors_binary_file_fasta_multiple_dna_w_rc(
     
     // Now identify sentinel factors by reading back the factors
     std::vector<uint64_t> sentinel_factor_indices;
+    uint64_t total_length = 0;
     
     std::ifstream temp_is(out_path, std::ios::binary);
     if (!temp_is) {
@@ -88,6 +92,7 @@ size_t parallel_write_factors_binary_file_fasta_multiple_dna_w_rc(
     for (size_t i = 0; i < factor_count; ++i) {
         Factor f;
         temp_is.read(reinterpret_cast<char*>(&f), sizeof(Factor));
+        total_length += f.length;
         
         // Check if this is a sentinel factor
         while (sentinel_idx < prep_result.sentinel_positions.size() &&
@@ -113,7 +118,7 @@ size_t parallel_write_factors_binary_file_fasta_multiple_dna_w_rc(
         throw std::runtime_error("Cannot append metadata to output file: " + out_path);
     }
     
-    write_fasta_metadata(os, parse_result.sequence_ids, sentinel_factor_indices, factor_count);
+    write_fasta_metadata(os, parse_result.sequence_ids, sentinel_factor_indices, factor_count, total_length);
     
     return factor_count;
 }
@@ -135,6 +140,7 @@ size_t parallel_write_factors_binary_file_fasta_multiple_dna_no_rc(
     
     // Now we need to identify sentinel factors by reading back the factors
     std::vector<uint64_t> sentinel_factor_indices;
+    uint64_t total_length = 0;
     
     // Read factors back to identify sentinels
     std::ifstream temp_is(out_path, std::ios::binary);
@@ -146,6 +152,7 @@ size_t parallel_write_factors_binary_file_fasta_multiple_dna_no_rc(
     for (size_t i = 0; i < factor_count; ++i) {
         Factor f;
         temp_is.read(reinterpret_cast<char*>(&f), sizeof(Factor));
+        total_length += f.length;
         
         // Check if this is a sentinel factor
         while (sentinel_idx < prep_result.sentinel_positions.size() &&
@@ -171,7 +178,7 @@ size_t parallel_write_factors_binary_file_fasta_multiple_dna_no_rc(
         throw std::runtime_error("Cannot append metadata to output file: " + out_path);
     }
     
-    write_fasta_metadata(os, parse_result.sequence_ids, sentinel_factor_indices, factor_count);
+    write_fasta_metadata(os, parse_result.sequence_ids, sentinel_factor_indices, factor_count, total_length);
     
     return factor_count;
 }
@@ -197,6 +204,7 @@ size_t parallel_write_factors_dna_w_reference_fasta_files_to_binary(
     
     // Now identify sentinel factors by reading back the factors
     std::vector<uint64_t> sentinel_factor_indices;
+    uint64_t total_length = 0;
     
     std::ifstream temp_is(out_path, std::ios::binary);
     if (!temp_is) {
@@ -207,6 +215,7 @@ size_t parallel_write_factors_dna_w_reference_fasta_files_to_binary(
     for (size_t i = 0; i < factor_count; ++i) {
         Factor f;
         temp_is.read(reinterpret_cast<char*>(&f), sizeof(Factor));
+        total_length += f.length;
         
         // Check if this is a sentinel factor
         while (sentinel_idx < ref_target_concat_w_rc.concatinated_sequences.sentinel_positions.size() &&
@@ -232,7 +241,7 @@ size_t parallel_write_factors_dna_w_reference_fasta_files_to_binary(
         throw std::runtime_error("Cannot append metadata to output file: " + out_path);
     }
     
-    write_fasta_metadata(os, ref_target_concat_w_rc.sequence_ids, sentinel_factor_indices, factor_count);
+    write_fasta_metadata(os, ref_target_concat_w_rc.sequence_ids, sentinel_factor_indices, factor_count, total_length);
     
     return factor_count;
 }

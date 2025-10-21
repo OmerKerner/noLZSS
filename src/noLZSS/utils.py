@@ -123,16 +123,16 @@ def read_factors_binary_file(filepath: Union[str, Path]) -> List[Tuple[int, int,
     try:
         with open(filepath, 'rb') as f:
             # Read footer from the end of file
-            f.seek(-40, 2)  # Seek to 40 bytes before end (footer size)
-            footer_data = f.read(40)  # magic 8 + 4*8 = 40
-            if len(footer_data) != 40:
+            f.seek(-48, 2)  # Seek to 48 bytes before end (new footer size with total_length)
+            footer_data = f.read(48)  # magic 8 + 5*8 = 48
+            if len(footer_data) != 48:
                 raise NoLZSSError("File too small to contain valid footer")
             
             magic = footer_data[:8]
             if magic != b'noLZSSv2':
                 raise NoLZSSError("Invalid file format: missing noLZSS magic footer (expected v2 format)")
             
-            num_factors, num_sequences, num_sentinels, footer_size = struct.unpack('<QQQQ', footer_data[8:40])
+            num_factors, num_sequences, num_sentinels, footer_size, total_length = struct.unpack('<QQQQQ', footer_data[8:48])
             
             # Seek to beginning of file to read factors
             f.seek(0)
@@ -184,17 +184,17 @@ def read_binary_file_metadata(filepath: Union[str, Path]) -> Dict[str, Any]:
     try:
         with open(filepath, 'rb') as f:
             # Read footer from the end of file
-            f.seek(-40, 2)  # Seek to 40 bytes before end (footer struct size)
-            footer_basic = f.read(40)
-            if len(footer_basic) < 40:
+            f.seek(-48, 2)  # Seek to 48 bytes before end (footer struct size with total_length)
+            footer_basic = f.read(48)
+            if len(footer_basic) < 48:
                 raise NoLZSSError("File too small to contain valid footer")
             
-            # Unpack basic footer (magic is 8 chars, then 4 uint64_t)
+            # Unpack basic footer (magic is 8 chars, then 5 uint64_t)
             magic = footer_basic[:8]
             if magic != b'noLZSSv2':
                 raise NoLZSSError("Invalid file format: missing noLZSS magic footer (expected v2 format)")
             
-            num_factors, num_sequences, num_sentinels, footer_size = struct.unpack('<QQQQ', footer_basic[8:40])
+            num_factors, num_sequences, num_sentinels, footer_size, total_length = struct.unpack('<QQQQQ', footer_basic[8:48])
             
             # Seek to the beginning of the full footer (footer_size bytes from end)
             f.seek(-footer_size, 2)
@@ -203,8 +203,8 @@ def read_binary_file_metadata(filepath: Union[str, Path]) -> Dict[str, Any]:
                 raise NoLZSSError(f"Could not read full footer: expected {footer_size}, got {len(full_footer)}")
             
             # Parse footer metadata (everything before the basic footer struct at the end)
-            # Skip the basic footer structure at the end (40 bytes)
-            metadata_size = footer_size - 40
+            # Skip the basic footer structure at the end (48 bytes)
+            metadata_size = footer_size - 48
             metadata = full_footer[:metadata_size]
             offset = 0
             
@@ -242,7 +242,8 @@ def read_binary_file_metadata(filepath: Union[str, Path]) -> Dict[str, Any]:
         'sequence_names': sequence_names,
         'num_sequences': num_sequences,
         'num_sentinels': num_sentinels,
-        'num_factors': num_factors
+        'num_factors': num_factors,
+        'total_length': total_length
     }
 
 
@@ -277,17 +278,17 @@ def read_factors_binary_file_with_metadata(filepath: Union[str, Path]) -> Dict[s
     try:
         with open(filepath, 'rb') as f:
             # Read footer from the end of file
-            f.seek(-40, 2)  # Seek to 40 bytes before end (footer struct size)
-            footer_basic = f.read(40)
-            if len(footer_basic) < 40:
+            f.seek(-48, 2)  # Seek to 48 bytes before end (footer struct size with total_length)
+            footer_basic = f.read(48)
+            if len(footer_basic) < 48:
                 raise NoLZSSError("File too small to contain valid footer")
             
-            # Unpack basic footer (magic is 8 chars, then 4 uint64_t)
+            # Unpack basic footer (magic is 8 chars, then 5 uint64_t)
             magic = footer_basic[:8]
             if magic != b'noLZSSv2':
                 raise NoLZSSError("Invalid file format: missing noLZSS magic footer (expected v2 format)")
             
-            num_factors, num_sequences, num_sentinels, footer_size = struct.unpack('<QQQQ', footer_basic[8:40])
+            num_factors, num_sequences, num_sentinels, footer_size, total_length = struct.unpack('<QQQQQ', footer_basic[8:48])
             
             # Seek to the beginning of the full footer (footer_size bytes from end)
             f.seek(-footer_size, 2)
@@ -296,8 +297,8 @@ def read_factors_binary_file_with_metadata(filepath: Union[str, Path]) -> Dict[s
                 raise NoLZSSError(f"Could not read full footer: expected {footer_size}, got {len(full_footer)}")
             
             # Parse footer metadata (everything before the basic footer struct at the end)
-            # Skip the basic footer structure at the end (40 bytes)
-            metadata_size = footer_size - 40
+            # Skip the basic footer structure at the end (48 bytes)
+            metadata_size = footer_size - 48
             metadata = full_footer[:metadata_size]
             offset = 0
             
@@ -351,7 +352,8 @@ def read_factors_binary_file_with_metadata(filepath: Union[str, Path]) -> Dict[s
         'sentinel_factor_indices': sentinel_indices,
         'sequence_names': sequence_names,
         'num_sequences': num_sequences,
-        'num_sentinels': num_sentinels
+        'num_sentinels': num_sentinels,
+        'total_length': total_length
     }
 
 

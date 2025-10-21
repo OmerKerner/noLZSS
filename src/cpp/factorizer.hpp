@@ -67,9 +67,10 @@ struct FactorFileFooter {
     uint64_t num_sequences;   /**< Number of sequences processed */
     uint64_t num_sentinels;   /**< Number of sentinel factors */
     uint64_t footer_size;     /**< Total footer size (bytes from end of file) for extensibility */
+    uint64_t total_length;    /**< Sum of all factor lengths */
     
     // Constructor to ensure magic is properly initialized
-    FactorFileFooter() : num_factors(0), num_sequences(0), num_sentinels(0), footer_size(0) {
+    FactorFileFooter() : num_factors(0), num_sequences(0), num_sentinels(0), footer_size(0), total_length(0) {
         magic[0] = 'n'; magic[1] = 'o'; magic[2] = 'L'; magic[3] = 'Z';
         magic[4] = 'S'; magic[5] = 'S'; magic[6] = 'v'; magic[7] = '2';
     }

@@ -98,16 +98,26 @@ def write_v2_format(filepath: Path, factors_data: bytes, metadata: dict) -> None
         # Calculate footer size
         names_size = sum(len(name) + 1 for name in metadata['sequence_names'])
         sentinels_size = len(metadata['sentinel_indices']) * 8
-        footer_size = 40 + names_size + sentinels_size
+        footer_size = 48 + names_size + sentinels_size  # 48 bytes for footer struct
+        
+        # Calculate total_length from factors_data
+        total_length = 0
+        num_factors = len(factors_data) // 24  # Each factor is 24 bytes
+        for i in range(num_factors):
+            offset = i * 24
+            # Factor is (start, length, ref) each uint64_t
+            length = struct.unpack('<Q', factors_data[offset+8:offset+16])[0]
+            total_length += length
         
         # Write footer
         magic = b'noLZSSv2'
-        footer = struct.pack('<8sQQQQ',
+        footer = struct.pack('<8sQQQQQ',
                            magic,
                            metadata['num_factors'],
                            metadata['num_sequences'],
                            metadata['num_sentinels'],
-                           footer_size)
+                           footer_size,
+                           total_length)
         f.write(footer)
 
 
