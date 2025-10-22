@@ -126,8 +126,8 @@ def test_write_factors_binary_file():
         with open(out_path, 'rb') as f:
             binary_data = f.read()
         
-        # Binary file has 40-byte footer at the end + factors (24 bytes each)
-        footer_size = 40
+        # Binary file has 48-byte footer at the end + factors (24 bytes each)
+        footer_size = 48
         factor_data = binary_data[:-footer_size]
         actual_count = len(factor_data) // 24
         assert actual_count == expected_count
@@ -194,7 +194,7 @@ def test_consistency_across_functions():
                 # Verify binary file was created and has correct size
                 with open(bin_path, 'rb') as f:
                     binary_data = f.read()
-                expected_size = 40 + len(factors) * 24  # 40-byte header + 24 bytes per factor
+                expected_size = 48 + len(factors) * 24  # 48-byte footer + 24 bytes per factor
                 assert len(binary_data) == expected_size
             finally:
                 os.unlink(bin_path)
@@ -726,7 +726,11 @@ GCTAGCTA
         with open(binary_path, 'rb') as f:
             binary_data = f.read()
         
-        expected_size = 40 + num_factors * 24  # 40-byte header + 24 bytes per factor (3 * 8 bytes)
+        # Read footer_size from the file (stored at byte offset -16 from end in the 48-byte footer struct)
+        # Footer structure: magic(8) + num_factors(8) + num_sequences(8) + num_sentinels(8) + footer_size(8) + total_length(8)
+        # footer_size is at position -16 (skipping total_length at -8)
+        footer_size = int.from_bytes(binary_data[-16:-8], byteorder='little')
+        expected_size = num_factors * 24 + footer_size  # factors + footer (which includes metadata)
         assert len(binary_data) == expected_size
         
         # Compare with regular factorization
@@ -822,8 +826,9 @@ TTTTAAAA
         with open(binary_path, 'rb') as f:
             binary_data = f.read()
         
-        # Read footer size from the end of file (stored in last 8 bytes of the 40-byte footer)
-        footer_size = int.from_bytes(binary_data[-8:], byteorder='little')
+        # Read footer_size from the file (at offset -16 from end in the 48-byte footer struct)
+        # Footer: magic(8) + num_factors(8) + num_sequences(8) + num_sentinels(8) + footer_size(8) + total_length(8)
+        footer_size = int.from_bytes(binary_data[-16:-8], byteorder='little')
         expected_size = num_factors * 24 + footer_size  # factors + footer
         assert len(binary_data) == expected_size
         
@@ -877,8 +882,9 @@ TTTTAAAA
         with open(binary_path, 'rb') as f:
             binary_data = f.read()
         
-        # Read footer size from the end of file (stored in last 8 bytes of the 40-byte footer)
-        footer_size = int.from_bytes(binary_data[-8:], byteorder='little')
+        # Read footer_size from the file (at offset -16 from end in the 48-byte footer struct)
+        # Footer: magic(8) + num_factors(8) + num_sequences(8) + num_sentinels(8) + footer_size(8) + total_length(8)
+        footer_size = int.from_bytes(binary_data[-16:-8], byteorder='little')
         expected_size = num_factors * 24 + footer_size  # factors + footer
         assert len(binary_data) == expected_size
         
