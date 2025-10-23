@@ -175,12 +175,12 @@ class TestBinaryFileIO:
     """Test binary file reading functions."""
     
     def test_read_factors_binary_file_valid(self):
-        """Test reading a valid binary factors file."""
-        # Create mock binary data: 2 factors
+        """Test reading binary factors file."""
+        # Create mock binary data
         # Factor 1: pos=0, len=3, ref=1
         # Factor 2: pos=3, len=2, ref=2
         factors_data = struct.pack('<QQQ', 0, 3, 1) + struct.pack('<QQQ', 3, 2, 2)
-        total_length = 3 + 2  # Sum of factor lengths
+        total_length = 3 + 2  # Sum of factor lengths = 5
         # Create footer: magic, num_factors=2, num_sequences=0, num_sentinels=0, footer_size=48, total_length=5
         footer = b'noLZSSv2' + struct.pack('<QQQQQ', 2, 0, 0, 48, total_length)
         binary_data = factors_data + footer
