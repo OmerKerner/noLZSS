@@ -361,6 +361,14 @@ std::vector<Factor> factorize_file(const std::string& path, size_t reserve_hint,
  * @warning Ensure sufficient disk space for the output file
  */
 size_t write_factors_binary_file(const std::string& in_path, const std::string& out_path) {
+    // Get input file size for total_length
+    std::ifstream infile(in_path, std::ios::binary | std::ios::ate);
+    if (!infile) {
+        throw std::runtime_error("Cannot open input file: " + in_path);
+    }
+    uint64_t total_length = infile.tellg();
+    infile.close();
+    
     // Set up binary output file with buffering
     std::ofstream os(out_path, std::ios::binary);
     if (!os) {
@@ -381,6 +389,7 @@ size_t write_factors_binary_file(const std::string& in_path, const std::string& 
     footer.num_sequences = 0;  // Unknown for raw text files
     footer.num_sentinels = 0;  // No sentinels for raw text files
     footer.footer_size = sizeof(FactorFileFooter);
+    footer.total_length = total_length;
     
     // Write footer at the end
     os.write(reinterpret_cast<const char*>(&footer), sizeof(footer));
@@ -525,6 +534,14 @@ size_t count_factors_file_dna_w_rc(const std::string& path) {
  * @warning Ensure sufficient disk space for the output file
  */
 size_t write_factors_binary_file_dna_w_rc(const std::string& in_path, const std::string& out_path) {
+    // Get input file size for total_length
+    std::ifstream infile(in_path, std::ios::binary | std::ios::ate);
+    if (!infile) {
+        throw std::runtime_error("Cannot open input file: " + in_path);
+    }
+    uint64_t total_length = infile.tellg();
+    infile.close();
+    
     // Set up binary output file with buffering
     std::ofstream os(out_path, std::ios::binary);
     if (!os) {
@@ -548,6 +565,7 @@ size_t write_factors_binary_file_dna_w_rc(const std::string& in_path, const std:
     footer.num_sequences = 1;  // Single DNA sequence
     footer.num_sentinels = 0;  // No sentinels for single sequence
     footer.footer_size = sizeof(FactorFileFooter) + 1; // Empty sequence name
+    footer.total_length = total_length;
     
     // Write footer at the end
     os.write(reinterpret_cast<const char*>(&footer), sizeof(footer));
@@ -686,6 +704,9 @@ size_t write_factors_binary_file_multiple_dna_w_rc(const std::string& in_path, c
     std::vector<char> buf(1<<20); // 1 MB buffer for performance
     os.rdbuf()->pubsetbuf(buf.data(), static_cast<std::streamsize>(buf.size()));
     
+    // Calculate total_length from input text length minus start position
+    uint64_t total_length = text.length() - start_pos;
+    
     // Stream factors directly to file without collecting in memory
     size_t n = 0;
     detail::nolzss_multiple_dna_w_rc(text, [&](const Factor& f){
@@ -699,6 +720,7 @@ size_t write_factors_binary_file_multiple_dna_w_rc(const std::string& in_path, c
     footer.num_sequences = 0;  // Unknown for raw text files with multiple sequences
     footer.num_sentinels = 0;  // Cannot identify sentinels without preparation function
     footer.footer_size = sizeof(FactorFileFooter);
+    footer.total_length = total_length;
     
     // Write footer at the end
     os.write(reinterpret_cast<const char*>(&footer), sizeof(footer));
@@ -802,6 +824,9 @@ size_t factorize_dna_w_reference_seq_file(const std::string& reference_seq, cons
     // Get factors using the in-memory function
     std::vector<Factor> factors = factorize_dna_w_reference_seq(reference_seq, target_seq);
     
+    // Calculate total_length from target sequence length (what we're factorizing)
+    uint64_t total_length = target_seq.length();
+    
     // Write factors first
     for (const Factor& f : factors) {
         os.write(reinterpret_cast<const char*>(&f), sizeof(Factor));
@@ -813,6 +838,7 @@ size_t factorize_dna_w_reference_seq_file(const std::string& reference_seq, cons
     footer.num_sequences = 2;  // Reference + target sequences
     footer.num_sentinels = 1;  // One sentinel between ref and target (in factorized region)
     footer.footer_size = sizeof(FactorFileFooter);
+    footer.total_length = total_length;
     
     // Write footer at the end
     os.write(reinterpret_cast<const char*>(&footer), sizeof(footer));
@@ -911,6 +937,9 @@ size_t factorize_w_reference_file(const std::string& reference_seq, const std::s
     // Get factors using the in-memory function
     std::vector<Factor> factors = factorize_w_reference(reference_seq, target_seq);
     
+    // Calculate total_length from target sequence length (what we're factorizing)
+    uint64_t total_length = target_seq.length();
+    
     // Write factors first
     for (const Factor& f : factors) {
         os.write(reinterpret_cast<const char*>(&f), sizeof(Factor));
@@ -922,6 +951,7 @@ size_t factorize_w_reference_file(const std::string& reference_seq, const std::s
     footer.num_sequences = 2;  // Reference + target sequences
     footer.num_sentinels = 1;  // One sentinel between ref and target
     footer.footer_size = sizeof(FactorFileFooter);
+    footer.total_length = total_length;
     
     // Write footer at the end
     os.write(reinterpret_cast<const char*>(&footer), sizeof(footer));

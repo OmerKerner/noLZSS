@@ -130,9 +130,10 @@ def parallel_factorize(text: Union[str, bytes], num_threads: int = 0, start_pos:
             #     uint64_t num_sequences;
             #     uint64_t num_sentinels;
             #     uint64_t footer_size;
+            #     uint64_t total_length;
             # }
-            f.seek(-40, 2)  # Seek to 40 bytes before end
-            footer_data = f.read(40)  # 8 + 4 * 8 bytes
+            f.seek(-48, 2)  # Seek to 48 bytes before end (8 + 5*8 bytes)
+            footer_data = f.read(48)  # 8 + 5 * 8 bytes
             magic = footer_data[:8]
             if magic != b'noLZSSv2':
                 raise ValueError(f"Invalid file format: expected v2 footer, got {magic}")

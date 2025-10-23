@@ -84,7 +84,7 @@ def read_binary_factors(filepath):
         data = f.read()
     
     # Read footer from end
-    footer_start = len(data) - 40  # Footer is 40 bytes
+    footer_start = len(data) - 48  # Footer is 48 bytes (8 + 5*8 bytes)
     footer = data[footer_start:]
     
     magic = footer[0:8]
@@ -92,6 +92,7 @@ def read_binary_factors(filepath):
     num_sequences = struct.unpack('<Q', footer[16:24])[0]
     num_sentinels = struct.unpack('<Q', footer[24:32])[0]
     footer_size = struct.unpack('<Q', footer[32:40])[0]
+    total_length = struct.unpack('<Q', footer[40:48])[0]
     
     # Calculate where metadata starts
     metadata_start = len(data) - footer_size
