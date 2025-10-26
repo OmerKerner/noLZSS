@@ -123,7 +123,7 @@ class TestBatchFactorize:
                 test_fasta, shuffled_fasta, seed=42
             )
             
-            assert result == True, "Shuffle should succeed"
+            assert result, "Shuffle should succeed"
             assert shuffled_fasta.exists(), "Shuffled file should exist"
             
             # Parse the shuffled file
@@ -154,6 +154,8 @@ class TestBatchFactorize:
             print("Skipping reproducibility test - module not available")
             return
         
+        from noLZSS.genomics.fasta import _parse_fasta_content
+        
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_path = Path(temp_dir)
             
@@ -171,7 +173,6 @@ class TestBatchFactorize:
             batch_factorize.shuffle_fasta_sequences(test_fasta, shuffled2, seed=123)
             
             # Read both
-            from noLZSS.genomics.fasta import _parse_fasta_content
             with open(shuffled1, 'r') as f:
                 seqs1 = _parse_fasta_content(f.read())
             with open(shuffled2, 'r') as f:
@@ -231,7 +232,7 @@ class TestBatchFactorize:
                     output_plot_path=plot_path
                 )
                 
-                assert result == True, "Plot generation should succeed"
+                assert result, "Plot generation should succeed"
                 assert plot_path.exists(), "Plot file should exist"
                 assert plot_path.stat().st_size > 0, "Plot file should not be empty"
                 
