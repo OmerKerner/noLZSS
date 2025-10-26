@@ -2,6 +2,21 @@
 
 This directory contains comprehensive benchmarking tools for all noLZSS factorization functions, including core functions, DNA-specific functions, FASTA processing, and parallel computing implementations.
 
+## Prerequisites
+
+**Important**: Before running any benchmarks, you must build and install the noLZSS package:
+
+```bash
+# From the repository root
+pip install -e .
+```
+
+This builds the C++ extension which is required for all benchmarking functions. If you encounter errors about missing functions, rebuild with:
+
+```bash
+pip install -e . --no-build-isolation --force-reinstall
+```
+
 ## Quick Start
 
 ### Run All Benchmarks
