@@ -936,12 +936,13 @@ def print_summary(results: Dict[str, Any], logger: Optional[logging.Logger] = No
         
         total_threads = sum(j['num_threads'] for j in results['job_details'].values())
         total_memory = sum(j['memory_gb'] for j in results['job_details'].values())
+        total_time_minutes = sum(j['time_minutes'] for j in results['job_details'].values())
         avg_threads = total_threads / len(results['job_details'])
         avg_memory = total_memory / len(results['job_details'])
         
         logger.info(f"  Average threads per job: {avg_threads:.1f}")
         logger.info(f"  Average memory per job: {avg_memory:.1f} GB")
-        logger.info(f"  Total thread-hours requested: {total_threads * sum(j['time_minutes'] for j in results['job_details'].values()) / 60:.1f}")
+        logger.info(f"  Total thread-hours requested: {total_threads * total_time_minutes / 60:.1f}")
 
 
 def save_results(results: Dict[str, Any], output_dir: Path, logger: Optional[logging.Logger] = None):
