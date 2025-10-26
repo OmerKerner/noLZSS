@@ -279,7 +279,7 @@ def estimate_resources_fallback(
     base_time_seconds = (nucleotides / 1000) * 0.0005  # 0.5 ms per 1000 nt
     
     # Apply parallel speedup (conservative estimate)
-    speedup = min(num_threads, num_threads * 0.7)  # 70% efficiency
+    speedup = num_threads * 0.7  # 70% efficiency
     parallel_time_seconds = base_time_seconds / speedup
     
     # Memory: CST requires ~20-40 bytes per input character
