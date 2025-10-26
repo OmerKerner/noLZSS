@@ -267,6 +267,103 @@ def shuffle_fasta_sequences(input_path: Path, output_path: Path,
         return False
 
 
+def plot_factor_comparison(original_factors_file: Path, shuffled_factors_file: Path,
+                          output_plot_path: Path, 
+                          original_label: str = "Original",
+                          shuffled_label: str = "Shuffled Control",
+                          logger: Optional[logging.Logger] = None) -> bool:
+    """
+    Create a comparison plot showing original factors vs shuffled control.
+    
+    Creates a plot with:
+    - Solid line for original sequence factorization
+    - Dotted black line for shuffled sequence control
+    
+    Args:
+        original_factors_file: Path to binary factors file for original sequence
+        shuffled_factors_file: Path to binary factors file for shuffled sequence
+        output_plot_path: Path to save the comparison plot
+        original_label: Label for original data (default: "Original")
+        shuffled_label: Label for shuffled data (default: "Shuffled Control")
+        logger: Logger instance for progress reporting
+        
+    Returns:
+        True if plot created successfully, False otherwise
+    """
+    if logger is None:
+        logger = logging.getLogger(__name__)
+    
+    try:
+        import matplotlib.pyplot as plt
+    except ImportError:
+        logger.warning("matplotlib is required for plotting. Skipping plot generation.")
+        return False
+    
+    from ..utils import read_factors_binary_file
+    
+    try:
+        logger.info(f"Creating comparison plot: {output_plot_path}")
+        
+        # Read factors from binary files
+        original_factors = read_factors_binary_file(original_factors_file)
+        shuffled_factors = read_factors_binary_file(shuffled_factors_file)
+        
+        if not original_factors:
+            logger.error(f"No factors found in original file: {original_factors_file}")
+            return False
+        
+        if not shuffled_factors:
+            logger.error(f"No factors found in shuffled file: {shuffled_factors_file}")
+            return False
+        
+        # Compute cumulative lengths for both
+        def compute_cumulative(factors):
+            cumulative = []
+            current_sum = 0
+            for i, factor in enumerate(factors):
+                length = factor[1]  # (position, length, ref)
+                current_sum += length
+                cumulative.append((i + 1, current_sum))
+            return cumulative
+        
+        original_cumulative = compute_cumulative(original_factors)
+        shuffled_cumulative = compute_cumulative(shuffled_factors)
+        
+        # Extract x and y
+        orig_y, orig_x = zip(*original_cumulative) if original_cumulative else ([], [])
+        shuf_y, shuf_x = zip(*shuffled_cumulative) if shuffled_cumulative else ([], [])
+        
+        # Create plot
+        plt.figure(figsize=(10, 6))
+        
+        # Plot original (solid line)
+        plt.step(orig_x, orig_y, where='post', linewidth=1.5, label=original_label, color='blue')
+        plt.plot(orig_x, orig_y, linestyle='', marker='o', markersize=3, alpha=0.6, color='blue')
+        
+        # Plot shuffled control (dotted black line)
+        plt.step(shuf_x, shuf_y, where='post', linewidth=1.5, linestyle=':', 
+                label=shuffled_label, color='black')
+        plt.plot(shuf_x, shuf_y, linestyle='', marker='s', markersize=3, alpha=0.4, color='black')
+        
+        plt.xlabel('Cumulative Factor Length')
+        plt.ylabel('Factor Index')
+        plt.title('Factor Length Accumulation: Original vs Shuffled Control')
+        plt.legend()
+        plt.grid(True, alpha=0.3)
+        
+        # Save plot
+        output_plot_path.parent.mkdir(parents=True, exist_ok=True)
+        plt.savefig(output_plot_path, dpi=300, bbox_inches='tight')
+        plt.close()
+        
+        logger.info(f"Successfully created comparison plot: {output_plot_path}")
+        return True
+        
+    except Exception as e:
+        logger.error(f"Failed to create comparison plot: {e}")
+        return False
+
+
 
 
 
@@ -790,6 +887,42 @@ def process_with_shuffle_analysis(file_list: List[str], output_dir: Path, mode: 
         else:
             logger.warning("No shuffled files to process")
             shuffled_results = {}
+        
+        # Generate comparison plots
+        if shuffled_results:
+            logger.info("Generating comparison plots...")
+            plots_dir = output_dir / "comparison_plots"
+            plots_dir.mkdir(parents=True, exist_ok=True)
+            
+            # For each original file that has a shuffled counterpart, create a comparison plot
+            for shuffled_path, original_path in shuffled_file_mapping.items():
+                # Get the base name to find the corresponding output files
+                shuffled_local_path = Path(shuffled_path)
+                base_name = shuffled_local_path.stem.replace('_shuffled', '')
+                
+                # Construct paths to the binary factor files
+                # We need to check each mode that was processed
+                for mode_name in ['with_reverse_complement', 'without_reverse_complement']:
+                    original_bin_path = output_dir / mode_name / f"{base_name}.bin"
+                    shuffled_bin_path = shuffled_output_dir / mode_name / f"{shuffled_local_path.stem}.bin"
+                    
+                    if original_bin_path.exists() and shuffled_bin_path.exists():
+                        plot_path = plots_dir / f"{base_name}_{mode_name}_comparison.png"
+                        
+                        plot_label = mode_name.replace('_', ' ').title()
+                        success = plot_factor_comparison(
+                            original_factors_file=original_bin_path,
+                            shuffled_factors_file=shuffled_bin_path,
+                            output_plot_path=plot_path,
+                            original_label=f"Original ({plot_label})",
+                            shuffled_label="Shuffled Control",
+                            logger=logger
+                        )
+                        
+                        if success:
+                            logger.info(f"Created comparison plot: {plot_path}")
+                        else:
+                            logger.warning(f"Failed to create comparison plot for {base_name} ({mode_name})")
     
     finally:
         # Clean up temporary shuffle directory
