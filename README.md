@@ -73,6 +73,27 @@ for seq_id, factors in results:
     print(f"Sequence {seq_id}: {len(factors)} factors")
 ```
 
+### Batch Processing
+
+For processing multiple FASTA files, noLZSS provides batch scripts:
+
+```bash
+# Local batch processing with parallel execution
+python -m noLZSS.genomics.batch_factorize \
+    --file-list genomes.txt \
+    --output-dir results \
+    --mode both
+
+# LSF cluster batch processing with intelligent resource allocation
+python -m noLZSS.genomics.lsf_batch_factorize \
+    --file-list genomes.txt \
+    --output-dir results \
+    --queue normal \
+    --dry-run  # Preview before submitting
+```
+
+The LSF batch factorizer automatically estimates time, memory, and disk requirements based on benchmarking data, making it ideal for large-scale genomics workflows. See [docs/LSF_BATCH_GUIDE.md](docs/LSF_BATCH_GUIDE.md) for details.
+
 ## Algorithm Details
 
 The library implements the **Non-overlapping Lempel-Ziv-Storer-Szymanski (LZSS)** factorization algorithm using:
