@@ -15,19 +15,26 @@ from pathlib import Path
 # 3. Benchmark trends file (optional but recommended)
 
 def create_example_file_list():
-    """Create an example file list for demonstration."""
-    # In real usage, you would list actual FASTA files
+    """
+    Create an example file list for demonstration.
+    
+    Note: This is just for demonstration. In real usage, you would
+    create your own file list with actual FASTA file paths.
+    """
+    # Example file paths (replace with your actual files)
     example_files = [
         "/path/to/genome1.fasta",
         "/path/to/genome2.fasta",
         "/path/to/genome3.fasta",
     ]
     
-    # Create temporary file list
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
-        for file_path in example_files:
-            f.write(f"{file_path}\n")
-        return Path(f.name)
+    # Example content for a file list
+    example_content = "\n".join(example_files) + "\n"
+    
+    print("Example files.txt content:")
+    print(example_content)
+    
+    return example_content
 
 
 def example_basic_usage():
@@ -92,7 +99,7 @@ python -m noLZSS.genomics.lsf_batch_factorize \\
     --output-dir results \\
     --max-threads 12 \\
     --queue priority \\
-    --bsub-args -P project_name -G group_name \\
+    --bsub-args "-P" "project_name" "-G" "group_name" \\
     --safety-factor 2.0 \\
     --check-interval 120 \\
     --log-file batch_process.log
