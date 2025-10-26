@@ -14,12 +14,11 @@ from pathlib import Path
 # 2. Real FASTA files to process
 # 3. Benchmark trends file (optional but recommended)
 
-def create_example_file_list():
+def show_example_file_list_content():
     """
-    Create an example file list for demonstration.
+    Show example file list content for demonstration.
     
-    Note: This is just for demonstration. In real usage, you would
-    create your own file list with actual FASTA file paths.
+    In real usage, create a text file with one FASTA path per line.
     """
     # Example file paths (replace with your actual files)
     example_files = [
@@ -33,8 +32,10 @@ def create_example_file_list():
     
     print("Example files.txt content:")
     print(example_content)
-    
-    return example_content
+    print("\nTo create this file:")
+    print("  echo '/path/to/genome1.fasta' > files.txt")
+    print("  echo '/path/to/genome2.fasta' >> files.txt")
+    print("  echo '/path/to/genome3.fasta' >> files.txt")
 
 
 def example_basic_usage():
@@ -99,7 +100,7 @@ python -m noLZSS.genomics.lsf_batch_factorize \\
     --output-dir results \\
     --max-threads 12 \\
     --queue priority \\
-    --bsub-args "-P" "project_name" "-G" "group_name" \\
+    --bsub-args \"-P project_name\" \"-G group_name\" \\
     --safety-factor 2.0 \\
     --check-interval 120 \\
     --log-file batch_process.log
