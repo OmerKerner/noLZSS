@@ -875,7 +875,8 @@ def process_files_on_cluster(
             'num_threads': job['num_threads'],
             'memory_gb': job['memory_gb'],
             'time_minutes': job['time_minutes'],
-            'estimates': job['estimates']
+            'estimates': job['estimates'],
+            'error_log': str(job['error_log'])
         }
         
         results['job_details'][job_name] = job_result
