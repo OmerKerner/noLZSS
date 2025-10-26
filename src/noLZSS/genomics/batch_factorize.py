@@ -958,6 +958,9 @@ Examples:
   
   # Process remote files with custom download directory
   python -m noLZSS.genomics.batch_factorize --file-list urls.txt --output-dir results --download-dir downloads --mode without_reverse_complement
+  
+  # Process files with shuffle analysis (creates shuffled controls and comparison plots)
+  python -m noLZSS.genomics.batch_factorize file.fasta --output-dir results --mode with_reverse_complement --shuffle-analysis --shuffle-seed 42
         """
     )
     
