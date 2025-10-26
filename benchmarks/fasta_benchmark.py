@@ -33,6 +33,22 @@ try:
     import noLZSS._noLZSS as cpp
 except ImportError:
     print("Error: C++ extension not available. Please build the package first.")
+    print("Run: pip install -e .")
+    exit(1)
+
+# Verify all required functions are available
+REQUIRED_FUNCTIONS = [
+    'factorize_fasta_multiple_dna_w_rc',
+    'factorize_fasta_multiple_dna_no_rc',
+    'write_factors_binary_file_fasta_multiple_dna_w_rc',
+    'write_factors_binary_file_fasta_multiple_dna_no_rc',
+]
+
+missing_functions = [func for func in REQUIRED_FUNCTIONS if not hasattr(cpp, func)]
+if missing_functions:
+    print(f"Error: C++ extension is missing required functions: {', '.join(missing_functions)}")
+    print("This usually means the package needs to be rebuilt.")
+    print("Run: pip install -e . --no-build-isolation --force-reinstall")
     exit(1)
 
 
