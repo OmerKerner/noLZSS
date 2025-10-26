@@ -10,6 +10,7 @@ import argparse
 import gzip
 import logging
 import os
+import random
 import sys
 import tempfile
 import time
@@ -25,6 +26,7 @@ from .._noLZSS import (
     write_factors_binary_file_fasta_multiple_dna_w_rc,
     write_factors_binary_file_fasta_multiple_dna_no_rc,
 )
+from .fasta import _parse_fasta_content
 
 
 class BatchFactorizeError(NoLZSSError):
@@ -199,6 +201,167 @@ def download_file(url: str, output_path: Path, max_retries: int = 3,
                 logger.error(f"Failed to download {url} after {max_retries} attempts")
     
     return False
+
+
+def shuffle_fasta_sequences(input_path: Path, output_path: Path, 
+                            seed: Optional[int] = None,
+                            logger: Optional[logging.Logger] = None) -> bool:
+    """
+    Create a shuffled version of a FASTA file.
+    
+    Randomizes each sequence separately while maintaining original headers.
+    This is useful for creating control datasets for statistical analysis.
+    
+    Args:
+        input_path: Path to input FASTA file
+        output_path: Path to output shuffled FASTA file
+        seed: Random seed for reproducibility (optional)
+        logger: Logger instance for progress reporting
+        
+    Returns:
+        True if shuffling successful, False otherwise
+    """
+    if logger is None:
+        logger = logging.getLogger(__name__)
+    
+    try:
+        logger.info(f"Creating shuffled version of {input_path}")
+        
+        # Read the FASTA file
+        with open(input_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+        
+        # Parse FASTA content
+        sequences = _parse_fasta_content(content)
+        
+        if not sequences:
+            logger.error(f"No sequences found in {input_path}")
+            return False
+        
+        # Set random seed if provided
+        if seed is not None:
+            random.seed(seed)
+        
+        # Create output directory if needed
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        # Write shuffled sequences
+        with open(output_path, 'w', encoding='utf-8') as f:
+            for seq_id, sequence in sequences.items():
+                # Shuffle the sequence
+                seq_list = list(sequence)
+                random.shuffle(seq_list)
+                shuffled_seq = ''.join(seq_list)
+                
+                # Write with original header
+                f.write(f">{seq_id}\n")
+                # Write in lines of 80 characters (standard FASTA format)
+                for i in range(0, len(shuffled_seq), 80):
+                    f.write(shuffled_seq[i:i+80] + '\n')
+        
+        logger.info(f"Successfully created shuffled FASTA at {output_path}")
+        return True
+        
+    except Exception as e:
+        logger.error(f"Failed to shuffle {input_path}: {e}")
+        return False
+
+
+def plot_factor_comparison(original_factors_file: Path, shuffled_factors_file: Path,
+                          output_plot_path: Path, 
+                          original_label: str = "Original",
+                          shuffled_label: str = "Shuffled Control",
+                          logger: Optional[logging.Logger] = None) -> bool:
+    """
+    Create a comparison plot showing original factors vs shuffled control.
+    
+    Creates a plot with:
+    - Solid line for original sequence factorization
+    - Dotted black line for shuffled sequence control
+    
+    Args:
+        original_factors_file: Path to binary factors file for original sequence
+        shuffled_factors_file: Path to binary factors file for shuffled sequence
+        output_plot_path: Path to save the comparison plot
+        original_label: Label for original data (default: "Original")
+        shuffled_label: Label for shuffled data (default: "Shuffled Control")
+        logger: Logger instance for progress reporting
+        
+    Returns:
+        True if plot created successfully, False otherwise
+    """
+    if logger is None:
+        logger = logging.getLogger(__name__)
+    
+    try:
+        import matplotlib.pyplot as plt
+    except ImportError:
+        logger.warning("matplotlib is required for plotting. Skipping plot generation.")
+        return False
+    
+    from ..utils import read_factors_binary_file
+    
+    try:
+        logger.info(f"Creating comparison plot: {output_plot_path}")
+        
+        # Read factors from binary files
+        original_factors = read_factors_binary_file(original_factors_file)
+        shuffled_factors = read_factors_binary_file(shuffled_factors_file)
+        
+        if not original_factors:
+            logger.error(f"No factors found in original file: {original_factors_file}")
+            return False
+        
+        if not shuffled_factors:
+            logger.error(f"No factors found in shuffled file: {shuffled_factors_file}")
+            return False
+        
+        # Compute cumulative lengths for both
+        def compute_cumulative(factors):
+            cumulative = []
+            current_sum = 0
+            for i, factor in enumerate(factors):
+                length = factor[1]  # (position, length, ref)
+                current_sum += length
+                cumulative.append((i + 1, current_sum))
+            return cumulative
+        
+        original_cumulative = compute_cumulative(original_factors)
+        shuffled_cumulative = compute_cumulative(shuffled_factors)
+        
+        # Extract x and y
+        orig_y, orig_x = zip(*original_cumulative) if original_cumulative else ([], [])
+        shuf_y, shuf_x = zip(*shuffled_cumulative) if shuffled_cumulative else ([], [])
+        
+        # Create plot
+        plt.figure(figsize=(10, 6))
+        
+        # Plot original (solid line)
+        plt.step(orig_x, orig_y, where='post', linewidth=1.5, label=original_label, color='blue')
+        plt.plot(orig_x, orig_y, linestyle='', marker='o', markersize=3, alpha=0.6, color='blue')
+        
+        # Plot shuffled control (dotted black line)
+        plt.step(shuf_x, shuf_y, where='post', linewidth=1.5, linestyle=':', 
+                label=shuffled_label, color='black')
+        plt.plot(shuf_x, shuf_y, linestyle='', marker='s', markersize=3, alpha=0.4, color='black')
+        
+        plt.xlabel('Cumulative Factor Length')
+        plt.ylabel('Factor Index')
+        plt.title('Factor Length Accumulation: Original vs Shuffled Control')
+        plt.legend()
+        plt.grid(True, alpha=0.3)
+        
+        # Save plot
+        output_plot_path.parent.mkdir(parents=True, exist_ok=True)
+        plt.savefig(output_plot_path, dpi=300, bbox_inches='tight')
+        plt.close()
+        
+        logger.info(f"Successfully created comparison plot: {output_plot_path}")
+        return True
+        
+    except Exception as e:
+        logger.error(f"Failed to create comparison plot: {e}")
+        return False
 
 
 
@@ -615,6 +778,171 @@ def print_summary(results: Dict[str, Dict[str, bool]], logger: Optional[logging.
                 logger.info(f"  {file_path}: failed modes: {failed_modes}")
 
 
+def process_with_shuffle_analysis(file_list: List[str], output_dir: Path, mode: str,
+                                  download_dir: Optional[Path] = None, skip_existing: bool = True,
+                                  max_retries: int = 3, max_workers: Optional[int] = None,
+                                  shuffle_seed: Optional[int] = None,
+                                  logger: Optional[logging.Logger] = None) -> Dict[str, Dict[str, any]]:
+    """
+    Process files with shuffle analysis: create shuffled versions, factorize both, and prepare for plotting.
+    
+    Args:
+        file_list: List of file paths or URLs
+        output_dir: Base output directory
+        mode: Factorization mode
+        download_dir: Directory for downloaded files (uses temp if None)
+        skip_existing: Whether to skip existing output files
+        max_retries: Maximum download retry attempts
+        max_workers: Maximum number of worker threads/processes (None = auto)
+        shuffle_seed: Random seed for shuffling (for reproducibility)
+        logger: Logger instance
+        
+    Returns:
+        Dictionary with original and shuffled factorization results
+    """
+    if logger is None:
+        logger = logging.getLogger(__name__)
+    
+    # Create a subdirectory for shuffled files
+    shuffled_dir = output_dir / "shuffled_sequences"
+    shuffled_dir.mkdir(parents=True, exist_ok=True)
+    
+    # First, process the original files
+    logger.info("Processing original FASTA files...")
+    original_results = process_file_list(
+        file_list=file_list,
+        output_dir=output_dir,
+        mode=mode,
+        download_dir=download_dir,
+        skip_existing=skip_existing,
+        max_retries=max_retries,
+        max_workers=max_workers,
+        logger=logger
+    )
+    
+    # Now create and process shuffled versions
+    logger.info("Creating and processing shuffled versions...")
+    shuffled_file_list = []
+    shuffled_file_mapping = {}  # Maps shuffled path to original path
+    
+    # Use temporary directory for shuffled files
+    temp_shuffle_dir = Path(tempfile.mkdtemp(prefix="shuffled_fasta_"))
+    
+    try:
+        # Download original files if needed and create shuffled versions
+        for file_path in file_list:
+            # Determine local path for the original file
+            if is_url(file_path):
+                # For URLs, we need to download first
+                file_name = Path(urllib.parse.urlparse(file_path).path).name
+                if download_dir:
+                    local_path = download_dir / file_name
+                else:
+                    # Download to temp directory
+                    local_path = temp_shuffle_dir / file_name
+                    if not local_path.exists():
+                        success = download_file(file_path, local_path, max_retries=max_retries, logger=logger)
+                        if not success:
+                            logger.warning(f"Skipping shuffle for {file_path} - download failed")
+                            continue
+            else:
+                local_path = Path(file_path)
+                if not local_path.exists():
+                    logger.warning(f"Skipping shuffle for {file_path} - file not found")
+                    continue
+            
+            # Create shuffled version
+            base_name = local_path.stem
+            shuffled_path = temp_shuffle_dir / f"{base_name}_shuffled.fasta"
+            
+            # Check if shuffled version already exists
+            if skip_existing and shuffled_path.exists():
+                logger.info(f"Shuffled version already exists: {shuffled_path}")
+            else:
+                success = shuffle_fasta_sequences(local_path, shuffled_path, seed=shuffle_seed, logger=logger)
+                if not success:
+                    logger.warning(f"Failed to create shuffled version of {file_path}")
+                    continue
+            
+            shuffled_file_list.append(str(shuffled_path))
+            shuffled_file_mapping[str(shuffled_path)] = file_path
+        
+        # Process shuffled files
+        if shuffled_file_list:
+            # Create separate output directory for shuffled factorizations
+            shuffled_output_dir = output_dir / "shuffled"
+            shuffled_output_dir.mkdir(parents=True, exist_ok=True)
+            
+            logger.info(f"Factorizing {len(shuffled_file_list)} shuffled files...")
+            shuffled_results = process_file_list(
+                file_list=shuffled_file_list,
+                output_dir=shuffled_output_dir,
+                mode=mode,
+                download_dir=None,  # Files are already local
+                skip_existing=skip_existing,
+                max_retries=max_retries,
+                max_workers=max_workers,
+                logger=logger
+            )
+        else:
+            logger.warning("No shuffled files to process")
+            shuffled_results = {}
+        
+        # Generate comparison plots
+        if shuffled_results:
+            logger.info("Generating comparison plots...")
+            plots_dir = output_dir / "comparison_plots"
+            plots_dir.mkdir(parents=True, exist_ok=True)
+            
+            # For each original file that has a shuffled counterpart, create a comparison plot
+            for shuffled_path, original_path in shuffled_file_mapping.items():
+                # Get the base name to find the corresponding output files
+                shuffled_local_path = Path(shuffled_path)
+                base_name = shuffled_local_path.stem.replace('_shuffled', '')
+                
+                # Construct paths to the binary factor files
+                # We need to check each mode that was processed
+                for mode_name in ['with_reverse_complement', 'without_reverse_complement']:
+                    original_bin_path = output_dir / mode_name / f"{base_name}.bin"
+                    shuffled_bin_path = shuffled_output_dir / mode_name / f"{shuffled_local_path.stem}.bin"
+                    
+                    if original_bin_path.exists() and shuffled_bin_path.exists():
+                        plot_path = plots_dir / f"{base_name}_{mode_name}_comparison.png"
+                        
+                        plot_label = mode_name.replace('_', ' ').title()
+                        success = plot_factor_comparison(
+                            original_factors_file=original_bin_path,
+                            shuffled_factors_file=shuffled_bin_path,
+                            output_plot_path=plot_path,
+                            original_label=f"Original ({plot_label})",
+                            shuffled_label="Shuffled Control",
+                            logger=logger
+                        )
+                        
+                        if success:
+                            logger.info(f"Created comparison plot: {plot_path}")
+                        else:
+                            logger.warning(f"Failed to create comparison plot for {base_name} ({mode_name})")
+    
+    finally:
+        # Clean up temporary shuffle directory
+        try:
+            import shutil
+            shutil.rmtree(temp_shuffle_dir)
+            logger.debug(f"Cleaned up temporary shuffle directory: {temp_shuffle_dir}")
+        except OSError:
+            logger.warning(f"Failed to clean up temporary directory: {temp_shuffle_dir}")
+    
+    # Combine results
+    combined_results = {
+        'original': original_results,
+        'shuffled': shuffled_results,
+        'mapping': shuffled_file_mapping
+    }
+    
+    return combined_results
+
+
 def main():
     """Main entry point for the batch factorization script."""
     parser = argparse.ArgumentParser(
@@ -630,6 +958,9 @@ Examples:
   
   # Process remote files with custom download directory
   python -m noLZSS.genomics.batch_factorize --file-list urls.txt --output-dir results --download-dir downloads --mode without_reverse_complement
+  
+  # Process files with shuffle analysis (creates shuffled controls and comparison plots)
+  python -m noLZSS.genomics.batch_factorize file.fasta --output-dir results --mode with_reverse_complement --shuffle-analysis --shuffle-seed 42
         """
     )
     
@@ -673,6 +1004,14 @@ Examples:
         "--max-workers", type=int,
         help="Maximum number of parallel workers for downloads and factorization (default: CPU count)"
     )
+    parser.add_argument(
+        "--shuffle-analysis", action="store_true",
+        help="Create shuffled versions of sequences as controls, factorize them, and include in plots"
+    )
+    parser.add_argument(
+        "--shuffle-seed", type=int, default=None,
+        help="Random seed for shuffling (for reproducibility)"
+    )
     
     # Logging configuration
     parser.add_argument(
@@ -704,29 +1043,65 @@ Examples:
         logger.info(f"Mode: {args.mode}")
         logger.info(f"Output directory: {args.output_dir}")
         
-        # Process files
-        results = process_file_list(
-            file_list=file_list,
-            output_dir=args.output_dir,
-            mode=args.mode,
-            download_dir=args.download_dir,
-            skip_existing=not args.force,
-            max_retries=args.max_retries,
-            max_workers=args.max_workers,
-            logger=logger
-        )
-        
-        # Print summary
-        print_summary(results, logger)
-        
-        # Exit with appropriate code
-        failed_count = sum(1 for r in results.values() if "error" in r or not all(r.values()))
-        if failed_count > 0:
-            logger.warning(f"Completed with {failed_count} failures")
-            sys.exit(1)
+        # Process files (with or without shuffle analysis)
+        if args.shuffle_analysis:
+            logger.info("Shuffle analysis enabled - will create and factorize shuffled controls")
+            combined_results = process_with_shuffle_analysis(
+                file_list=file_list,
+                output_dir=args.output_dir,
+                mode=args.mode,
+                download_dir=args.download_dir,
+                skip_existing=not args.force,
+                max_retries=args.max_retries,
+                max_workers=args.max_workers,
+                shuffle_seed=args.shuffle_seed,
+                logger=logger
+            )
+            
+            # Print summaries for both original and shuffled
+            logger.info("\n=== ORIGINAL FILES SUMMARY ===")
+            print_summary(combined_results['original'], logger)
+            
+            logger.info("\n=== SHUFFLED FILES SUMMARY ===")
+            print_summary(combined_results['shuffled'], logger)
+            
+            # Exit with appropriate code
+            original_failed = sum(1 for r in combined_results['original'].values() 
+                                 if "error" in r or not all(r.values()))
+            shuffled_failed = sum(1 for r in combined_results['shuffled'].values() 
+                                 if "error" in r or not all(r.values()))
+            total_failed = original_failed + shuffled_failed
+            
+            if total_failed > 0:
+                logger.warning(f"Completed with {total_failed} failures "
+                             f"({original_failed} original, {shuffled_failed} shuffled)")
+                sys.exit(1)
+            else:
+                logger.info("All files (original and shuffled) processed successfully")
+                sys.exit(0)
         else:
-            logger.info("All files processed successfully")
-            sys.exit(0)
+            results = process_file_list(
+                file_list=file_list,
+                output_dir=args.output_dir,
+                mode=args.mode,
+                download_dir=args.download_dir,
+                skip_existing=not args.force,
+                max_retries=args.max_retries,
+                max_workers=args.max_workers,
+                logger=logger
+            )
+            
+            # Print summary
+            print_summary(results, logger)
+            
+            # Exit with appropriate code
+            failed_count = sum(1 for r in results.values() if "error" in r or not all(r.values()))
+            if failed_count > 0:
+                logger.warning(f"Completed with {failed_count} failures")
+                sys.exit(1)
+            else:
+                logger.info("All files processed successfully")
+                sys.exit(0)
             
     except BatchFactorizeError as e:
         logger.error(f"Batch factorization error: {e}")
