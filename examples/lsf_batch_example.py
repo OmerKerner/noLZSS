@@ -14,6 +14,11 @@ def create_example_files(output_dir: Path):
     """Create example FASTA files for demonstration."""
     output_dir.mkdir(parents=True, exist_ok=True)
     
+    # Constants for sequence generation
+    MEDIUM_SEQUENCE_REPEATS = 30  # ~1 kbp
+    LARGE_SEQUENCE_REPEATS = 300  # ~10 kbp
+    LARGE_FILE_SCAFFOLD_COUNT = 10
+    
     # Create sample FASTA files of different sizes
     files = []
     
@@ -29,7 +34,7 @@ def create_example_files(output_dir: Path):
     # Medium file (~1 kbp)
     medium_file = output_dir / "medium_genome.fasta"
     with open(medium_file, 'w') as f:
-        sequence = "ATCGATCGATCGATCGATCGATCGATCGATCG" * 30  # ~1 kb
+        sequence = "ATCGATCGATCGATCGATCGATCGATCGATCG" * MEDIUM_SEQUENCE_REPEATS
         f.write(">chromosome1\n")
         f.write(sequence + "\n")
     files.append(medium_file)
@@ -37,8 +42,8 @@ def create_example_files(output_dir: Path):
     # Large file (~10 kbp)
     large_file = output_dir / "large_genome.fasta"
     with open(large_file, 'w') as f:
-        sequence = "ATCGATCGATCGATCGATCGATCGATCGATCG" * 300  # ~10 kb
-        for i in range(10):
+        sequence = "ATCGATCGATCGATCGATCGATCGATCGATCG" * LARGE_SEQUENCE_REPEATS
+        for i in range(LARGE_FILE_SCAFFOLD_COUNT):
             f.write(f">scaffold_{i}\n")
             f.write(sequence + "\n")
     files.append(large_file)
