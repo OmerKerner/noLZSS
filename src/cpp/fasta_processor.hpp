@@ -268,46 +268,46 @@ FastaPerSequenceFactorizationResult factorize_fasta_dna_w_rc_per_sequence(const 
 FastaPerSequenceFactorizationResult factorize_fasta_dna_no_rc_per_sequence(const std::string& fasta_path);
 
 /**
- * @brief Writes factors from per-sequence DNA factorization with reverse complement to binary file.
+ * @brief Writes factors from per-sequence DNA factorization with reverse complement to separate binary files.
  *
  * Reads a FASTA file, factorizes each sequence independently with reverse complement awareness,
- * and writes the results to a binary output file with metadata.
+ * and writes each sequence's factors to a separate binary output file. File names include the sequence ID.
  *
  * @param fasta_path Path to input FASTA file containing DNA sequences
- * @param out_path Path to output file where binary factors will be written
+ * @param out_dir Path to output directory where binary factor files will be written
  * @return Total number of factors written across all sequences
  *
  * @throws std::runtime_error If FASTA file cannot be opened or contains no valid sequences
  * @throws std::invalid_argument If invalid nucleotides found
  *
- * @note Binary format: per-sequence factors + metadata footer
+ * @note Creates separate binary file for each sequence: <out_dir>/<seq_id>.bin
+ * @note Binary format per file: factors + metadata footer
  * @note Only A, C, T, G nucleotides are allowed (case insensitive)
- * @note This function overwrites the output file if it exists
  * @note Reverse complement matches are supported during factorization
- * @warning Ensure sufficient disk space for the output file
+ * @warning Ensure sufficient disk space for the output files
  */
-size_t write_factors_binary_file_fasta_dna_w_rc_per_sequence(const std::string& fasta_path, const std::string& out_path);
+size_t write_factors_binary_file_fasta_dna_w_rc_per_sequence(const std::string& fasta_path, const std::string& out_dir);
 
 /**
- * @brief Writes factors from per-sequence DNA factorization without reverse complement to binary file.
+ * @brief Writes factors from per-sequence DNA factorization without reverse complement to separate binary files.
  *
  * Reads a FASTA file, factorizes each sequence independently without reverse complement awareness,
- * and writes the results to a binary output file with metadata.
+ * and writes each sequence's factors to a separate binary output file. File names include the sequence ID.
  *
  * @param fasta_path Path to input FASTA file containing DNA sequences
- * @param out_path Path to output file where binary factors will be written
+ * @param out_dir Path to output directory where binary factor files will be written
  * @return Total number of factors written across all sequences
  *
  * @throws std::runtime_error If FASTA file cannot be opened or contains no valid sequences
  * @throws std::invalid_argument If invalid nucleotides found
  *
- * @note Binary format: per-sequence factors + metadata footer
+ * @note Creates separate binary file for each sequence: <out_dir>/<seq_id>.bin
+ * @note Binary format per file: factors + metadata footer
  * @note Only A, C, T, G nucleotides are allowed (case insensitive)
- * @note This function overwrites the output file if it exists
  * @note Reverse complement matches are NOT supported during factorization
- * @warning Ensure sufficient disk space for the output file
+ * @warning Ensure sufficient disk space for the output files
  */
-size_t write_factors_binary_file_fasta_dna_no_rc_per_sequence(const std::string& fasta_path, const std::string& out_path);
+size_t write_factors_binary_file_fasta_dna_no_rc_per_sequence(const std::string& fasta_path, const std::string& out_dir);
 
 /**
  * @brief Counts total factors from per-sequence DNA factorization with reverse complement.

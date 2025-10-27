@@ -247,46 +247,42 @@ size_t parallel_write_factors_dna_w_reference_fasta_files_to_binary(
 }
 
 /**
- * @brief Helper function to write per-sequence factors metadata to binary file
+ * @brief Helper function to write single sequence factors to binary file
  * 
- * This writes metadata for per-sequence factorization results, including
- * sequence boundaries (factor counts per sequence) and sequence IDs.
+ * Writes factors for a single sequence to a binary file with metadata footer.
  * 
- * @param os Output stream positioned after all factors
- * @param sequence_ids Vector of sequence ID strings
- * @param factors_per_sequence Vector containing factor count for each sequence
- * @param total_factor_count Total number of factors across all sequences
- * @param total_length Sum of all factor lengths
+ * @param factors Vector of factors for the sequence
+ * @param sequence_id Sequence identifier
+ * @param output_path Path to output file
  */
-static void write_per_sequence_metadata(std::ofstream& os,
-                                        const std::vector<std::string>& sequence_ids,
-                                        const std::vector<size_t>& factors_per_sequence,
-                                        size_t total_factor_count,
-                                        uint64_t total_length) {
-    // Calculate footer size
-    size_t names_size = 0;
-    for (const auto& name : sequence_ids) {
-        names_size += name.length() + 1;  // +1 for null terminator
+static void write_single_sequence_factors(const std::vector<Factor>& factors,
+                                          const std::string& sequence_id,
+                                          const std::string& output_path) {
+    std::ofstream os(output_path, std::ios::binary | std::ios::trunc);
+    if (!os) {
+        throw std::runtime_error("Cannot create output file: " + output_path);
     }
     
-    size_t footer_size = sizeof(FactorFileFooter) + names_size + 
-                        factors_per_sequence.size() * sizeof(uint64_t);
-    
-    // Write sequence names
-    for (const auto& name : sequence_ids) {
-        os.write(name.c_str(), name.length() + 1);  // Include null terminator
+    // Write factors
+    uint64_t total_length = 0;
+    for (const auto& f : factors) {
+        os.write(reinterpret_cast<const char*>(&f), sizeof(Factor));
+        total_length += f.length;
     }
     
-    // Write factors per sequence (as boundary markers)
-    for (size_t count : factors_per_sequence) {
-        uint64_t count_u64 = static_cast<uint64_t>(count);
-        os.write(reinterpret_cast<const char*>(&count_u64), sizeof(count_u64));
-    }
+    // Write sequence ID
+    os.write(sequence_id.c_str(), sequence_id.length() + 1);  // Include null terminator
     
-    // Write footer at the end
+    // Write factor count for this sequence
+    uint64_t factor_count = static_cast<uint64_t>(factors.size());
+    os.write(reinterpret_cast<const char*>(&factor_count), sizeof(factor_count));
+    
+    // Write footer
+    size_t footer_size = sizeof(FactorFileFooter) + sequence_id.length() + 1 + sizeof(uint64_t);
+    
     FactorFileFooter footer;
-    footer.num_factors = total_factor_count;
-    footer.num_sequences = sequence_ids.size();
+    footer.num_factors = factors.size();
+    footer.num_sequences = 1;  // Single sequence per file
     footer.num_sentinels = 0;  // No sentinels in per-sequence factorization
     footer.footer_size = footer_size;
     footer.total_length = total_length;
@@ -294,9 +290,29 @@ static void write_per_sequence_metadata(std::ofstream& os,
     os.write(reinterpret_cast<const char*>(&footer), sizeof(footer));
 }
 
+/**
+ * @brief Helper function to sanitize sequence ID for use in filename
+ * 
+ * Replaces characters that are problematic in filenames with underscores.
+ * 
+ * @param seq_id Original sequence ID
+ * @return Sanitized sequence ID safe for filenames
+ */
+static std::string sanitize_filename(const std::string& seq_id) {
+    std::string safe_name = seq_id;
+    for (char& c : safe_name) {
+        // Replace problematic characters with underscore
+        if (c == '/' || c == '\\' || c == ':' || c == '*' || c == '?' || 
+            c == '"' || c == '<' || c == '>' || c == '|' || c == ' ') {
+            c = '_';
+        }
+    }
+    return safe_name;
+}
+
 size_t parallel_write_factors_binary_file_fasta_dna_w_rc_per_sequence(
     const std::string& fasta_path,
-    const std::string& out_path,
+    const std::string& out_dir,
     size_t num_threads) {
     
     // Parse FASTA file into individual sequences with IDs
@@ -310,16 +326,12 @@ size_t parallel_write_factors_binary_file_fasta_dna_w_rc_per_sequence(
     }
     num_threads = std::min(num_threads, num_sequences);
     
-    // Prepare output file
-    std::ofstream os(out_path, std::ios::binary | std::ios::trunc);
-    if (!os) {
-        throw std::runtime_error("Cannot create output file: " + out_path);
-    }
+    // Create output directory if it doesn't exist
+    fs::create_directories(out_dir);
     
     // Storage for results
     std::vector<std::vector<Factor>> all_factors(num_sequences);
-    std::vector<size_t> factors_per_sequence(num_sequences);
-    std::mutex write_mutex;
+    std::atomic<size_t> total_factor_count(0);
     
     // Parallel processing of sequences
     if (num_threads == 1) {
@@ -328,7 +340,13 @@ size_t parallel_write_factors_binary_file_fasta_dna_w_rc_per_sequence(
             std::vector<std::string> single_seq = {parse_result.sequences[i]};
             PreparedSequenceResult prep_result = prepare_multiple_dna_sequences_w_rc(single_seq);
             all_factors[i] = factorize_multiple_dna_w_rc(prep_result.prepared_string);
-            factors_per_sequence[i] = all_factors[i].size();
+            
+            // Write to separate file
+            std::string safe_id = sanitize_filename(parse_result.sequence_ids[i]);
+            std::string output_path = out_dir + "/" + safe_id + ".bin";
+            write_single_sequence_factors(all_factors[i], parse_result.sequence_ids[i], output_path);
+            
+            total_factor_count += all_factors[i].size();
         }
     } else {
         // Parallel processing
@@ -345,9 +363,12 @@ size_t parallel_write_factors_binary_file_fasta_dna_w_rc_per_sequence(
                     PreparedSequenceResult prep_result = prepare_multiple_dna_sequences_w_rc(single_seq);
                     std::vector<Factor> factors = factorize_multiple_dna_w_rc(prep_result.prepared_string);
                     
-                    std::lock_guard<std::mutex> lock(write_mutex);
-                    all_factors[seq_idx] = std::move(factors);
-                    factors_per_sequence[seq_idx] = all_factors[seq_idx].size();
+                    // Write to separate file
+                    std::string safe_id = sanitize_filename(parse_result.sequence_ids[seq_idx]);
+                    std::string output_path = out_dir + "/" + safe_id + ".bin";
+                    write_single_sequence_factors(factors, parse_result.sequence_ids[seq_idx], output_path);
+                    
+                    total_factor_count += factors.size();
                 }
             });
         }
@@ -357,28 +378,12 @@ size_t parallel_write_factors_binary_file_fasta_dna_w_rc_per_sequence(
         }
     }
     
-    // Write all factors sequentially and compute total length
-    size_t total_factor_count = 0;
-    uint64_t total_length = 0;
-    
-    for (const auto& factors : all_factors) {
-        for (const auto& f : factors) {
-            os.write(reinterpret_cast<const char*>(&f), sizeof(Factor));
-            total_length += f.length;
-        }
-        total_factor_count += factors.size();
-    }
-    
-    // Write metadata footer
-    write_per_sequence_metadata(os, parse_result.sequence_ids, factors_per_sequence, 
-                                total_factor_count, total_length);
-    
-    return total_factor_count;
+    return total_factor_count.load();
 }
 
 size_t parallel_write_factors_binary_file_fasta_dna_no_rc_per_sequence(
     const std::string& fasta_path,
-    const std::string& out_path,
+    const std::string& out_dir,
     size_t num_threads) {
     
     // Parse FASTA file into individual sequences with IDs
@@ -392,16 +397,12 @@ size_t parallel_write_factors_binary_file_fasta_dna_no_rc_per_sequence(
     }
     num_threads = std::min(num_threads, num_sequences);
     
-    // Prepare output file
-    std::ofstream os(out_path, std::ios::binary | std::ios::trunc);
-    if (!os) {
-        throw std::runtime_error("Cannot create output file: " + out_path);
-    }
+    // Create output directory if it doesn't exist
+    fs::create_directories(out_dir);
     
     // Storage for results
     std::vector<std::vector<Factor>> all_factors(num_sequences);
-    std::vector<size_t> factors_per_sequence(num_sequences);
-    std::mutex write_mutex;
+    std::atomic<size_t> total_factor_count(0);
     
     // Parallel processing of sequences
     if (num_threads == 1) {
@@ -412,7 +413,13 @@ size_t parallel_write_factors_binary_file_fasta_dna_no_rc_per_sequence(
             // Remove the sentinel at the end
             std::string seq_without_sentinel = prep_result.prepared_string.substr(0, prep_result.prepared_string.length() - 1);
             all_factors[i] = factorize(seq_without_sentinel);
-            factors_per_sequence[i] = all_factors[i].size();
+            
+            // Write to separate file
+            std::string safe_id = sanitize_filename(parse_result.sequence_ids[i]);
+            std::string output_path = out_dir + "/" + safe_id + ".bin";
+            write_single_sequence_factors(all_factors[i], parse_result.sequence_ids[i], output_path);
+            
+            total_factor_count += all_factors[i].size();
         }
     } else {
         // Parallel processing
@@ -431,9 +438,12 @@ size_t parallel_write_factors_binary_file_fasta_dna_no_rc_per_sequence(
                     std::string seq_without_sentinel = prep_result.prepared_string.substr(0, prep_result.prepared_string.length() - 1);
                     std::vector<Factor> factors = factorize(seq_without_sentinel);
                     
-                    std::lock_guard<std::mutex> lock(write_mutex);
-                    all_factors[seq_idx] = std::move(factors);
-                    factors_per_sequence[seq_idx] = all_factors[seq_idx].size();
+                    // Write to separate file
+                    std::string safe_id = sanitize_filename(parse_result.sequence_ids[seq_idx]);
+                    std::string output_path = out_dir + "/" + safe_id + ".bin";
+                    write_single_sequence_factors(factors, parse_result.sequence_ids[seq_idx], output_path);
+                    
+                    total_factor_count += factors.size();
                 }
             });
         }
@@ -443,23 +453,7 @@ size_t parallel_write_factors_binary_file_fasta_dna_no_rc_per_sequence(
         }
     }
     
-    // Write all factors sequentially and compute total length
-    size_t total_factor_count = 0;
-    uint64_t total_length = 0;
-    
-    for (const auto& factors : all_factors) {
-        for (const auto& f : factors) {
-            os.write(reinterpret_cast<const char*>(&f), sizeof(Factor));
-            total_length += f.length;
-        }
-        total_factor_count += factors.size();
-    }
-    
-    // Write metadata footer
-    write_per_sequence_metadata(os, parse_result.sequence_ids, factors_per_sequence, 
-                                total_factor_count, total_length);
-    
-    return total_factor_count;
+    return total_factor_count.load();
 }
 
 } // namespace noLZSS

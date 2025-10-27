@@ -353,6 +353,7 @@ size_t write_factors_dna_w_reference_fasta_files_to_binary(const std::string& re
  * @brief Factorizes each DNA sequence in a FASTA file separately with reverse complement awareness.
  */
 FastaPerSequenceFactorizationResult factorize_fasta_dna_w_rc_per_sequence(const std::string& fasta_path) {
+    // Delegate to parallel version with 1 thread
     // Parse FASTA file into individual sequences with IDs
     FastaParseResult parse_result = parse_fasta_sequences_and_ids(fasta_path);
     
@@ -360,17 +361,11 @@ FastaPerSequenceFactorizationResult factorize_fasta_dna_w_rc_per_sequence(const 
     result.sequence_ids = std::move(parse_result.sequence_ids);
     result.per_sequence_factors.reserve(parse_result.sequences.size());
     
-    // Factorize each sequence independently
+    // Process sequentially (equivalent to parallel with 1 thread, but no threading overhead)
     for (const auto& sequence : parse_result.sequences) {
-        // Prepare single DNA sequence with reverse complement
-        // We use the multi-sequence function with a single element
         std::vector<std::string> single_seq = {sequence};
         PreparedSequenceResult prep_result = prepare_multiple_dna_sequences_w_rc(single_seq);
-        
-        // Factorize the prepared sequence using factorize_multiple_dna_w_rc
-        // which expects an already-prepared string
         std::vector<Factor> factors = factorize_multiple_dna_w_rc(prep_result.prepared_string);
-        
         result.per_sequence_factors.push_back(std::move(factors));
     }
     
@@ -381,6 +376,7 @@ FastaPerSequenceFactorizationResult factorize_fasta_dna_w_rc_per_sequence(const 
  * @brief Factorizes each DNA sequence in a FASTA file separately without reverse complement awareness.
  */
 FastaPerSequenceFactorizationResult factorize_fasta_dna_no_rc_per_sequence(const std::string& fasta_path) {
+    // Delegate to parallel version with 1 thread
     // Parse FASTA file into individual sequences with IDs
     FastaParseResult parse_result = parse_fasta_sequences_and_ids(fasta_path);
     
@@ -388,18 +384,12 @@ FastaPerSequenceFactorizationResult factorize_fasta_dna_no_rc_per_sequence(const
     result.sequence_ids = std::move(parse_result.sequence_ids);
     result.per_sequence_factors.reserve(parse_result.sequences.size());
     
-    // Factorize each sequence independently
+    // Process sequentially (equivalent to parallel with 1 thread, but no threading overhead)
     for (const auto& sequence : parse_result.sequences) {
-        // Prepare single DNA sequence (no reverse complement)
-        // We use the multi-sequence function with a single element
         std::vector<std::string> single_seq = {sequence};
         PreparedSequenceResult prep_result = prepare_multiple_dna_sequences_no_rc(single_seq);
-        
-        // Factorize the sequence directly
-        // Remove the sentinel at the end before factorizing
         std::string seq_without_sentinel = prep_result.prepared_string.substr(0, prep_result.prepared_string.length() - 1);
         std::vector<Factor> factors = factorize(seq_without_sentinel);
-        
         result.per_sequence_factors.push_back(std::move(factors));
     }
     
@@ -407,19 +397,19 @@ FastaPerSequenceFactorizationResult factorize_fasta_dna_no_rc_per_sequence(const
 }
 
 /**
- * @brief Writes factors from per-sequence DNA factorization with reverse complement to binary file.
+ * @brief Writes factors from per-sequence DNA factorization with reverse complement to separate binary files.
  */
-size_t write_factors_binary_file_fasta_dna_w_rc_per_sequence(const std::string& fasta_path, const std::string& out_path) {
+size_t write_factors_binary_file_fasta_dna_w_rc_per_sequence(const std::string& fasta_path, const std::string& out_dir) {
     // Delegate to parallel version with 1 thread
-    return parallel_write_factors_binary_file_fasta_dna_w_rc_per_sequence(fasta_path, out_path, 1);
+    return parallel_write_factors_binary_file_fasta_dna_w_rc_per_sequence(fasta_path, out_dir, 1);
 }
 
 /**
- * @brief Writes factors from per-sequence DNA factorization without reverse complement to binary file.
+ * @brief Writes factors from per-sequence DNA factorization without reverse complement to separate binary files.
  */
-size_t write_factors_binary_file_fasta_dna_no_rc_per_sequence(const std::string& fasta_path, const std::string& out_path) {
+size_t write_factors_binary_file_fasta_dna_no_rc_per_sequence(const std::string& fasta_path, const std::string& out_dir) {
     // Delegate to parallel version with 1 thread
-    return parallel_write_factors_binary_file_fasta_dna_no_rc_per_sequence(fasta_path, out_path, 1);
+    return parallel_write_factors_binary_file_fasta_dna_no_rc_per_sequence(fasta_path, out_dir, 1);
 }
 
 /**

@@ -1275,19 +1275,19 @@ Note:
 )doc");
 
     m.def("write_factors_binary_file_fasta_dna_w_rc_per_sequence", 
-        [](const std::string& fasta_path, const std::string& out_path) {
+        [](const std::string& fasta_path, const std::string& out_dir) {
         py::gil_scoped_release release;
-        size_t count = noLZSS::write_factors_binary_file_fasta_dna_w_rc_per_sequence(fasta_path, out_path);
+        size_t count = noLZSS::write_factors_binary_file_fasta_dna_w_rc_per_sequence(fasta_path, out_dir);
         py::gil_scoped_acquire acquire;
         return count;
-    }, py::arg("fasta_path"), py::arg("out_path"), R"doc(Write factors from per-sequence DNA factorization with reverse complement to binary file.
+    }, py::arg("fasta_path"), py::arg("out_dir"), R"doc(Write factors from per-sequence DNA factorization with reverse complement to separate binary files.
 
 Reads a FASTA file, factorizes each sequence independently with reverse complement awareness,
-and writes the results to a binary output file with metadata.
+and writes each sequence's factors to a separate binary file. File names include the sequence ID.
 
 Args:
     fasta_path: Path to input FASTA file containing DNA sequences
-    out_path: Path to output file where binary factors will be written
+    out_dir: Path to output directory where binary factor files will be written
 
 Returns:
     int: Total number of factors written across all sequences
@@ -1297,26 +1297,26 @@ Raises:
     ValueError: If invalid nucleotides found
 
 Note:
-    - Binary format: per-sequence factors + metadata footer
+    - Creates separate binary file for each sequence: <out_dir>/<seq_id>.bin
+    - Binary format per file: factors + metadata footer
     - Only A, C, T, G nucleotides are allowed (case insensitive)
-    - This function overwrites the output file if it exists
     - Reverse complement matches are supported during factorization
 )doc");
 
     m.def("write_factors_binary_file_fasta_dna_no_rc_per_sequence", 
-        [](const std::string& fasta_path, const std::string& out_path) {
+        [](const std::string& fasta_path, const std::string& out_dir) {
         py::gil_scoped_release release;
-        size_t count = noLZSS::write_factors_binary_file_fasta_dna_no_rc_per_sequence(fasta_path, out_path);
+        size_t count = noLZSS::write_factors_binary_file_fasta_dna_no_rc_per_sequence(fasta_path, out_dir);
         py::gil_scoped_acquire acquire;
         return count;
-    }, py::arg("fasta_path"), py::arg("out_path"), R"doc(Write factors from per-sequence DNA factorization without reverse complement to binary file.
+    }, py::arg("fasta_path"), py::arg("out_dir"), R"doc(Write factors from per-sequence DNA factorization without reverse complement to separate binary files.
 
 Reads a FASTA file, factorizes each sequence independently without reverse complement awareness,
-and writes the results to a binary output file with metadata.
+and writes each sequence's factors to a separate binary file. File names include the sequence ID.
 
 Args:
     fasta_path: Path to input FASTA file containing DNA sequences
-    out_path: Path to output file where binary factors will be written
+    out_dir: Path to output directory where binary factor files will be written
 
 Returns:
     int: Total number of factors written across all sequences
@@ -1326,9 +1326,9 @@ Raises:
     ValueError: If invalid nucleotides found
 
 Note:
-    - Binary format: per-sequence factors + metadata footer
+    - Creates separate binary file for each sequence: <out_dir>/<seq_id>.bin
+    - Binary format per file: factors + metadata footer
     - Only A, C, T, G nucleotides are allowed (case insensitive)
-    - This function overwrites the output file if it exists
     - Reverse complement matches are NOT supported during factorization
 )doc");
 
@@ -1383,19 +1383,19 @@ Note:
 )doc");
 
     m.def("parallel_write_factors_binary_file_fasta_dna_w_rc_per_sequence", 
-        [](const std::string& fasta_path, const std::string& out_path, size_t num_threads) {
+        [](const std::string& fasta_path, const std::string& out_dir, size_t num_threads) {
         py::gil_scoped_release release;
-        size_t count = noLZSS::parallel_write_factors_binary_file_fasta_dna_w_rc_per_sequence(fasta_path, out_path, num_threads);
+        size_t count = noLZSS::parallel_write_factors_binary_file_fasta_dna_w_rc_per_sequence(fasta_path, out_dir, num_threads);
         py::gil_scoped_acquire acquire;
         return count;
-    }, py::arg("fasta_path"), py::arg("out_path"), py::arg("num_threads") = 0, R"doc(Parallel version of write_factors_binary_file_fasta_dna_w_rc_per_sequence.
+    }, py::arg("fasta_path"), py::arg("out_dir"), py::arg("num_threads") = 0, R"doc(Parallel version of write_factors_binary_file_fasta_dna_w_rc_per_sequence.
 
 Reads a FASTA file, factorizes each sequence independently with reverse complement
-awareness using parallel processing, and writes results to a binary output file.
+awareness using parallel processing, and writes each sequence to a separate binary file.
 
 Args:
     fasta_path: Path to input FASTA file containing DNA sequences
-    out_path: Path to output file where binary factors will be written
+    out_dir: Path to output directory where binary factor files will be written
     num_threads: Number of threads to use (0 = auto-detect based on sequence count)
 
 Returns:
@@ -1407,27 +1407,27 @@ Raises:
 
 Note:
     - Each sequence is factorized independently in parallel
-    - Binary format includes per-sequence factors with metadata footer
+    - Creates separate binary file for each sequence: <out_dir>/<seq_id>.bin
+    - Binary format per file: factors + metadata footer
     - Only A, C, T, G nucleotides are allowed (case insensitive)
-    - This function overwrites the output file if it exists
     - Reverse complement matches are supported during factorization
     - GIL is released during computation for better performance
 )doc");
 
     m.def("parallel_write_factors_binary_file_fasta_dna_no_rc_per_sequence", 
-        [](const std::string& fasta_path, const std::string& out_path, size_t num_threads) {
+        [](const std::string& fasta_path, const std::string& out_dir, size_t num_threads) {
         py::gil_scoped_release release;
-        size_t count = noLZSS::parallel_write_factors_binary_file_fasta_dna_no_rc_per_sequence(fasta_path, out_path, num_threads);
+        size_t count = noLZSS::parallel_write_factors_binary_file_fasta_dna_no_rc_per_sequence(fasta_path, out_dir, num_threads);
         py::gil_scoped_acquire acquire;
         return count;
-    }, py::arg("fasta_path"), py::arg("out_path"), py::arg("num_threads") = 0, R"doc(Parallel version of write_factors_binary_file_fasta_dna_no_rc_per_sequence.
+    }, py::arg("fasta_path"), py::arg("out_dir"), py::arg("num_threads") = 0, R"doc(Parallel version of write_factors_binary_file_fasta_dna_no_rc_per_sequence.
 
 Reads a FASTA file, factorizes each sequence independently without reverse complement
-awareness using parallel processing, and writes results to a binary output file.
+awareness using parallel processing, and writes each sequence to a separate binary file.
 
 Args:
     fasta_path: Path to input FASTA file containing DNA sequences
-    out_path: Path to output file where binary factors will be written
+    out_dir: Path to output directory where binary factor files will be written
     num_threads: Number of threads to use (0 = auto-detect based on sequence count)
 
 Returns:
@@ -1439,9 +1439,9 @@ Raises:
 
 Note:
     - Each sequence is factorized independently in parallel
-    - Binary format includes per-sequence factors with metadata footer
+    - Creates separate binary file for each sequence: <out_dir>/<seq_id>.bin
+    - Binary format per file: factors + metadata footer
     - Only A, C, T, G nucleotides are allowed (case insensitive)
-    - This function overwrites the output file if it exists
     - Reverse complement matches are NOT supported during factorization
     - GIL is released during computation for better performance
 )doc");

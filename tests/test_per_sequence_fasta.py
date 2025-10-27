@@ -40,12 +40,12 @@ except ImportError as e:
 RESOURCES_DIR = Path(__file__).parent / "resources"
 
 
-def read_per_sequence_binary_factors(filepath):
+def read_single_sequence_binary_factors(filepath):
     """
-    Read factors from a per-sequence binary file and return them along with metadata.
+    Read factors from a single sequence binary file and return them along with metadata.
     
     Returns:
-        tuple: (factors_list, num_sequences, sequence_ids, factors_per_sequence)
+        tuple: (factors_list, sequence_id, num_factors)
     """
     with open(filepath, 'rb') as f:
         # Read all data
@@ -57,7 +57,7 @@ def read_per_sequence_binary_factors(filepath):
     
     magic = footer[0:8]
     num_factors = struct.unpack('<Q', footer[8:16])[0]
-    num_sequences = struct.unpack('<Q', footer[16:24])[0]
+    num_sequences = struct.unpack('<Q', footer[16:24])[0]  # Should be 1 for single sequence
     num_sentinels = struct.unpack('<Q', footer[24:32])[0]  # Should be 0 for per-sequence
     footer_size = struct.unpack('<Q', footer[32:40])[0]
     total_length = struct.unpack('<Q', footer[40:48])[0]
@@ -76,24 +76,17 @@ def read_per_sequence_binary_factors(filepath):
         ref = struct.unpack('<Q', factor_data[16:24])[0]
         factors.append((start, length, ref))
     
-    # Read sequence IDs from metadata
-    sequence_ids = []
+    # Read sequence ID from metadata
     pos = metadata_start
-    for _ in range(num_sequences):
-        end = data.find(b'\x00', pos)
-        seq_id = data[pos:end].decode('utf-8')
-        sequence_ids.append(seq_id)
-        pos = end + 1
+    end = data.find(b'\x00', pos)
+    seq_id = data[pos:end].decode('utf-8')
+    pos = end + 1
     
-    # Read factors per sequence (boundary markers)
-    factors_per_sequence = []
-    for i in range(num_sequences):
-        count_data = data[pos:pos + 8]
-        count = struct.unpack('<Q', count_data)[0]
-        factors_per_sequence.append(count)
-        pos += 8
+    # Read factor count for this sequence
+    count_data = data[pos:pos + 8]
+    factor_count = struct.unpack('<Q', count_data)[0]
     
-    return factors, num_sequences, sequence_ids, factors_per_sequence
+    return factors, seq_id, factor_count
 
 
 class TestPerSequenceFastaFactorization:
@@ -203,68 +196,67 @@ class TestPerSequenceFastaFactorization:
         print(f"Count correct: {actual_count} total factors")
     
     def test_write_binary_w_rc(self):
-        """Test writing per-sequence factors to binary file with RC."""
+        """Test writing per-sequence factors to separate binary files with RC."""
         if not CPP_AVAILABLE:
             print("Skipping test - C++ extension not available")
             return
         
         fasta_path = str(RESOURCES_DIR / "short_dna1.fasta")
         
-        with tempfile.NamedTemporaryFile(suffix='.bin', delete=False) as tmp:
-            output_path = tmp.name
-        
-        try:
-            # Write to binary file
-            count = write_factors_binary_file_fasta_dna_w_rc_per_sequence(fasta_path, output_path)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Write to separate binary files
+            count = write_factors_binary_file_fasta_dna_w_rc_per_sequence(fasta_path, tmpdir)
             
             assert count > 0, "Should write at least one factor"
-            assert os.path.exists(output_path), "Output file should be created"
-            assert os.path.getsize(output_path) > 0, "Output file should not be empty"
             
-            # Read and validate
-            factors, num_seqs, seq_ids, factors_per_seq = read_per_sequence_binary_factors(output_path)
+            # Check that output files were created
+            output_files = list(Path(tmpdir).glob("*.bin"))
+            assert len(output_files) > 0, "Should create at least one output file"
             
-            assert len(factors) == count, "Factor count should match"
-            assert num_seqs > 0, "Should have at least one sequence"
-            assert len(seq_ids) == num_seqs, "Sequence ID count should match"
-            assert len(factors_per_seq) == num_seqs, "Should have factor count for each sequence"
-            assert sum(factors_per_seq) == count, "Sum of per-sequence factors should equal total"
+            # Read and validate each file
+            total_factors_read = 0
+            for output_file in output_files:
+                factors, seq_id, factor_count = read_single_sequence_binary_factors(str(output_file))
+                
+                assert len(factors) == factor_count, "Factor count should match"
+                assert seq_id, "Should have sequence ID"
+                assert factor_count > 0, "Each sequence should have at least one factor"
+                
+                total_factors_read += factor_count
             
-            print(f"Successfully wrote {count} factors across {num_seqs} sequences")
+            assert total_factors_read == count, f"Total factors read ({total_factors_read}) should match count returned ({count})"
             
-        finally:
-            if os.path.exists(output_path):
-                os.remove(output_path)
+            print(f"Successfully wrote {count} factors across {len(output_files)} sequence files")
     
     def test_write_binary_no_rc(self):
-        """Test writing per-sequence factors to binary file without RC."""
+        """Test writing per-sequence factors to separate binary files without RC."""
         if not CPP_AVAILABLE:
             print("Skipping test - C++ extension not available")
             return
         
         fasta_path = str(RESOURCES_DIR / "short_dna1.fasta")
         
-        with tempfile.NamedTemporaryFile(suffix='.bin', delete=False) as tmp:
-            output_path = tmp.name
-        
-        try:
-            # Write to binary file
-            count = write_factors_binary_file_fasta_dna_no_rc_per_sequence(fasta_path, output_path)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Write to separate binary files
+            count = write_factors_binary_file_fasta_dna_no_rc_per_sequence(fasta_path, tmpdir)
             
             assert count > 0, "Should write at least one factor"
-            assert os.path.exists(output_path), "Output file should be created"
             
-            # Read and validate
-            factors, num_seqs, seq_ids, factors_per_seq = read_per_sequence_binary_factors(output_path)
+            # Check that output files were created
+            output_files = list(Path(tmpdir).glob("*.bin"))
+            assert len(output_files) > 0, "Should create at least one output file"
             
-            assert len(factors) == count, "Factor count should match"
-            assert sum(factors_per_seq) == count, "Sum of per-sequence factors should equal total"
+            # Read and validate each file
+            total_factors_read = 0
+            for output_file in output_files:
+                factors, seq_id, factor_count = read_single_sequence_binary_factors(str(output_file))
+                
+                assert len(factors) == factor_count, "Factor count should match"
+                total_factors_read += factor_count
             
-            print(f"Successfully wrote {count} factors across {num_seqs} sequences (no RC)")
+            assert total_factors_read == count, f"Total factors read should match count returned"
             
-        finally:
-            if os.path.exists(output_path):
-                os.remove(output_path)
+            print(f"Successfully wrote {count} factors across {len(output_files)} sequence files (no RC)")
     
     def test_parallel_write_sequential(self):
         """Test parallel write with num_threads=1 (sequential)."""
@@ -274,28 +266,23 @@ class TestPerSequenceFastaFactorization:
         
         fasta_path = str(RESOURCES_DIR / "short_dna1.fasta")
         
-        with tempfile.NamedTemporaryFile(suffix='.bin', delete=False) as tmp:
-            output_path = tmp.name
-        
-        try:
+        with tempfile.TemporaryDirectory() as tmpdir:
             # Test with 1 thread
             count = parallel_write_factors_binary_file_fasta_dna_w_rc_per_sequence(
-                fasta_path, output_path, 1
+                fasta_path, tmpdir, 1
             )
             
             assert count > 0, "Should produce at least one factor"
-            assert os.path.exists(output_path), "Output file should be created"
             
-            # Read and validate
-            factors, num_seqs, _, factors_per_seq = read_per_sequence_binary_factors(output_path)
-            assert len(factors) == count
-            assert sum(factors_per_seq) == count
+            # Check output files
+            output_files = list(Path(tmpdir).glob("*.bin"))
+            assert len(output_files) > 0, "Should create output files"
+            
+            # Validate total count
+            total_count = sum(read_single_sequence_binary_factors(str(f))[2] for f in output_files)
+            assert total_count == count, f"Total count should match"
             
             print(f"Parallel (1 thread) wrote {count} factors")
-            
-        finally:
-            if os.path.exists(output_path):
-                os.remove(output_path)
     
     def test_parallel_write_multithreaded(self):
         """Test parallel write with multiple threads."""
@@ -305,27 +292,19 @@ class TestPerSequenceFastaFactorization:
         
         fasta_path = str(RESOURCES_DIR / "short_dna1.fasta")
         
-        with tempfile.NamedTemporaryFile(suffix='.bin', delete=False) as tmp:
-            output_path = tmp.name
-        
-        try:
+        with tempfile.TemporaryDirectory() as tmpdir:
             # Test with 2 threads
             count = parallel_write_factors_binary_file_fasta_dna_w_rc_per_sequence(
-                fasta_path, output_path, 2
+                fasta_path, tmpdir, 2
             )
             
             assert count > 0, "Should produce at least one factor"
             
-            # Read and validate
-            factors, _, _, factors_per_seq = read_per_sequence_binary_factors(output_path)
-            assert len(factors) == count
-            assert sum(factors_per_seq) == count
+            # Check output files
+            output_files = list(Path(tmpdir).glob("*.bin"))
+            assert len(output_files) > 0, "Should create output files"
             
             print(f"Parallel (2 threads) wrote {count} factors")
-            
-        finally:
-            if os.path.exists(output_path):
-                os.remove(output_path)
     
     def test_consistency_sequential_vs_parallel(self):
         """Test that sequential and parallel produce identical results."""
@@ -335,41 +314,37 @@ class TestPerSequenceFastaFactorization:
         
         fasta_path = str(RESOURCES_DIR / "short_dna1.fasta")
         
-        with tempfile.NamedTemporaryFile(suffix='.bin', delete=False) as tmp1:
-            seq_output = tmp1.name
-        with tempfile.NamedTemporaryFile(suffix='.bin', delete=False) as tmp2:
-            par_output = tmp2.name
-        
-        try:
-            # Sequential
-            seq_count = parallel_write_factors_binary_file_fasta_dna_no_rc_per_sequence(
-                fasta_path, seq_output, 1
-            )
-            
-            # Parallel
-            par_count = parallel_write_factors_binary_file_fasta_dna_no_rc_per_sequence(
-                fasta_path, par_output, 2
-            )
-            
-            # Should produce same count
-            assert seq_count == par_count, "Sequential and parallel should produce same factor count"
-            
-            # Read both outputs
-            seq_factors, _, _, seq_factors_per = read_per_sequence_binary_factors(seq_output)
-            par_factors, _, _, par_factors_per = read_per_sequence_binary_factors(par_output)
-            
-            # Should have identical factors and boundaries
-            assert len(seq_factors) == len(par_factors)
-            assert seq_factors == par_factors, "Sequential and parallel should produce identical factors"
-            assert seq_factors_per == par_factors_per, "Per-sequence boundaries should match"
-            
-            print(f"Sequential and parallel are consistent: {seq_count} factors")
-            
-        finally:
-            if os.path.exists(seq_output):
-                os.remove(seq_output)
-            if os.path.exists(par_output):
-                os.remove(par_output)
+        with tempfile.TemporaryDirectory() as seq_dir:
+            with tempfile.TemporaryDirectory() as par_dir:
+                # Sequential
+                seq_count = parallel_write_factors_binary_file_fasta_dna_no_rc_per_sequence(
+                    fasta_path, seq_dir, 1
+                )
+                
+                # Parallel
+                par_count = parallel_write_factors_binary_file_fasta_dna_no_rc_per_sequence(
+                    fasta_path, par_dir, 2
+                )
+                
+                # Should produce same count
+                assert seq_count == par_count, "Sequential and parallel should produce same factor count"
+                
+                # Check that both created same number of files
+                seq_files = sorted(Path(seq_dir).glob("*.bin"))
+                par_files = sorted(Path(par_dir).glob("*.bin"))
+                
+                assert len(seq_files) == len(par_files), "Should create same number of files"
+                
+                # Compare each file pair
+                for seq_file, par_file in zip(seq_files, par_files):
+                    seq_factors, seq_id, seq_fc = read_single_sequence_binary_factors(str(seq_file))
+                    par_factors, par_id, par_fc = read_single_sequence_binary_factors(str(par_file))
+                    
+                    assert seq_id == par_id, "Sequence IDs should match"
+                    assert seq_fc == par_fc, "Factor counts should match"
+                    assert seq_factors == par_factors, "Factors should be identical"
+                
+                print(f"Sequential and parallel are consistent: {seq_count} factors")
     
     def test_per_sequence_independence(self):
         """Test that sequences are truly independent (no cross-sequence matches)."""
