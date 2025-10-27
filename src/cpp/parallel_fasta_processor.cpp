@@ -327,7 +327,7 @@ size_t parallel_write_factors_binary_file_fasta_dna_w_rc_per_sequence(
         for (size_t i = 0; i < num_sequences; ++i) {
             std::vector<std::string> single_seq = {parse_result.sequences[i]};
             PreparedSequenceResult prep_result = prepare_multiple_dna_sequences_w_rc(single_seq);
-            all_factors[i] = factorize_dna_w_rc(prep_result.prepared_string);
+            all_factors[i] = factorize_multiple_dna_w_rc(prep_result.prepared_string);
             factors_per_sequence[i] = all_factors[i].size();
         }
     } else {
@@ -343,7 +343,7 @@ size_t parallel_write_factors_binary_file_fasta_dna_w_rc_per_sequence(
                     
                     std::vector<std::string> single_seq = {parse_result.sequences[seq_idx]};
                     PreparedSequenceResult prep_result = prepare_multiple_dna_sequences_w_rc(single_seq);
-                    std::vector<Factor> factors = factorize_dna_w_rc(prep_result.prepared_string);
+                    std::vector<Factor> factors = factorize_multiple_dna_w_rc(prep_result.prepared_string);
                     
                     std::lock_guard<std::mutex> lock(write_mutex);
                     all_factors[seq_idx] = std::move(factors);

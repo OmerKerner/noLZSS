@@ -367,8 +367,9 @@ FastaPerSequenceFactorizationResult factorize_fasta_dna_w_rc_per_sequence(const 
         std::vector<std::string> single_seq = {sequence};
         PreparedSequenceResult prep_result = prepare_multiple_dna_sequences_w_rc(single_seq);
         
-        // Factorize the prepared sequence
-        std::vector<Factor> factors = factorize_dna_w_rc(prep_result.prepared_string);
+        // Factorize the prepared sequence using factorize_multiple_dna_w_rc
+        // which expects an already-prepared string
+        std::vector<Factor> factors = factorize_multiple_dna_w_rc(prep_result.prepared_string);
         
         result.per_sequence_factors.push_back(std::move(factors));
     }
@@ -436,8 +437,8 @@ size_t count_factors_fasta_dna_w_rc_per_sequence(const std::string& fasta_path) 
         std::vector<std::string> single_seq = {sequence};
         PreparedSequenceResult prep_result = prepare_multiple_dna_sequences_w_rc(single_seq);
         
-        // Count factors
-        total_count += count_factors_dna_w_rc(prep_result.prepared_string);
+        // Count factors using count_factors_multiple_dna_w_rc
+        total_count += count_factors_multiple_dna_w_rc(prep_result.prepared_string);
     }
     
     return total_count;
