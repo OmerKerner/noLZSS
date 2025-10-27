@@ -246,4 +246,210 @@ size_t parallel_write_factors_dna_w_reference_fasta_files_to_binary(
     return factor_count;
 }
 
+/**
+ * @brief Helper function to write single sequence factors to binary file
+ * 
+ * Writes factors for a single sequence to a binary file with metadata footer.
+ * 
+ * @param factors Vector of factors for the sequence
+ * @param sequence_id Sequence identifier
+ * @param output_path Path to output file
+ */
+static void write_single_sequence_factors(const std::vector<Factor>& factors,
+                                          const std::string& sequence_id,
+                                          const std::string& output_path) {
+    std::ofstream os(output_path, std::ios::binary | std::ios::trunc);
+    if (!os) {
+        throw std::runtime_error("Cannot create output file: " + output_path);
+    }
+    
+    // Write factors
+    uint64_t total_length = 0;
+    for (const auto& f : factors) {
+        os.write(reinterpret_cast<const char*>(&f), sizeof(Factor));
+        total_length += f.length;
+    }
+    
+    // Write sequence ID
+    os.write(sequence_id.c_str(), sequence_id.length() + 1);  // Include null terminator
+    
+    // Write footer
+    size_t footer_size = sizeof(FactorFileFooter) + sequence_id.length() + 1;
+    
+    FactorFileFooter footer;
+    footer.num_factors = factors.size();
+    footer.num_sequences = 1;  // Single sequence per file
+    footer.num_sentinels = 0;  // No sentinels in per-sequence factorization
+    footer.footer_size = footer_size;
+    footer.total_length = total_length;
+    
+    os.write(reinterpret_cast<const char*>(&footer), sizeof(footer));
+}
+
+/**
+ * @brief Helper function to sanitize sequence ID for use in filename
+ * 
+ * Replaces characters that are problematic in filenames with underscores.
+ * 
+ * @param seq_id Original sequence ID
+ * @return Sanitized sequence ID safe for filenames
+ */
+static std::string sanitize_filename(const std::string& seq_id) {
+    std::string safe_name = seq_id;
+    for (char& c : safe_name) {
+        // Replace problematic characters with underscore
+        if (c == '/' || c == '\\' || c == ':' || c == '*' || c == '?' || 
+            c == '"' || c == '<' || c == '>' || c == '|' || c == ' ') {
+            c = '_';
+        }
+    }
+    return safe_name;
+}
+
+size_t parallel_write_factors_binary_file_fasta_dna_w_rc_per_sequence(
+    const std::string& fasta_path,
+    const std::string& out_dir,
+    size_t num_threads) {
+    
+    // Parse FASTA file into individual sequences with IDs
+    FastaParseResult parse_result = parse_fasta_sequences_and_ids(fasta_path);
+    
+    size_t num_sequences = parse_result.sequences.size();
+    
+    // Determine actual number of threads to use
+    if (num_threads == 0) {
+        num_threads = std::min(num_sequences, static_cast<size_t>(std::thread::hardware_concurrency()));
+    }
+    num_threads = std::min(num_threads, num_sequences);
+    
+    // Create output directory if it doesn't exist
+    fs::create_directories(out_dir);
+    
+    // Storage for results
+    std::vector<std::vector<Factor>> all_factors(num_sequences);
+    std::atomic<size_t> total_factor_count(0);
+    
+    // Parallel processing of sequences
+    if (num_threads == 1) {
+        // Sequential processing
+        for (size_t i = 0; i < num_sequences; ++i) {
+            std::vector<std::string> single_seq = {parse_result.sequences[i]};
+            PreparedSequenceResult prep_result = prepare_multiple_dna_sequences_w_rc(single_seq);
+            all_factors[i] = factorize_multiple_dna_w_rc(prep_result.prepared_string);
+            
+            // Write to separate file
+            std::string safe_id = sanitize_filename(parse_result.sequence_ids[i]);
+            std::string output_path = out_dir + "/" + safe_id + ".bin";
+            write_single_sequence_factors(all_factors[i], parse_result.sequence_ids[i], output_path);
+            
+            total_factor_count.fetch_add(all_factors[i].size());
+        }
+    } else {
+        // Parallel processing
+        std::vector<std::thread> threads;
+        std::atomic<size_t> next_sequence(0);
+        
+        for (size_t t = 0; t < num_threads; ++t) {
+            threads.emplace_back([&]() {
+                while (true) {
+                    size_t seq_idx = next_sequence.fetch_add(1);
+                    if (seq_idx >= num_sequences) break;
+                    
+                    std::vector<std::string> single_seq = {parse_result.sequences[seq_idx]};
+                    PreparedSequenceResult prep_result = prepare_multiple_dna_sequences_w_rc(single_seq);
+                    std::vector<Factor> factors = factorize_multiple_dna_w_rc(prep_result.prepared_string);
+                    
+                    // Write to separate file
+                    std::string safe_id = sanitize_filename(parse_result.sequence_ids[seq_idx]);
+                    std::string output_path = out_dir + "/" + safe_id + ".bin";
+                    write_single_sequence_factors(factors, parse_result.sequence_ids[seq_idx], output_path);
+                    
+                    total_factor_count.fetch_add(factors.size());
+                }
+            });
+        }
+        
+        for (auto& thread : threads) {
+            thread.join();
+        }
+    }
+    
+    return total_factor_count.load();
+}
+
+size_t parallel_write_factors_binary_file_fasta_dna_no_rc_per_sequence(
+    const std::string& fasta_path,
+    const std::string& out_dir,
+    size_t num_threads) {
+    
+    // Parse FASTA file into individual sequences with IDs
+    FastaParseResult parse_result = parse_fasta_sequences_and_ids(fasta_path);
+    
+    size_t num_sequences = parse_result.sequences.size();
+    
+    // Determine actual number of threads to use
+    if (num_threads == 0) {
+        num_threads = std::min(num_sequences, static_cast<size_t>(std::thread::hardware_concurrency()));
+    }
+    num_threads = std::min(num_threads, num_sequences);
+    
+    // Create output directory if it doesn't exist
+    fs::create_directories(out_dir);
+    
+    // Storage for results
+    std::vector<std::vector<Factor>> all_factors(num_sequences);
+    std::atomic<size_t> total_factor_count(0);
+    
+    // Parallel processing of sequences
+    if (num_threads == 1) {
+        // Sequential processing
+        for (size_t i = 0; i < num_sequences; ++i) {
+            std::vector<std::string> single_seq = {parse_result.sequences[i]};
+            PreparedSequenceResult prep_result = prepare_multiple_dna_sequences_no_rc(single_seq);
+            // Remove the sentinel at the end
+            std::string seq_without_sentinel = prep_result.prepared_string.substr(0, prep_result.prepared_string.length() - 1);
+            all_factors[i] = factorize(seq_without_sentinel);
+            
+            // Write to separate file
+            std::string safe_id = sanitize_filename(parse_result.sequence_ids[i]);
+            std::string output_path = out_dir + "/" + safe_id + ".bin";
+            write_single_sequence_factors(all_factors[i], parse_result.sequence_ids[i], output_path);
+            
+            total_factor_count.fetch_add(all_factors[i].size());
+        }
+    } else {
+        // Parallel processing
+        std::vector<std::thread> threads;
+        std::atomic<size_t> next_sequence(0);
+        
+        for (size_t t = 0; t < num_threads; ++t) {
+            threads.emplace_back([&]() {
+                while (true) {
+                    size_t seq_idx = next_sequence.fetch_add(1);
+                    if (seq_idx >= num_sequences) break;
+                    
+                    std::vector<std::string> single_seq = {parse_result.sequences[seq_idx]};
+                    PreparedSequenceResult prep_result = prepare_multiple_dna_sequences_no_rc(single_seq);
+                    // Remove the sentinel at the end
+                    std::string seq_without_sentinel = prep_result.prepared_string.substr(0, prep_result.prepared_string.length() - 1);
+                    std::vector<Factor> factors = factorize(seq_without_sentinel);
+                    
+                    // Write to separate file
+                    std::string safe_id = sanitize_filename(parse_result.sequence_ids[seq_idx]);
+                    std::string output_path = out_dir + "/" + safe_id + ".bin";
+                    write_single_sequence_factors(factors, parse_result.sequence_ids[seq_idx], output_path);
+                    
+                    total_factor_count.fetch_add(factors.size());
+                }
+            });
+        }
+        
+        for (auto& thread : threads) {
+            thread.join();
+        }
+    }
+    
+    return total_factor_count.load();
+}
+
 } // namespace noLZSS
