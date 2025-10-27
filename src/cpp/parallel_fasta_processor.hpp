@@ -91,4 +91,58 @@ size_t parallel_write_factors_dna_w_reference_fasta_files_to_binary(
     size_t num_threads = 0
 );
 
+/**
+ * @brief Parallel version of write_factors_binary_file_fasta_dna_w_rc_per_sequence
+ * 
+ * Reads a FASTA file, factorizes each sequence independently with reverse complement
+ * awareness using parallel processing, and writes results to a binary output file.
+ * 
+ * @param fasta_path Path to input FASTA file containing DNA sequences
+ * @param out_path Path to output file where binary factors will be written
+ * @param num_threads Number of threads to use (0 = auto-detect based on sequence count)
+ * @return Total number of factors written across all sequences
+ * 
+ * @throws std::runtime_error If FASTA file cannot be opened or contains no valid sequences
+ * @throws std::invalid_argument If invalid nucleotides found
+ * 
+ * @note Each sequence is factorized independently in parallel
+ * @note Binary format includes per-sequence factors with metadata footer
+ * @note Only A, C, T, G nucleotides are allowed (case insensitive)
+ * @note This function overwrites the output file if it exists
+ * @note Reverse complement matches are supported during factorization
+ * @warning Ensure sufficient disk space for the output file
+ */
+size_t parallel_write_factors_binary_file_fasta_dna_w_rc_per_sequence(
+    const std::string& fasta_path,
+    const std::string& out_path,
+    size_t num_threads = 0
+);
+
+/**
+ * @brief Parallel version of write_factors_binary_file_fasta_dna_no_rc_per_sequence
+ * 
+ * Reads a FASTA file, factorizes each sequence independently without reverse complement
+ * awareness using parallel processing, and writes results to a binary output file.
+ * 
+ * @param fasta_path Path to input FASTA file containing DNA sequences
+ * @param out_path Path to output file where binary factors will be written
+ * @param num_threads Number of threads to use (0 = auto-detect based on sequence count)
+ * @return Total number of factors written across all sequences
+ * 
+ * @throws std::runtime_error If FASTA file cannot be opened or contains no valid sequences
+ * @throws std::invalid_argument If invalid nucleotides found
+ * 
+ * @note Each sequence is factorized independently in parallel
+ * @note Binary format includes per-sequence factors with metadata footer
+ * @note Only A, C, T, G nucleotides are allowed (case insensitive)
+ * @note This function overwrites the output file if it exists
+ * @note Reverse complement matches are NOT supported during factorization
+ * @warning Ensure sufficient disk space for the output file
+ */
+size_t parallel_write_factors_binary_file_fasta_dna_no_rc_per_sequence(
+    const std::string& fasta_path,
+    const std::string& out_path,
+    size_t num_threads = 0
+);
+
 } // namespace noLZSS

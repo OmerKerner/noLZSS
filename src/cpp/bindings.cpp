@@ -1169,6 +1169,283 @@ Note:
     - GIL is released during computation for better performance
 )doc");
 
+    // Per-sequence FASTA factorization (with reverse complement)
+    py::class_<noLZSS::FastaPerSequenceFactorizationResult>(m, "FastaPerSequenceFactorizationResult", 
+        "Result of per-sequence FASTA factorization containing factors for each sequence separately")
+        .def_readonly("per_sequence_factors", &noLZSS::FastaPerSequenceFactorizationResult::per_sequence_factors, 
+            "List of factor lists, one for each sequence")
+        .def_readonly("sequence_ids", &noLZSS::FastaPerSequenceFactorizationResult::sequence_ids, 
+            "List of sequence identifiers from FASTA headers");
+
+    m.def("factorize_fasta_dna_w_rc_per_sequence", [](const std::string& fasta_path) {
+        py::gil_scoped_release release;
+        auto result = noLZSS::factorize_fasta_dna_w_rc_per_sequence(fasta_path);
+        py::gil_scoped_acquire acquire;
+
+        // Convert per-sequence factors to Python lists
+        py::list per_seq_factors_list;
+        for (const auto& seq_factors : result.per_sequence_factors) {
+            py::list factors_list;
+            for (const auto& f : seq_factors) {
+                factors_list.append(py::make_tuple(f.start, f.length, f.ref & ~noLZSS::RC_MASK, noLZSS::is_rc(f.ref)));
+            }
+            per_seq_factors_list.append(factors_list);
+        }
+
+        // Convert sequence IDs to Python list
+        py::list sequence_ids_list;
+        for (const auto& seq_id : result.sequence_ids) {
+            sequence_ids_list.append(seq_id);
+        }
+
+        return py::make_tuple(per_seq_factors_list, sequence_ids_list);
+    }, py::arg("fasta_path"), R"doc(Factorize each DNA sequence in a FASTA file separately with reverse complement awareness.
+
+Unlike factorize_fasta_multiple_dna_w_rc which concatenates sequences with sentinels,
+this function factorizes each sequence independently. Each sequence gets its own
+compressed suffix tree and factorization, which avoids sentinel limitations and
+produces cleaner per-sequence results.
+
+Args:
+    fasta_path: Path to the FASTA file containing DNA sequences
+
+Returns:
+    Tuple of (per_sequence_factors, sequence_ids) where:
+    - per_sequence_factors: List of factor lists, one for each sequence. Each factor is (start, length, ref, is_rc)
+    - sequence_ids: List of sequence identifiers from FASTA headers
+
+Raises:
+    RuntimeError: If FASTA file cannot be opened or contains no valid sequences
+    ValueError: If invalid nucleotides found in sequences
+
+Note:
+    - Only A, C, T, G nucleotides are allowed (case insensitive)
+    - Sequences are converted to uppercase before factorization
+    - Reverse complement matches are supported during factorization
+    - Each sequence is factorized independently - no cross-sequence matches
+    - ref field has RC_MASK cleared. is_rc boolean indicates if this was a reverse complement match
+)doc");
+
+    m.def("factorize_fasta_dna_no_rc_per_sequence", [](const std::string& fasta_path) {
+        py::gil_scoped_release release;
+        auto result = noLZSS::factorize_fasta_dna_no_rc_per_sequence(fasta_path);
+        py::gil_scoped_acquire acquire;
+
+        // Convert per-sequence factors to Python lists
+        py::list per_seq_factors_list;
+        for (const auto& seq_factors : result.per_sequence_factors) {
+            py::list factors_list;
+            for (const auto& f : seq_factors) {
+                factors_list.append(py::make_tuple(f.start, f.length, f.ref & ~noLZSS::RC_MASK, noLZSS::is_rc(f.ref)));
+            }
+            per_seq_factors_list.append(factors_list);
+        }
+
+        // Convert sequence IDs to Python list
+        py::list sequence_ids_list;
+        for (const auto& seq_id : result.sequence_ids) {
+            sequence_ids_list.append(seq_id);
+        }
+
+        return py::make_tuple(per_seq_factors_list, sequence_ids_list);
+    }, py::arg("fasta_path"), R"doc(Factorize each DNA sequence in a FASTA file separately without reverse complement awareness.
+
+Unlike factorize_fasta_multiple_dna_no_rc which concatenates sequences with sentinels,
+this function factorizes each sequence independently. Each sequence gets its own
+compressed suffix tree and factorization, which avoids sentinel limitations and
+produces cleaner per-sequence results.
+
+Args:
+    fasta_path: Path to the FASTA file containing DNA sequences
+
+Returns:
+    Tuple of (per_sequence_factors, sequence_ids) where:
+    - per_sequence_factors: List of factor lists, one for each sequence. Each factor is (start, length, ref, is_rc)
+    - sequence_ids: List of sequence identifiers from FASTA headers
+
+Raises:
+    RuntimeError: If FASTA file cannot be opened or contains no valid sequences
+    ValueError: If invalid nucleotides found in sequences
+
+Note:
+    - Only A, C, T, G nucleotides are allowed (case insensitive)
+    - Sequences are converted to uppercase before factorization
+    - Reverse complement matches are NOT supported during factorization
+    - Each sequence is factorized independently - no cross-sequence matches
+)doc");
+
+    m.def("write_factors_binary_file_fasta_dna_w_rc_per_sequence", 
+        [](const std::string& fasta_path, const std::string& out_path) {
+        py::gil_scoped_release release;
+        size_t count = noLZSS::write_factors_binary_file_fasta_dna_w_rc_per_sequence(fasta_path, out_path);
+        py::gil_scoped_acquire acquire;
+        return count;
+    }, py::arg("fasta_path"), py::arg("out_path"), R"doc(Write factors from per-sequence DNA factorization with reverse complement to binary file.
+
+Reads a FASTA file, factorizes each sequence independently with reverse complement awareness,
+and writes the results to a binary output file with metadata.
+
+Args:
+    fasta_path: Path to input FASTA file containing DNA sequences
+    out_path: Path to output file where binary factors will be written
+
+Returns:
+    int: Total number of factors written across all sequences
+
+Raises:
+    RuntimeError: If FASTA file cannot be opened or contains no valid sequences
+    ValueError: If invalid nucleotides found
+
+Note:
+    - Binary format: per-sequence factors + metadata footer
+    - Only A, C, T, G nucleotides are allowed (case insensitive)
+    - This function overwrites the output file if it exists
+    - Reverse complement matches are supported during factorization
+)doc");
+
+    m.def("write_factors_binary_file_fasta_dna_no_rc_per_sequence", 
+        [](const std::string& fasta_path, const std::string& out_path) {
+        py::gil_scoped_release release;
+        size_t count = noLZSS::write_factors_binary_file_fasta_dna_no_rc_per_sequence(fasta_path, out_path);
+        py::gil_scoped_acquire acquire;
+        return count;
+    }, py::arg("fasta_path"), py::arg("out_path"), R"doc(Write factors from per-sequence DNA factorization without reverse complement to binary file.
+
+Reads a FASTA file, factorizes each sequence independently without reverse complement awareness,
+and writes the results to a binary output file with metadata.
+
+Args:
+    fasta_path: Path to input FASTA file containing DNA sequences
+    out_path: Path to output file where binary factors will be written
+
+Returns:
+    int: Total number of factors written across all sequences
+
+Raises:
+    RuntimeError: If FASTA file cannot be opened or contains no valid sequences
+    ValueError: If invalid nucleotides found
+
+Note:
+    - Binary format: per-sequence factors + metadata footer
+    - Only A, C, T, G nucleotides are allowed (case insensitive)
+    - This function overwrites the output file if it exists
+    - Reverse complement matches are NOT supported during factorization
+)doc");
+
+    m.def("count_factors_fasta_dna_w_rc_per_sequence", [](const std::string& fasta_path) {
+        py::gil_scoped_release release;
+        size_t count = noLZSS::count_factors_fasta_dna_w_rc_per_sequence(fasta_path);
+        py::gil_scoped_acquire acquire;
+        return count;
+    }, py::arg("fasta_path"), R"doc(Count total factors from per-sequence DNA factorization with reverse complement.
+
+Reads a FASTA file and factorizes each sequence independently with reverse complement awareness,
+returning only the total count of factors without storing them.
+
+Args:
+    fasta_path: Path to the FASTA file containing DNA sequences
+
+Returns:
+    int: Total number of factors across all sequences
+
+Raises:
+    RuntimeError: If FASTA file cannot be opened or contains no valid sequences
+    ValueError: If invalid nucleotides found
+
+Note:
+    - Memory-efficient - only counts factors without storing them
+    - Only A, C, T, G nucleotides are allowed (case insensitive)
+)doc");
+
+    m.def("count_factors_fasta_dna_no_rc_per_sequence", [](const std::string& fasta_path) {
+        py::gil_scoped_release release;
+        size_t count = noLZSS::count_factors_fasta_dna_no_rc_per_sequence(fasta_path);
+        py::gil_scoped_acquire acquire;
+        return count;
+    }, py::arg("fasta_path"), R"doc(Count total factors from per-sequence DNA factorization without reverse complement.
+
+Reads a FASTA file and factorizes each sequence independently without reverse complement awareness,
+returning only the total count of factors without storing them.
+
+Args:
+    fasta_path: Path to the FASTA file containing DNA sequences
+
+Returns:
+    int: Total number of factors across all sequences
+
+Raises:
+    RuntimeError: If FASTA file cannot be opened or contains no valid sequences
+    ValueError: If invalid nucleotides found
+
+Note:
+    - Memory-efficient - only counts factors without storing them
+    - Only A, C, T, G nucleotides are allowed (case insensitive)
+)doc");
+
+    m.def("parallel_write_factors_binary_file_fasta_dna_w_rc_per_sequence", 
+        [](const std::string& fasta_path, const std::string& out_path, size_t num_threads) {
+        py::gil_scoped_release release;
+        size_t count = noLZSS::parallel_write_factors_binary_file_fasta_dna_w_rc_per_sequence(fasta_path, out_path, num_threads);
+        py::gil_scoped_acquire acquire;
+        return count;
+    }, py::arg("fasta_path"), py::arg("out_path"), py::arg("num_threads") = 0, R"doc(Parallel version of write_factors_binary_file_fasta_dna_w_rc_per_sequence.
+
+Reads a FASTA file, factorizes each sequence independently with reverse complement
+awareness using parallel processing, and writes results to a binary output file.
+
+Args:
+    fasta_path: Path to input FASTA file containing DNA sequences
+    out_path: Path to output file where binary factors will be written
+    num_threads: Number of threads to use (0 = auto-detect based on sequence count)
+
+Returns:
+    int: Total number of factors written across all sequences
+
+Raises:
+    RuntimeError: If FASTA file cannot be opened or contains no valid sequences
+    ValueError: If invalid nucleotides found
+
+Note:
+    - Each sequence is factorized independently in parallel
+    - Binary format includes per-sequence factors with metadata footer
+    - Only A, C, T, G nucleotides are allowed (case insensitive)
+    - This function overwrites the output file if it exists
+    - Reverse complement matches are supported during factorization
+    - GIL is released during computation for better performance
+)doc");
+
+    m.def("parallel_write_factors_binary_file_fasta_dna_no_rc_per_sequence", 
+        [](const std::string& fasta_path, const std::string& out_path, size_t num_threads) {
+        py::gil_scoped_release release;
+        size_t count = noLZSS::parallel_write_factors_binary_file_fasta_dna_no_rc_per_sequence(fasta_path, out_path, num_threads);
+        py::gil_scoped_acquire acquire;
+        return count;
+    }, py::arg("fasta_path"), py::arg("out_path"), py::arg("num_threads") = 0, R"doc(Parallel version of write_factors_binary_file_fasta_dna_no_rc_per_sequence.
+
+Reads a FASTA file, factorizes each sequence independently without reverse complement
+awareness using parallel processing, and writes results to a binary output file.
+
+Args:
+    fasta_path: Path to input FASTA file containing DNA sequences
+    out_path: Path to output file where binary factors will be written
+    num_threads: Number of threads to use (0 = auto-detect based on sequence count)
+
+Returns:
+    int: Total number of factors written across all sequences
+
+Raises:
+    RuntimeError: If FASTA file cannot be opened or contains no valid sequences
+    ValueError: If invalid nucleotides found
+
+Note:
+    - Each sequence is factorized independently in parallel
+    - Binary format includes per-sequence factors with metadata footer
+    - Only A, C, T, G nucleotides are allowed (case insensitive)
+    - This function overwrites the output file if it exists
+    - Reverse complement matches are NOT supported during factorization
+    - GIL is released during computation for better performance
+)doc");
+
     // Version information
 #ifdef NOLZSS_VERSION
     m.attr("__version__") = NOLZSS_VERSION;
