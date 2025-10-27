@@ -80,13 +80,8 @@ def read_single_sequence_binary_factors(filepath):
     pos = metadata_start
     end = data.find(b'\x00', pos)
     seq_id = data[pos:end].decode('utf-8')
-    pos = end + 1
     
-    # Read factor count for this sequence
-    count_data = data[pos:pos + 8]
-    factor_count = struct.unpack('<Q', count_data)[0]
-    
-    return factors, seq_id, factor_count
+    return factors, seq_id, num_factors
 
 
 class TestPerSequenceFastaFactorization:

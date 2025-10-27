@@ -273,12 +273,8 @@ static void write_single_sequence_factors(const std::vector<Factor>& factors,
     // Write sequence ID
     os.write(sequence_id.c_str(), sequence_id.length() + 1);  // Include null terminator
     
-    // Write factor count for this sequence
-    uint64_t factor_count = static_cast<uint64_t>(factors.size());
-    os.write(reinterpret_cast<const char*>(&factor_count), sizeof(factor_count));
-    
     // Write footer
-    size_t footer_size = sizeof(FactorFileFooter) + sequence_id.length() + 1 + sizeof(uint64_t);
+    size_t footer_size = sizeof(FactorFileFooter) + sequence_id.length() + 1;
     
     FactorFileFooter footer;
     footer.num_factors = factors.size();
@@ -346,7 +342,7 @@ size_t parallel_write_factors_binary_file_fasta_dna_w_rc_per_sequence(
             std::string output_path = out_dir + "/" + safe_id + ".bin";
             write_single_sequence_factors(all_factors[i], parse_result.sequence_ids[i], output_path);
             
-            total_factor_count += all_factors[i].size();
+            total_factor_count.fetch_add(all_factors[i].size());
         }
     } else {
         // Parallel processing
@@ -368,7 +364,7 @@ size_t parallel_write_factors_binary_file_fasta_dna_w_rc_per_sequence(
                     std::string output_path = out_dir + "/" + safe_id + ".bin";
                     write_single_sequence_factors(factors, parse_result.sequence_ids[seq_idx], output_path);
                     
-                    total_factor_count += factors.size();
+                    total_factor_count.fetch_add(factors.size());
                 }
             });
         }
@@ -419,7 +415,7 @@ size_t parallel_write_factors_binary_file_fasta_dna_no_rc_per_sequence(
             std::string output_path = out_dir + "/" + safe_id + ".bin";
             write_single_sequence_factors(all_factors[i], parse_result.sequence_ids[i], output_path);
             
-            total_factor_count += all_factors[i].size();
+            total_factor_count.fetch_add(all_factors[i].size());
         }
     } else {
         // Parallel processing
@@ -443,7 +439,7 @@ size_t parallel_write_factors_binary_file_fasta_dna_no_rc_per_sequence(
                     std::string output_path = out_dir + "/" + safe_id + ".bin";
                     write_single_sequence_factors(factors, parse_result.sequence_ids[seq_idx], output_path);
                     
-                    total_factor_count += factors.size();
+                    total_factor_count.fetch_add(factors.size());
                 }
             });
         }
