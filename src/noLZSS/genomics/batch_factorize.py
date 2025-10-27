@@ -851,6 +851,24 @@ def process_with_shuffle_analysis(file_list: List[str], output_dir: Path, mode: 
                     logger.warning(f"Skipping shuffle for {file_path} - file not found")
                     continue
             
+            # Check if file is gzipped and decompress if needed
+            if is_gzipped(local_path):
+                logger.info(f"Detected gzipped file for shuffling: {local_path}")
+                decompressed_path = local_path.with_suffix('')  # Remove .gz extension if present
+                if decompressed_path.suffix == '.gz':
+                    decompressed_path = decompressed_path.with_suffix('')
+                
+                # Use temp directory for decompressed file
+                decompressed_path = temp_shuffle_dir / decompressed_path.name
+                
+                # Decompress the file
+                if not decompress_gzip(local_path, decompressed_path, logger):
+                    logger.warning(f"Skipping shuffle for {file_path} - failed to decompress")
+                    continue
+                
+                # Use decompressed file for shuffling
+                local_path = decompressed_path
+            
             # Create shuffled version
             base_name = local_path.stem
             shuffled_path = temp_shuffle_dir / f"{base_name}_shuffled.fasta"
