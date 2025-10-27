@@ -183,6 +183,67 @@ class TestBatchFactorize:
             
             print("Reproducibility test passed")
     
+    def test_shuffle_gzipped_fasta(self):
+        """Test shuffling of gzipped FASTA files."""
+        if not BATCH_FACTORIZE_AVAILABLE:
+            print("Skipping gzipped shuffle test - module not available")
+            return
+        
+        import gzip
+        from noLZSS.genomics.fasta import _parse_fasta_content
+        
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            
+            # Create test FASTA file
+            test_fasta = temp_path / "test.fasta"
+            original_seq = "ATCGATCGATCGATCGATCGATCGATCGATCG"
+            
+            with open(test_fasta, 'w') as f:
+                f.write(">seq1 Test sequence\n")
+                f.write(original_seq + "\n")
+            
+            # Compress the file
+            gzipped_fasta = temp_path / "test.fasta.gz"
+            with open(test_fasta, 'rb') as f_in:
+                with gzip.open(gzipped_fasta, 'wb') as f_out:
+                    f_out.write(f_in.read())
+            
+            # Verify file is gzipped
+            assert batch_factorize.is_gzipped(gzipped_fasta), "File should be detected as gzipped"
+            
+            # Test decompression function
+            decompressed_fasta = temp_path / "decompressed.fasta"
+            result = batch_factorize.decompress_gzip(gzipped_fasta, decompressed_fasta)
+            
+            assert result, "Decompression should succeed"
+            assert decompressed_fasta.exists(), "Decompressed file should exist"
+            
+            # Verify decompressed content matches original
+            with open(test_fasta, 'r') as f1:
+                with open(decompressed_fasta, 'r') as f2:
+                    assert f1.read() == f2.read(), "Decompressed content should match original"
+            
+            # Test shuffling of decompressed file (the actual fix scenario)
+            shuffled_fasta = temp_path / "shuffled.fasta"
+            result = batch_factorize.shuffle_fasta_sequences(
+                decompressed_fasta, shuffled_fasta, seed=42
+            )
+            
+            assert result, "Shuffle of decompressed file should succeed"
+            assert shuffled_fasta.exists(), "Shuffled file should exist"
+            
+            # Verify shuffled content
+            with open(shuffled_fasta, 'r') as f:
+                shuffled_seqs = _parse_fasta_content(f.read())
+            
+            assert "seq1" in shuffled_seqs, "seq1 header should be preserved"
+            shuffled_seq = shuffled_seqs["seq1"]
+            assert shuffled_seq != original_seq, "Sequence should be shuffled"
+            assert sorted(shuffled_seq) == sorted(original_seq), "Sequence should have same composition"
+            
+            print("Gzipped FASTA shuffle test passed")
+    
     def test_plot_factor_comparison(self):
         """Test comparison plot generation."""
         if not BATCH_FACTORIZE_AVAILABLE:
@@ -254,6 +315,7 @@ def run_tests():
     test_instance.test_basic_functionality_with_test_files()
     test_instance.test_shuffle_fasta_sequences()
     test_instance.test_shuffle_reproducibility()
+    test_instance.test_shuffle_gzipped_fasta()
     test_instance.test_plot_factor_comparison()
     
     print("All batch_factorize tests completed")
