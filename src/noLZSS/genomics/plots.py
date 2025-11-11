@@ -2077,6 +2077,425 @@ def plot_factor_length_ccdf(
         raise PlotError(f"Failed to create factor length CCDF plot: {e}")
 
 
+def plot_space_scale_heatmap(
+    factors_filepath: Union[str, Path],
+    save_path: Optional[Union[str, Path]] = None,
+    show_plot: bool = True,
+    genome_bin_size: float = 1.0,
+    length_log_base: float = 2.0,
+    separate_strands: bool = True,
+    show_marginal_ccdf: bool = True,
+    sequence_index: Optional[int] = None,
+    cmap: str = 'viridis'
+) -> None:
+    """
+    Create a space-scale heatmap showing factor length distribution across genomic positions.
+
+    This function creates a 2D heatmap where:
+    - X-axis: genomic position (binned into windows)
+    - Y-axis: factor length (log-binned)
+    - Cell color: CCDF-weighted factor count (emphasizes rare long factors)
+    
+    The heatmap uses CCDF normalization to address the heavy-tailed distribution of
+    factor lengths. Each cell's value is weighted by the inverse of the CCDF (complementary
+    cumulative distribution function) at that length, making rare long factors as visible
+    as abundant short factors.
+    
+    Forward and reverse-complement factors can be plotted separately or together.
+    Optional marginal CCDF plots show the global length distribution per strand.
+
+    Args:
+        factors_filepath: Path to binary factors file with metadata
+        save_path: Optional path to save the plot image (PNG, PDF, SVG, etc.)
+        show_plot: Whether to display the plot
+        genome_bin_size: Size of genomic position bins in megabases (default: 1.0 Mb)
+        length_log_base: Base for logarithmic binning of factor lengths (default: 2.0)
+        separate_strands: Whether to create separate heatmaps for forward and reverse
+            complement factors (default: True). If False, combines both on one heatmap.
+        show_marginal_ccdf: Whether to add marginal CCDF plots showing global length
+            distribution per strand (default: True)
+        sequence_index: Optional index to select a specific sequence from multi-sequence
+            files (0-based). If None, uses all sequences concatenated.
+        cmap: Matplotlib colormap name (default: 'viridis')
+
+    Raises:
+        PlotError: If file reading or plotting fails
+        FileNotFoundError: If factors file doesn't exist
+        ImportError: If required dependencies are not available
+    """
+    try:
+        import matplotlib.pyplot as plt
+        import numpy as np
+    except ImportError as e:
+        missing_dep = str(e).split("'")[1] if "'" in str(e) else str(e)
+        raise ImportError(
+            f"Missing required dependency: {missing_dep}. "
+            f"Install with: pip install matplotlib numpy"
+        )
+
+    from ..utils import read_factors_binary_file_with_metadata
+
+    # Validate input
+    factors_filepath = Path(factors_filepath)
+    if not factors_filepath.exists():
+        raise FileNotFoundError(f"Factors file not found: {factors_filepath}")
+
+    try:
+        # Read factors from binary file
+        print(f"Reading factors from {factors_filepath}...")
+        metadata = read_factors_binary_file_with_metadata(factors_filepath)
+        factors = metadata['factors']
+        sentinel_factor_indices = metadata.get('sentinel_factor_indices', [])
+        sequence_names = metadata.get('sequence_names', [])
+
+        if not factors:
+            raise PlotError("No factors found in input file")
+
+        print(f"Loaded {len(factors)} factors")
+
+        # Split factors by sequence if requested
+        if sequence_index is not None:
+            if not sentinel_factor_indices:
+                raise PlotError(f"Sequence index {sequence_index} requested but file has no sequence boundaries")
+            
+            # Build sequence boundaries from sentinel indices
+            sequence_factor_ranges = []
+            prev_idx = 0
+            for sentinel_idx in sorted(sentinel_factor_indices):
+                sequence_factor_ranges.append((prev_idx, sentinel_idx))
+                prev_idx = sentinel_idx + 1
+            sequence_factor_ranges.append((prev_idx, len(factors)))
+            
+            if sequence_index >= len(sequence_factor_ranges):
+                raise PlotError(f"Sequence index {sequence_index} out of range (0-{len(sequence_factor_ranges)-1})")
+            
+            start_idx, end_idx = sequence_factor_ranges[sequence_index]
+            factors = factors[start_idx:end_idx]
+            sequence_name = sequence_names[sequence_index] if sequence_index < len(sequence_names) else f"Sequence {sequence_index}"
+            print(f"Using sequence {sequence_index} ({sequence_name}): {len(factors)} factors")
+        else:
+            sequence_name = "All sequences" if len(sequence_names) > 1 else (sequence_names[0] if sequence_names else "Genome")
+
+        # Extract factor information
+        forward_factors = []
+        reverse_factors = []
+
+        for factor in factors:
+            if len(factor) == 4:
+                start, length, ref, is_rc = factor
+            elif len(factor) == 3:
+                start, length, ref = factor
+                is_rc = False
+            else:
+                continue
+
+            if is_rc:
+                reverse_factors.append((start, length))
+            else:
+                forward_factors.append((start, length))
+
+        if not forward_factors and not reverse_factors:
+            raise PlotError("No valid factors to plot")
+
+        print(f"Forward factors: {len(forward_factors)}, Reverse factors: {len(reverse_factors)}")
+
+        # Determine genomic range
+        all_positions = [start for start, _ in forward_factors] + [start for start, _ in reverse_factors]
+        all_lengths = [length for _, length in forward_factors] + [length for _, length in reverse_factors]
+        
+        if not all_positions:
+            raise PlotError("No valid factor positions")
+
+        genome_start = 0
+        genome_end = max(all_positions)
+        
+        # Convert genome_bin_size from Mb to bp
+        genome_bin_bp = int(genome_bin_size * 1_000_000)
+        
+        # Create genomic position bins with finer resolution (minimum 50 bins)
+        num_genome_bins = max(50, int(np.ceil(genome_end / genome_bin_bp)))
+        genome_bins = np.linspace(0, genome_end, num_genome_bins + 1)
+        genome_bin_centers = (genome_bins[:-1] + genome_bins[1:]) / 2
+        
+        print(f"Genomic range: {genome_start} - {genome_end:,} bp ({genome_end/1e6:.2f} Mb)")
+        print(f"Using {num_genome_bins} bins of ~{(genome_end/num_genome_bins)/1e6:.4f} Mb each")
+
+        # Create finer log-binned length bins (use smaller subdivisions)
+        min_length = max(1, min(all_lengths))
+        max_length = max(all_lengths)
+        
+        min_log = np.floor(np.log(min_length) / np.log(length_log_base))
+        max_log = np.ceil(np.log(max_length) / np.log(length_log_base))
+        
+        # Create finer bins: 4 subdivisions per log-base interval for finer resolution
+        num_subdivisions = 4
+        num_length_bins = int((max_log - min_log) * num_subdivisions)
+        length_bin_edges = length_log_base ** np.linspace(min_log, max_log, num_length_bins + 1)
+        length_bin_centers = np.sqrt(length_bin_edges[:-1] * length_bin_edges[1:])  # Geometric mean
+        
+        print(f"Length range: {min_length} - {max_length}")
+        print(f"Using {len(length_bin_centers)} log-{length_log_base} bins for lengths (4 subdivisions per log interval)")
+
+        # Helper function to create 2D histogram
+        def create_2d_histogram(factor_list):
+            if not factor_list:
+                return np.zeros((len(length_bin_centers), len(genome_bin_centers)))
+            
+            positions = np.array([start for start, _ in factor_list])
+            lengths = np.array([length for _, length in factor_list])
+            
+            # Create 2D histogram
+            hist, _, _ = np.histogram2d(
+                lengths, positions,
+                bins=[length_bin_edges, genome_bins]
+            )
+            
+            return hist
+
+        # Create histograms
+        forward_hist = create_2d_histogram(forward_factors)
+        reverse_hist = create_2d_histogram(reverse_factors)
+
+        # Helper function to compute CCDF mapping for normalization
+        def compute_ccdf_mapping(lengths):
+            """Map each unique length to its CCDF value for weighting"""
+            if not lengths:
+                return {}
+            
+            lengths_array = np.array(lengths)
+            n = len(lengths_array)
+            
+            # For each unique length, compute CCDF (fraction >= that length)
+            ccdf_map = {}
+            for length in np.unique(lengths_array):
+                count_ge = np.sum(lengths_array >= length)
+                ccdf_map[length] = count_ge / n
+            
+            return ccdf_map
+        
+        # Compute CCDF mappings for normalization
+        forward_lengths = [length for _, length in forward_factors]
+        reverse_lengths = [length for _, length in reverse_factors]
+        
+        forward_ccdf_map = compute_ccdf_mapping(forward_lengths)
+        reverse_ccdf_map = compute_ccdf_mapping(reverse_lengths)
+        
+        # Helper function to apply CCDF normalization to histogram
+        def apply_ccdf_normalization(hist, length_bin_centers, ccdf_map):
+            """
+            Normalize histogram by inverse CCDF to emphasize rare long factors.
+            
+            Each row (length bin) is weighted by 1/CCDF, making rare long factors
+            (low CCDF) as visible as abundant short factors (high CCDF).
+            """
+            if not ccdf_map:
+                return hist
+            
+            normalized = np.zeros_like(hist, dtype=float)
+            available_lengths = np.array(list(ccdf_map.keys()))
+            
+            for i, length_center in enumerate(length_bin_centers):
+                # Find closest length in CCDF map
+                closest_idx = np.argmin(np.abs(available_lengths - length_center))
+                closest_length = available_lengths[closest_idx]
+                ccdf_value = ccdf_map[closest_length]
+                
+                # Weight by inverse CCDF: rare factors (low CCDF) get higher weight
+                if ccdf_value > 0:
+                    normalized[i, :] = hist[i, :] / ccdf_value
+                else:
+                    normalized[i, :] = 0
+            
+            return normalized
+        
+        # Apply CCDF normalization to histograms
+        forward_hist_norm = apply_ccdf_normalization(forward_hist, length_bin_centers, forward_ccdf_map)
+        reverse_hist_norm = apply_ccdf_normalization(reverse_hist, length_bin_centers, reverse_ccdf_map)
+        combined_hist_norm = forward_hist_norm + reverse_hist_norm
+
+        # Helper function to compute CCDF for marginal plots
+        def compute_ccdf(lengths):
+            if not lengths:
+                return np.array([]), np.array([])
+            
+            sorted_lengths = np.sort(lengths)
+            n = len(sorted_lengths)
+            ccdf = np.arange(n, 0, -1) / n
+            
+            return sorted_lengths, ccdf
+
+        # Compute CCDFs for marginals
+        forward_ccdf_x, forward_ccdf_y = compute_ccdf([length for _, length in forward_factors])
+        reverse_ccdf_x, reverse_ccdf_y = compute_ccdf([length for _, length in reverse_factors])
+
+        # Create the plot
+        if separate_strands:
+            # Two panels: one for forward, one for reverse
+            if show_marginal_ccdf:
+                fig = plt.figure(figsize=(16, 7))
+                gs = fig.add_gridspec(2, 3, width_ratios=[20, 20, 2], height_ratios=[1, 1],
+                                     hspace=0.3, wspace=0.3)
+                
+                # Forward heatmap
+                ax_fwd = fig.add_subplot(gs[0, 0])
+                # Forward marginal CCDF
+                ax_fwd_ccdf = fig.add_subplot(gs[0, 1])
+                
+                # Reverse heatmap
+                ax_rev = fig.add_subplot(gs[1, 0])
+                # Reverse marginal CCDF
+                ax_rev_ccdf = fig.add_subplot(gs[1, 1])
+                
+                # Shared colorbar
+                ax_cbar = fig.add_subplot(gs[:, 2])
+            else:
+                fig, (ax_fwd, ax_rev) = plt.subplots(2, 1, figsize=(14, 10))
+                ax_fwd_ccdf = None
+                ax_rev_ccdf = None
+                ax_cbar = None
+
+            # Plot forward heatmap
+            if forward_factors:
+                im_fwd = ax_fwd.imshow(
+                    forward_hist_norm,  # Use CCDF-normalized histogram
+                    aspect='auto',
+                    origin='lower',
+                    extent=[genome_bins[0]/1e6, genome_bins[-1]/1e6,
+                           np.log(length_bin_edges[0])/np.log(length_log_base),
+                           np.log(length_bin_edges[-1])/np.log(length_log_base)],
+                    cmap='Blues',  # Sequential blue palette for forward strand
+                    interpolation='nearest'
+                )
+                ax_fwd.set_xlabel('Genomic Position (Mb)', fontsize=11)
+                ax_fwd.set_ylabel(f'Factor Length (log{int(length_log_base)})', fontsize=11)
+                ax_fwd.set_title(f'Forward Strand - {sequence_name}\n({len(forward_factors)} factors, CCDF-weighted)', 
+                               fontsize=12, weight='bold')
+                ax_fwd.grid(True, alpha=0.3, linestyle='--', linewidth=0.5)
+                
+                if show_marginal_ccdf and ax_fwd_ccdf is not None and len(forward_ccdf_x) > 0:
+                    ax_fwd_ccdf.loglog(forward_ccdf_x, forward_ccdf_y, 'b-', linewidth=2, label='Forward')
+                    ax_fwd_ccdf.set_xlabel('Factor Length', fontsize=11)
+                    ax_fwd_ccdf.set_ylabel('CCDF', fontsize=11)
+                    ax_fwd_ccdf.set_title('Forward Marginal CCDF', fontsize=11)
+                    ax_fwd_ccdf.grid(True, alpha=0.3, which='both')
+                    ax_fwd_ccdf.legend()
+            else:
+                ax_fwd.text(0.5, 0.5, 'No forward factors', ha='center', va='center',
+                          transform=ax_fwd.transAxes, fontsize=14)
+                ax_fwd.set_xlabel('Genomic Position (Mb)', fontsize=11)
+                ax_fwd.set_ylabel(f'Factor Length (log{int(length_log_base)})', fontsize=11)
+                ax_fwd.set_title(f'Forward Strand - {sequence_name}\n(0 factors)', fontsize=12)
+
+            # Plot reverse heatmap
+            if reverse_factors:
+                im_rev = ax_rev.imshow(
+                    reverse_hist_norm,  # Use CCDF-normalized histogram
+                    aspect='auto',
+                    origin='lower',
+                    extent=[genome_bins[0]/1e6, genome_bins[-1]/1e6,
+                           np.log(length_bin_edges[0])/np.log(length_log_base),
+                           np.log(length_bin_edges[-1])/np.log(length_log_base)],
+                    cmap='Reds',  # Sequential red palette for reverse complement strand
+                    interpolation='nearest'
+                )
+                ax_rev.set_xlabel('Genomic Position (Mb)', fontsize=11)
+                ax_rev.set_ylabel(f'Factor Length (log{int(length_log_base)})', fontsize=11)
+                ax_rev.set_title(f'Reverse Complement Strand - {sequence_name}\n({len(reverse_factors)} factors, CCDF-weighted)', 
+                               fontsize=12, weight='bold')
+                ax_rev.grid(True, alpha=0.3, linestyle='--', linewidth=0.5)
+                
+                if show_marginal_ccdf and ax_rev_ccdf is not None and len(reverse_ccdf_x) > 0:
+                    ax_rev_ccdf.loglog(reverse_ccdf_x, reverse_ccdf_y, 'r-', linewidth=2, label='Reverse')
+                    ax_rev_ccdf.set_xlabel('Factor Length', fontsize=11)
+                    ax_rev_ccdf.set_ylabel('CCDF', fontsize=11)
+                    ax_rev_ccdf.set_title('Reverse Marginal CCDF', fontsize=11)
+                    ax_rev_ccdf.grid(True, alpha=0.3, which='both')
+                    ax_rev_ccdf.legend()
+            else:
+                ax_rev.text(0.5, 0.5, 'No reverse complement factors', ha='center', va='center',
+                          transform=ax_rev.transAxes, fontsize=14)
+                ax_rev.set_xlabel('Genomic Position (Mb)', fontsize=11)
+                ax_rev.set_ylabel(f'Factor Length (log{int(length_log_base)})', fontsize=11)
+                ax_rev.set_title(f'Reverse Complement Strand - {sequence_name}\n(0 factors)', fontsize=12)
+
+            # Add colorbar if we have data
+            if show_marginal_ccdf and ax_cbar is not None and (forward_factors or reverse_factors):
+                # Use the image with the higher max value for colorbar scale
+                im_to_use = im_fwd if forward_factors else im_rev
+                if forward_factors and reverse_factors:
+                    im_to_use = im_fwd if forward_hist_norm.max() >= reverse_hist_norm.max() else im_rev
+                
+                plt.colorbar(im_to_use, cax=ax_cbar, label='CCDF-weighted Count')
+            elif not show_marginal_ccdf and (forward_factors or reverse_factors):
+                # Add colorbar to the right of the plots
+                if forward_factors:
+                    plt.colorbar(im_fwd, ax=[ax_fwd, ax_rev], label='CCDF-weighted Count', fraction=0.046, pad=0.04)
+                elif reverse_factors:
+                    plt.colorbar(im_rev, ax=[ax_fwd, ax_rev], label='CCDF-weighted Count', fraction=0.046, pad=0.04)
+
+        else:
+            # Combined heatmap with stacked forward and reverse
+            combined_hist = forward_hist + reverse_hist
+            
+            if show_marginal_ccdf:
+                fig = plt.figure(figsize=(14, 6))
+                gs = fig.add_gridspec(1, 2, width_ratios=[3, 1], wspace=0.3)
+                ax = fig.add_subplot(gs[0])
+                ax_ccdf = fig.add_subplot(gs[1])
+            else:
+                fig, ax = plt.subplots(1, 1, figsize=(12, 6))
+                ax_ccdf = None
+
+            im = ax.imshow(
+                combined_hist_norm,  # Use CCDF-normalized combined histogram
+                aspect='auto',
+                origin='lower',
+                extent=[genome_bins[0]/1e6, genome_bins[-1]/1e6,
+                       np.log(length_bin_edges[0])/np.log(length_log_base),
+                       np.log(length_bin_edges[-1])/np.log(length_log_base)],
+                cmap='viridis',  # Use viridis for combined strands (neutral)
+                interpolation='nearest'
+            )
+            ax.set_xlabel('Genomic Position (Mb)', fontsize=12)
+            ax.set_ylabel(f'Factor Length (log{int(length_log_base)})', fontsize=12)
+            ax.set_title(f'Combined Strands - {sequence_name}\n({len(forward_factors) + len(reverse_factors)} factors, CCDF-weighted)', 
+                        fontsize=14, weight='bold')
+            ax.grid(True, alpha=0.3, linestyle='--', linewidth=0.5)
+            
+            plt.colorbar(im, ax=ax, label='CCDF-weighted Count')
+
+            # Plot marginal CCDF
+            if show_marginal_ccdf and ax_ccdf is not None:
+                if len(forward_ccdf_x) > 0:
+                    ax_ccdf.loglog(forward_ccdf_x, forward_ccdf_y, 'b-', linewidth=2, label='Forward', alpha=0.7)
+                if len(reverse_ccdf_x) > 0:
+                    ax_ccdf.loglog(reverse_ccdf_x, reverse_ccdf_y, 'r-', linewidth=2, label='Reverse', alpha=0.7)
+                ax_ccdf.set_xlabel('Factor Length', fontsize=11)
+                ax_ccdf.set_ylabel('CCDF', fontsize=11)
+                ax_ccdf.set_title('Marginal CCDF', fontsize=12, weight='bold')
+                ax_ccdf.grid(True, alpha=0.3, which='both')
+                ax_ccdf.legend()
+
+        plt.suptitle(f'Space-Scale Heatmap: Factor Length Distribution Across Genome', 
+                    fontsize=14, weight='bold', y=0.98)
+
+        # Save plot if requested
+        if save_path:
+            save_path = Path(save_path)
+            save_path.parent.mkdir(parents=True, exist_ok=True)
+            plt.savefig(save_path, dpi=300, bbox_inches='tight')
+            print(f"Plot saved to {save_path}")
+
+        # Show plot
+        if show_plot:
+            plt.show()
+        else:
+            plt.close(fig)
+
+    except Exception as e:
+        raise PlotError(f"Failed to create space-scale heatmap: {e}")
+
+
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="Run LZSS plots")
@@ -2124,6 +2543,18 @@ if __name__ == "__main__":
         default='dna',
         help='Choose "dna" for reverse-complement-aware factorization or "general" for arbitrary strings'
     )
+
+    # Subparser for space-scale heatmap
+    heatmap_parser = subparsers.add_parser('space-scale-heatmap', help='Plot factor length distribution across genomic positions')
+    heatmap_parser.add_argument('factors_filepath', help='Path to binary factors file')
+    heatmap_parser.add_argument('--save_path', default=None, help='Path to save the plot image')
+    heatmap_parser.add_argument('--no-show', action='store_true', help='Do not display the plot')
+    heatmap_parser.add_argument('--genome_bin_size', type=float, default=1.0, help='Size of genomic position bins in megabases (default: 1.0 Mb)')
+    heatmap_parser.add_argument('--length_log_base', type=float, default=2.0, help='Base for logarithmic binning of factor lengths (default: 2.0)')
+    heatmap_parser.add_argument('--no-separate', action='store_true', help='Combine forward and reverse complement factors in one heatmap')
+    heatmap_parser.add_argument('--no-marginal', action='store_true', help='Do not show marginal CCDF plots')
+    heatmap_parser.add_argument('--sequence_index', type=int, default=None, help='Index of specific sequence to plot (for multi-sequence files, 0-based)')
+    heatmap_parser.add_argument('--cmap', default='viridis', help='Matplotlib colormap name (default: viridis)')
 
     args = parser.parse_args()
 
@@ -2191,5 +2622,17 @@ if __name__ == "__main__":
                 show_plot=args.show_plot,
                 factorization_mode=args.factorization_mode
             )
+    elif args.command == 'space-scale-heatmap':
+        plot_space_scale_heatmap(
+            factors_filepath=args.factors_filepath,
+            save_path=args.save_path,
+            show_plot=not args.no_show,
+            genome_bin_size=args.genome_bin_size,
+            length_log_base=args.length_log_base,
+            separate_strands=not args.no_separate,
+            show_marginal_ccdf=not args.no_marginal,
+            sequence_index=args.sequence_index,
+            cmap=args.cmap
+        )
 
 
