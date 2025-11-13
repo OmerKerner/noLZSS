@@ -2332,27 +2332,29 @@ def plot_space_scale_heatmap(
         if separate_strands:
             # Two panels: one for forward, one for reverse
             if show_marginal_ccdf:
-                fig = plt.figure(figsize=(16, 7))
-                gs = fig.add_gridspec(2, 3, width_ratios=[20, 20, 2], height_ratios=[1, 1],
-                                     hspace=0.3, wspace=0.3)
+                fig = plt.figure(figsize=(18, 8))
+                gs = fig.add_gridspec(2, 3, width_ratios=[5, 0.2, 5], height_ratios=[1, 1],
+                                     hspace=0.5, wspace=0.1)
                 
                 # Forward heatmap
                 ax_fwd = fig.add_subplot(gs[0, 0])
-                # Forward marginal CCDF
-                ax_fwd_ccdf = fig.add_subplot(gs[0, 1])
+                # Forward colorbar
+                ax_fwd_cbar = fig.add_subplot(gs[0, 1])
+                # Combined marginal CCDF (spans both rows) - add left padding for y-axis label
+                ax_ccdf = fig.add_subplot(gs[:, 2])
+                ax_ccdf_pos = ax_ccdf.get_position()
+                ax_ccdf.set_position([ax_ccdf_pos.x0 + 0.08, ax_ccdf_pos.y0, 
+                                     ax_ccdf_pos.width - 0.08, ax_ccdf_pos.height])
                 
                 # Reverse heatmap
                 ax_rev = fig.add_subplot(gs[1, 0])
-                # Reverse marginal CCDF
-                ax_rev_ccdf = fig.add_subplot(gs[1, 1])
-                
-                # Shared colorbar
-                ax_cbar = fig.add_subplot(gs[:, 2])
+                # Reverse colorbar
+                ax_rev_cbar = fig.add_subplot(gs[1, 1])
             else:
-                fig, (ax_fwd, ax_rev) = plt.subplots(2, 1, figsize=(14, 10))
-                ax_fwd_ccdf = None
-                ax_rev_ccdf = None
-                ax_cbar = None
+                fig, (ax_fwd, ax_rev) = plt.subplots(2, 1, figsize=(14, 10), gridspec_kw={'hspace': 0.5})
+                ax_ccdf = None
+                ax_fwd_cbar = None
+                ax_rev_cbar = None
 
             # Plot forward heatmap
             if forward_factors:
@@ -2371,14 +2373,6 @@ def plot_space_scale_heatmap(
                 ax_fwd.set_title(f'Forward Strand - {sequence_name}\n({len(forward_factors)} factors, CCDF-weighted)', 
                                fontsize=12, weight='bold')
                 ax_fwd.grid(True, alpha=0.3, linestyle='--', linewidth=0.5)
-                
-                if show_marginal_ccdf and ax_fwd_ccdf is not None and len(forward_ccdf_x) > 0:
-                    ax_fwd_ccdf.loglog(forward_ccdf_x, forward_ccdf_y, 'b-', linewidth=2, label='Forward')
-                    ax_fwd_ccdf.set_xlabel('Factor Length', fontsize=11)
-                    ax_fwd_ccdf.set_ylabel('CCDF', fontsize=11)
-                    ax_fwd_ccdf.set_title('Forward Marginal CCDF', fontsize=11)
-                    ax_fwd_ccdf.grid(True, alpha=0.3, which='both')
-                    ax_fwd_ccdf.legend()
             else:
                 ax_fwd.text(0.5, 0.5, 'No forward factors', ha='center', va='center',
                           transform=ax_fwd.transAxes, fontsize=14)
@@ -2403,14 +2397,6 @@ def plot_space_scale_heatmap(
                 ax_rev.set_title(f'Reverse Complement Strand - {sequence_name}\n({len(reverse_factors)} factors, CCDF-weighted)', 
                                fontsize=12, weight='bold')
                 ax_rev.grid(True, alpha=0.3, linestyle='--', linewidth=0.5)
-                
-                if show_marginal_ccdf and ax_rev_ccdf is not None and len(reverse_ccdf_x) > 0:
-                    ax_rev_ccdf.loglog(reverse_ccdf_x, reverse_ccdf_y, 'r-', linewidth=2, label='Reverse')
-                    ax_rev_ccdf.set_xlabel('Factor Length', fontsize=11)
-                    ax_rev_ccdf.set_ylabel('CCDF', fontsize=11)
-                    ax_rev_ccdf.set_title('Reverse Marginal CCDF', fontsize=11)
-                    ax_rev_ccdf.grid(True, alpha=0.3, which='both')
-                    ax_rev_ccdf.legend()
             else:
                 ax_rev.text(0.5, 0.5, 'No reverse complement factors', ha='center', va='center',
                           transform=ax_rev.transAxes, fontsize=14)
@@ -2418,20 +2404,33 @@ def plot_space_scale_heatmap(
                 ax_rev.set_ylabel(f'Factor Length (log{int(length_log_base)})', fontsize=11)
                 ax_rev.set_title(f'Reverse Complement Strand - {sequence_name}\n(0 factors)', fontsize=12)
 
-            # Add colorbar if we have data
-            if show_marginal_ccdf and ax_cbar is not None and (forward_factors or reverse_factors):
-                # Use the image with the higher max value for colorbar scale
-                im_to_use = im_fwd if forward_factors else im_rev
-                if forward_factors and reverse_factors:
-                    im_to_use = im_fwd if forward_hist_norm.max() >= reverse_hist_norm.max() else im_rev
+            # Add colorbars and combined CCDF plot
+            colorbar_label = 'Count / P(Length≥x)\n(rare factors enhanced)'
+            
+            if show_marginal_ccdf and ax_ccdf is not None:
+                # Add colorbars for each heatmap
+                if forward_factors and ax_fwd_cbar is not None:
+                    plt.colorbar(im_fwd, cax=ax_fwd_cbar, label=colorbar_label)
+                if reverse_factors and ax_rev_cbar is not None:
+                    plt.colorbar(im_rev, cax=ax_rev_cbar, label=colorbar_label)
                 
-                plt.colorbar(im_to_use, cax=ax_cbar, label='CCDF-weighted Count')
+                # Combined CCDF plot with both forward and reverse
+                if len(forward_ccdf_x) > 0:
+                    ax_ccdf.loglog(forward_ccdf_x, forward_ccdf_y, 'b-', linewidth=2, label='Forward', alpha=0.7)
+                if len(reverse_ccdf_x) > 0:
+                    ax_ccdf.loglog(reverse_ccdf_x, reverse_ccdf_y, 'r-', linewidth=2, label='Reverse', alpha=0.7)
+                ax_ccdf.set_xlabel('Factor Length', fontsize=11)
+                ax_ccdf.set_ylabel('CCDF P(Length≥x)', fontsize=11)
+                ax_ccdf.set_title('Marginal CCDF', fontsize=12, weight='bold')
+                ax_ccdf.grid(True, alpha=0.3, which='both')
+                if len(forward_ccdf_x) > 0 or len(reverse_ccdf_x) > 0:
+                    ax_ccdf.legend()
             elif not show_marginal_ccdf and (forward_factors or reverse_factors):
-                # Add colorbar to the right of the plots
+                # Add colorbars to the right of the plots without CCDF
                 if forward_factors:
-                    plt.colorbar(im_fwd, ax=[ax_fwd, ax_rev], label='CCDF-weighted Count', fraction=0.046, pad=0.04)
+                    plt.colorbar(im_fwd, ax=[ax_fwd, ax_rev], label=colorbar_label, fraction=0.046, pad=0.04)
                 elif reverse_factors:
-                    plt.colorbar(im_rev, ax=[ax_fwd, ax_rev], label='CCDF-weighted Count', fraction=0.046, pad=0.04)
+                    plt.colorbar(im_rev, ax=[ax_fwd, ax_rev], label=colorbar_label, fraction=0.046, pad=0.04)
 
         else:
             # Combined heatmap with stacked forward and reverse
@@ -2462,7 +2461,8 @@ def plot_space_scale_heatmap(
                         fontsize=14, weight='bold')
             ax.grid(True, alpha=0.3, linestyle='--', linewidth=0.5)
             
-            plt.colorbar(im, ax=ax, label='CCDF-weighted Count')
+            colorbar_label = 'Count / P(Length≥x)\n(rare factors enhanced)'
+            plt.colorbar(im, ax=ax, label=colorbar_label)
 
             # Plot marginal CCDF
             if show_marginal_ccdf and ax_ccdf is not None:
@@ -2471,10 +2471,11 @@ def plot_space_scale_heatmap(
                 if len(reverse_ccdf_x) > 0:
                     ax_ccdf.loglog(reverse_ccdf_x, reverse_ccdf_y, 'r-', linewidth=2, label='Reverse', alpha=0.7)
                 ax_ccdf.set_xlabel('Factor Length', fontsize=11)
-                ax_ccdf.set_ylabel('CCDF', fontsize=11)
+                ax_ccdf.set_ylabel('CCDF P(Length≥x)', fontsize=11)
                 ax_ccdf.set_title('Marginal CCDF', fontsize=12, weight='bold')
                 ax_ccdf.grid(True, alpha=0.3, which='both')
-                ax_ccdf.legend()
+                if len(forward_ccdf_x) > 0 or len(reverse_ccdf_x) > 0:
+                    ax_ccdf.legend()
 
         plt.suptitle(f'Space-Scale Heatmap: Factor Length Distribution Across Genome', 
                     fontsize=14, weight='bold', y=0.98)
