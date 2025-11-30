@@ -425,10 +425,12 @@ class TestLSFBatchFactorize:
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_path = Path(temp_dir)
             output_tsv = temp_path / "output.tsv"
+            # Use a path within the temp directory that doesn't exist
+            nonexistent_file = temp_path / "nonexistent_file.fasta"
             
             try:
                 lsf_batch_factorize.count_factors_fasta_to_tsv(
-                    "/nonexistent/file.fasta", output_tsv, with_reverse_complement=True
+                    nonexistent_file, output_tsv, with_reverse_complement=True
                 )
                 assert False, "Should raise FileNotFoundError"
             except FileNotFoundError:

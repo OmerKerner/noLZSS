@@ -40,6 +40,12 @@ from .batch_factorize import (
 )
 
 
+# Estimated ratio of nucleotide content to total file size in FASTA files
+# Accounts for header lines, newlines, and other overhead characters
+# Based on typical FASTA format with ~10-20% overhead from headers and formatting
+NUCLEOTIDE_RATIO_ESTIMATE = 0.8
+
+
 class LSFBatchFactorizeError(NoLZSSError):
     """Raised when LSF batch factorization encounters an error."""
     pass
@@ -86,8 +92,8 @@ def estimate_fasta_nucleotides(file_path: Path) -> int:
         file_size = file_path.stat().st_size
         estimated_nucleotides = int(file_size * sequence_ratio)
     else:
-        # Fallback: assume 80% of file is sequence data
-        estimated_nucleotides = int(file_path.stat().st_size * 0.8)
+        # Fallback: use the standard estimate for FASTA overhead
+        estimated_nucleotides = int(file_path.stat().st_size * NUCLEOTIDE_RATIO_ESTIMATE)
     
     return estimated_nucleotides
 
@@ -271,8 +277,8 @@ def estimate_resources_fallback(
     Returns:
         Dictionary with resource estimates
     """
-    # Estimate nucleotides (assume ~1 byte per nucleotide with overhead)
-    nucleotides = int(file_size_bytes * 0.8)
+    # Estimate nucleotides using the standard FASTA overhead ratio
+    nucleotides = int(file_size_bytes * NUCLEOTIDE_RATIO_ESTIMATE)
     
     # Conservative estimates based on typical LZSS behavior
     # Time: roughly 0.1-1 ms per 1000 nucleotides depending on complexity
@@ -759,7 +765,7 @@ def process_files_on_cluster(
             nucleotides = estimate_fasta_nucleotides(file_path)
         except Exception as e:
             logger.warning(f"Could not estimate nucleotides for {file_path}: {e}, using file size")
-            nucleotides = int(file_path.stat().st_size * 0.8)
+            nucleotides = int(file_path.stat().st_size * NUCLEOTIDE_RATIO_ESTIMATE)
         
         # Decide number of threads
         num_threads = decide_num_threads(nucleotides, max_threads, trends)
@@ -1041,9 +1047,14 @@ def count_factors_fasta_to_tsv(
     total_factors = 0
     
     # Calculate sequence lengths from factors
+    # Factor format from C++: (start, length, ref, is_rc)
+    # - start: position in sequence where factor starts
+    # - length: length of the factor
+    # - ref: reference position (where pattern was seen before)
+    # - is_rc: boolean indicating if this was a reverse complement match
     for seq_id, factors in zip(sequence_ids, per_seq_factors):
         # Calculate sequence length from factors (sum of all factor lengths)
-        seq_length = sum(f[1] for f in factors)  # factor format: (start, length, ref, is_rc)
+        seq_length = sum(f[1] for f in factors)  # f[1] is the length field
         factor_count = len(factors)
         
         sequence_results.append({
@@ -1223,7 +1234,7 @@ def count_factors_on_cluster(
             nucleotides = estimate_fasta_nucleotides(file_path)
         except Exception as e:
             logger.warning(f"Could not estimate nucleotides for {file_path}: {e}, using file size")
-            nucleotides = int(file_path.stat().st_size * 0.8)
+            nucleotides = int(file_path.stat().st_size * NUCLEOTIDE_RATIO_ESTIMATE)
         
         # Resource estimation (counting is less intensive than full factorization)
         # Use a simpler estimate since we're only counting
