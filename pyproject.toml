@@ -4,7 +4,7 @@ build-backend = "scikit_build_core.build"
 
 [project]
 name = "noLZSS"
-version = "0.3.0"
+version = "0.3.1"
 description = "Non-overlapping Lempel-Ziv-Storer-Szymanski factorization (high-performance C++ core with Python bindings)"
 authors = [ { name = "Omer Kerner" } ]
 readme = "README.md"
