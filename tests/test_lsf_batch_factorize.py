@@ -282,6 +282,157 @@ class TestLSFBatchFactorize:
             assert size == 1000, f"Expected size 1000, got {size}"
             
             print("File size test passed")
+    
+    def test_count_factors_fasta_to_tsv_with_rc(self):
+        """Test counting factors per sequence with reverse complement."""
+        if not LSF_BATCH_FACTORIZE_AVAILABLE:
+            print("Skipping count_factors_fasta_to_tsv test - module not available")
+            return
+        
+        # Check if we have the test resource
+        test_fasta = Path(__file__).parent / "resources" / "short_dna1.fasta"
+        if not test_fasta.exists():
+            print(f"Skipping test - test file not found: {test_fasta}")
+            return
+        
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            output_tsv = temp_path / "output.tsv"
+            
+            # Test with reverse complement
+            result = lsf_batch_factorize.count_factors_fasta_to_tsv(
+                test_fasta, output_tsv, with_reverse_complement=True
+            )
+            
+            # Check result structure
+            assert 'total_sequences' in result
+            assert 'total_factors' in result
+            assert 'sequence_results' in result
+            
+            # Check that we got results
+            assert result['total_sequences'] > 0, "Should have at least one sequence"
+            assert result['total_factors'] > 0, "Should have at least one factor"
+            assert len(result['sequence_results']) == result['total_sequences']
+            
+            # Check TSV file was created
+            assert output_tsv.exists(), "TSV output file should exist"
+            
+            # Validate TSV content
+            with open(output_tsv, 'r') as f:
+                lines = f.readlines()
+            
+            # Should have header + data rows
+            assert len(lines) == result['total_sequences'] + 1, "TSV should have header + data rows"
+            
+            # Check header
+            assert lines[0].strip() == "sequence_id\tsequence_length\tfactor_count"
+            
+            # Check that each sequence result has required fields
+            for seq_result in result['sequence_results']:
+                assert 'sequence_id' in seq_result
+                assert 'sequence_length' in seq_result
+                assert 'factor_count' in seq_result
+                assert seq_result['sequence_length'] > 0
+                assert seq_result['factor_count'] > 0
+            
+            print(f"count_factors_fasta_to_tsv with RC test passed: "
+                  f"{result['total_sequences']} sequences, {result['total_factors']} factors")
+    
+    def test_count_factors_fasta_to_tsv_without_rc(self):
+        """Test counting factors per sequence without reverse complement."""
+        if not LSF_BATCH_FACTORIZE_AVAILABLE:
+            print("Skipping count_factors_fasta_to_tsv test - module not available")
+            return
+        
+        # Check if we have the test resource
+        test_fasta = Path(__file__).parent / "resources" / "short_dna1.fasta"
+        if not test_fasta.exists():
+            print(f"Skipping test - test file not found: {test_fasta}")
+            return
+        
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            output_tsv = temp_path / "output_no_rc.tsv"
+            
+            # Test without reverse complement
+            result = lsf_batch_factorize.count_factors_fasta_to_tsv(
+                test_fasta, output_tsv, with_reverse_complement=False
+            )
+            
+            # Check result structure
+            assert 'total_sequences' in result
+            assert 'total_factors' in result
+            assert 'sequence_results' in result
+            
+            # Check that we got results
+            assert result['total_sequences'] > 0, "Should have at least one sequence"
+            assert result['total_factors'] > 0, "Should have at least one factor"
+            
+            # Check TSV file was created
+            assert output_tsv.exists(), "TSV output file should exist"
+            
+            print(f"count_factors_fasta_to_tsv without RC test passed: "
+                  f"{result['total_sequences']} sequences, {result['total_factors']} factors")
+    
+    def test_create_count_job_script(self):
+        """Test count job script creation."""
+        if not LSF_BATCH_FACTORIZE_AVAILABLE:
+            print("Skipping create_count_job_script test - module not available")
+            return
+        
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            
+            input_file = temp_path / "input.fasta"
+            output_file = temp_path / "output.tsv"
+            script_path = temp_path / "count_job.sh"
+            
+            # Create dummy input file
+            input_file.touch()
+            
+            # Create job script for counting with RC
+            success = lsf_batch_factorize.create_count_job_script(
+                input_file=input_file,
+                output_file=output_file,
+                with_reverse_complement=True,
+                script_path=script_path
+            )
+            
+            assert success, "Count job script creation failed"
+            assert script_path.exists(), "Count job script not created"
+            
+            # Check script content
+            with open(script_path, 'r') as f:
+                script_content = f.read()
+            
+            assert '#!/bin/bash' in script_content
+            assert 'count_factors_fasta_to_tsv' in script_content
+            assert str(input_file) in script_content
+            assert str(output_file) in script_content
+            assert 'with_reverse_complement = True' in script_content
+            
+            # Check script is executable
+            assert os.access(script_path, os.X_OK), "Script not executable"
+            
+            print("Count job script creation test passed")
+    
+    def test_count_factors_fasta_file_not_found(self):
+        """Test error handling when FASTA file doesn't exist."""
+        if not LSF_BATCH_FACTORIZE_AVAILABLE:
+            print("Skipping count_factors_fasta_to_tsv file not found test")
+            return
+        
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            output_tsv = temp_path / "output.tsv"
+            
+            try:
+                lsf_batch_factorize.count_factors_fasta_to_tsv(
+                    "/nonexistent/file.fasta", output_tsv, with_reverse_complement=True
+                )
+                assert False, "Should raise FileNotFoundError"
+            except FileNotFoundError:
+                print("Correctly raised FileNotFoundError for nonexistent file")
 
 
 def run_all_tests():
@@ -298,6 +449,10 @@ def run_all_tests():
         test_class.test_load_benchmark_trends_not_found,
         test_class.test_check_job_output,
         test_class.test_get_file_size,
+        test_class.test_count_factors_fasta_to_tsv_with_rc,
+        test_class.test_count_factors_fasta_to_tsv_without_rc,
+        test_class.test_create_count_job_script,
+        test_class.test_count_factors_fasta_file_not_found,
     ]
     
     passed = 0

@@ -981,6 +981,390 @@ def save_results(results: Dict[str, Any], output_dir: Path, logger: Optional[log
         logger.error(f"Failed to save results: {e}")
 
 
+def count_factors_fasta_to_tsv(
+    fasta_path: Union[str, Path],
+    output_path: Union[str, Path],
+    with_reverse_complement: bool = True,
+    logger: Optional[logging.Logger] = None
+) -> Dict[str, Any]:
+    """
+    Count LZSS factors for each sequence in a FASTA file and write results to TSV.
+    
+    This function processes a FASTA file, counts the LZSS factors for each sequence
+    independently (with or without reverse complement awareness), and writes the
+    results to a TSV file with columns: sequence_id, sequence_length, factor_count.
+    
+    Args:
+        fasta_path: Path to the input FASTA file
+        output_path: Path to the output TSV file
+        with_reverse_complement: Whether to use reverse complement awareness (default: True)
+        logger: Logger instance
+        
+    Returns:
+        Dictionary containing:
+        - 'total_sequences': Total number of sequences processed
+        - 'total_factors': Total number of factors across all sequences
+        - 'sequence_results': List of dicts with per-sequence results
+        
+    Raises:
+        FileNotFoundError: If the FASTA file doesn't exist
+        RuntimeError: If factorization fails
+    """
+    if logger is None:
+        logger = logging.getLogger(__name__)
+    
+    fasta_path = Path(fasta_path)
+    output_path = Path(output_path)
+    
+    if not fasta_path.exists():
+        raise FileNotFoundError(f"FASTA file not found: {fasta_path}")
+    
+    # Import the appropriate C++ function
+    try:
+        if with_reverse_complement:
+            from .._noLZSS import factorize_fasta_dna_w_rc_per_sequence
+            factorize_func = factorize_fasta_dna_w_rc_per_sequence
+        else:
+            from .._noLZSS import factorize_fasta_dna_no_rc_per_sequence
+            factorize_func = factorize_fasta_dna_no_rc_per_sequence
+    except ImportError as e:
+        raise RuntimeError(f"C++ extension not available: {e}")
+    
+    logger.info(f"Processing FASTA file: {fasta_path}")
+    logger.info(f"Mode: {'with' if with_reverse_complement else 'without'} reverse complement")
+    
+    # Factorize each sequence
+    per_seq_factors, sequence_ids = factorize_func(str(fasta_path))
+    
+    # Prepare results
+    sequence_results = []
+    total_factors = 0
+    
+    # Calculate sequence lengths from factors
+    for seq_id, factors in zip(sequence_ids, per_seq_factors):
+        # Calculate sequence length from factors (sum of all factor lengths)
+        seq_length = sum(f[1] for f in factors)  # factor format: (start, length, ref, is_rc)
+        factor_count = len(factors)
+        
+        sequence_results.append({
+            'sequence_id': seq_id,
+            'sequence_length': seq_length,
+            'factor_count': factor_count
+        })
+        total_factors += factor_count
+    
+    # Ensure output directory exists
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    
+    # Write TSV output
+    with open(output_path, 'w', encoding='utf-8') as f:
+        # Write header
+        f.write("sequence_id\tsequence_length\tfactor_count\n")
+        
+        # Write data rows
+        for result in sequence_results:
+            f.write(f"{result['sequence_id']}\t{result['sequence_length']}\t{result['factor_count']}\n")
+    
+    logger.info(f"Wrote {len(sequence_results)} sequence results to {output_path}")
+    logger.info(f"Total factors: {total_factors}")
+    
+    return {
+        'total_sequences': len(sequence_results),
+        'total_factors': total_factors,
+        'sequence_results': sequence_results
+    }
+
+
+def create_count_job_script(
+    input_file: Path,
+    output_file: Path,
+    with_reverse_complement: bool,
+    script_path: Path,
+    python_executable: Optional[str] = None
+) -> bool:
+    """
+    Create a bash script for an LSF job that counts factors and outputs TSV.
+    
+    Args:
+        input_file: Path to input FASTA file
+        output_file: Path to output TSV file
+        with_reverse_complement: Whether to use reverse complement awareness
+        script_path: Path where to save the script
+        python_executable: Optional Python executable path (default: sys.executable)
+        
+    Returns:
+        True if script created successfully
+    """
+    if python_executable is None:
+        python_executable = sys.executable
+    
+    # Create Python script content
+    python_code = f"""#!/usr/bin/env python3
+import sys
+from noLZSS.genomics.lsf_batch_factorize import count_factors_fasta_to_tsv
+
+input_file = "{input_file}"
+output_file = "{output_file}"
+with_reverse_complement = {with_reverse_complement}
+
+try:
+    result = count_factors_fasta_to_tsv(input_file, output_file, with_reverse_complement)
+    print(f"Successfully processed {{input_file}}: {{result['total_sequences']}} sequences, {{result['total_factors']}} total factors")
+    sys.exit(0)
+except Exception as e:
+    print(f"Error processing {{input_file}}: {{e}}", file=sys.stderr)
+    sys.exit(1)
+"""
+    
+    # Create bash wrapper script
+    bash_script = f"""#!/bin/bash
+set -e
+set -u
+
+# Run the Python factor counting
+{python_executable} << 'PYTHON_EOF'
+{python_code}
+PYTHON_EOF
+
+exit $?
+"""
+    
+    try:
+        script_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(script_path, 'w') as f:
+            f.write(bash_script)
+        
+        # Make script executable
+        script_path.chmod(0o755)
+        return True
+        
+    except Exception as e:
+        logging.error(f"Failed to create count job script {script_path}: {e}")
+        return False
+
+
+def count_factors_on_cluster(
+    file_list: List[str],
+    output_dir: Path,
+    with_reverse_complement: bool = True,
+    max_threads: int = 1,
+    trends: Optional[Dict[str, Any]] = None,
+    queue: Optional[str] = None,
+    safety_factor: float = 1.5,
+    check_interval: int = 60,
+    extra_bsub_args: Optional[List[str]] = None,
+    skip_existing: bool = True,
+    logger: Optional[logging.Logger] = None
+) -> Dict[str, Dict[str, Any]]:
+    """
+    Count factors in FASTA files on LSF cluster and output TSV results.
+    
+    This function submits LSF jobs to count LZSS factors for each sequence in
+    the provided FASTA files. Each job produces a TSV file with columns:
+    sequence_id, sequence_length, factor_count.
+    
+    Args:
+        file_list: List of FASTA file paths (must be local files accessible to cluster)
+        output_dir: Base output directory for TSV results
+        with_reverse_complement: Whether to use reverse complement awareness (default: True)
+        max_threads: Maximum threads per job (not heavily used for counting)
+        trends: Benchmark trend parameters (optional)
+        queue: LSF queue name (optional)
+        safety_factor: Safety factor for resource estimates
+        check_interval: Interval for checking job status (seconds)
+        extra_bsub_args: Additional bsub arguments
+        skip_existing: Skip files with existing output
+        logger: Logger instance
+        
+    Returns:
+        Dictionary with job results and statistics
+    """
+    if logger is None:
+        logger = logging.getLogger(__name__)
+    
+    # Create directories
+    output_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Create subdirectories for scripts and logs
+    scripts_dir = output_dir / "lsf_scripts"
+    logs_dir = output_dir / "lsf_logs"
+    tsv_dir = output_dir / "factor_counts"
+    scripts_dir.mkdir(parents=True, exist_ok=True)
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    tsv_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Prepare jobs
+    jobs = []
+    job_info = {}
+    
+    mode_suffix = "w_rc" if with_reverse_complement else "no_rc"
+    
+    logger.info(f"Preparing {len(file_list)} count jobs...")
+    
+    for file_path_str in file_list:
+        file_path = Path(file_path_str)
+        
+        # Check if file exists
+        if not file_path.exists():
+            logger.error(f"File not found: {file_path}")
+            continue
+        
+        # Determine output path
+        base_name = file_path.stem
+        output_file = tsv_dir / f"{base_name}_{mode_suffix}.tsv"
+        
+        # Skip if output exists and skip_existing is True
+        if skip_existing and output_file.exists():
+            logger.info(f"Skipping {file_path.name} (output exists)")
+            continue
+        
+        # Estimate nucleotides for resource estimation
+        try:
+            nucleotides = estimate_fasta_nucleotides(file_path)
+        except Exception as e:
+            logger.warning(f"Could not estimate nucleotides for {file_path}: {e}, using file size")
+            nucleotides = int(file_path.stat().st_size * 0.8)
+        
+        # Resource estimation (counting is less intensive than full factorization)
+        # Use a simpler estimate since we're only counting
+        if trends:
+            estimates = estimate_resources_from_trends(
+                nucleotides, trends, 
+                FactorizationMode.WITH_REVERSE_COMPLEMENT if with_reverse_complement else FactorizationMode.WITHOUT_REVERSE_COMPLEMENT,
+                1, safety_factor
+            )
+        else:
+            estimates = estimate_resources_fallback(
+                file_path.stat().st_size, 1, safety_factor
+            )
+        
+        # Round up time to minutes (minimum 5 minutes)
+        time_minutes = max(5, int(estimates.get('safe_time_minutes', 30) + 1))
+        memory_gb = estimates.get('cluster_memory_gb', 8)
+        
+        # Create job script
+        job_name = f"count_{base_name}"
+        script_path = scripts_dir / f"{job_name}.sh"
+        
+        if not create_count_job_script(file_path, output_file, with_reverse_complement, script_path):
+            logger.error(f"Failed to create script for {file_path}")
+            continue
+        
+        # Prepare job info
+        output_log = logs_dir / f"{job_name}.out"
+        error_log = logs_dir / f"{job_name}.err"
+        
+        job = {
+            'name': job_name,
+            'input_file': file_path,
+            'output_file': output_file,
+            'script_path': script_path,
+            'num_threads': 1,  # Counting is single-threaded
+            'memory_gb': memory_gb,
+            'time_minutes': time_minutes,
+            'output_log': output_log,
+            'error_log': error_log,
+            'estimates': estimates
+        }
+        
+        jobs.append(job)
+    
+    if not jobs:
+        logger.warning("No jobs to submit")
+        return {}
+    
+    # Submit jobs
+    logger.info(f"Submitting {len(jobs)} count jobs to LSF cluster...")
+    
+    job_ids = {}
+    failed_submissions = []
+    
+    for job in jobs:
+        job_id = submit_lsf_job(
+            job_name=job['name'],
+            script_path=job['script_path'],
+            num_threads=job['num_threads'],
+            memory_gb=job['memory_gb'],
+            time_minutes=job['time_minutes'],
+            output_log=job['output_log'],
+            error_log=job['error_log'],
+            queue=queue,
+            extra_bsub_args=extra_bsub_args,
+            logger=logger
+        )
+        
+        if job_id:
+            job_ids[job['name']] = job_id
+            job_info[job['name']] = job
+        else:
+            failed_submissions.append(job['name'])
+            logger.error(f"Failed to submit job {job['name']}")
+    
+    if not job_ids:
+        logger.error("No jobs were successfully submitted")
+        return {'failed_submissions': failed_submissions}
+    
+    logger.info(f"Successfully submitted {len(job_ids)} jobs")
+    
+    # Wait for jobs to complete
+    job_statuses = wait_for_jobs(job_ids, check_interval, logger)
+    
+    # Check results
+    results = {
+        'total_jobs': len(jobs),
+        'submitted_jobs': len(job_ids),
+        'failed_submissions': failed_submissions,
+        'completed': [],
+        'failed': [],
+        'job_details': {}
+    }
+    
+    for job_name, status in job_statuses.items():
+        job = job_info[job_name]
+        
+        # Check output (for TSV, just check if file exists and is non-empty)
+        output_file = job['output_file']
+        if output_file.exists() and output_file.stat().st_size > 0:
+            success = True
+            error_msg = None
+        else:
+            success = False
+            error_msg = "TSV output file not created or empty"
+            
+            # Check error log for more details
+            if job['error_log'].exists() and job['error_log'].stat().st_size > 0:
+                try:
+                    with open(job['error_log'], 'r') as f:
+                        error_content = f.read()
+                    if error_content.strip():
+                        error_msg = f"Error in log: {error_content[:200]}"
+                except Exception:
+                    pass
+        
+        job_result = {
+            'name': job_name,
+            'input_file': str(job['input_file']),
+            'output_file': str(job['output_file']),
+            'status': status,
+            'success': success,
+            'error_message': error_msg,
+            'memory_gb': job['memory_gb'],
+            'time_minutes': job['time_minutes'],
+            'error_log': str(job['error_log'])
+        }
+        
+        results['job_details'][job_name] = job_result
+        
+        if success:
+            results['completed'].append(job_name)
+            logger.info(f"Job {job_name} completed successfully")
+        else:
+            results['failed'].append(job_name)
+            logger.error(f"Job {job_name} failed: {error_msg}")
+    
+    return results
+
+
 def main():
     """Main entry point for the LSF batch factorization script."""
     parser = argparse.ArgumentParser(
