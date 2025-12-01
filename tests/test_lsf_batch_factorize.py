@@ -283,8 +283,8 @@ class TestLSFBatchFactorize:
             
             print("File size test passed")
     
-    def test_count_factors_fasta_to_tsv_with_rc(self):
-        """Test counting factors per sequence with reverse complement."""
+    def test_count_factors_fasta_to_tsv_parallel_with_rc(self):
+        """Test counting factors per sequence with parallel factorization (with RC)."""
         if not LSF_BATCH_FACTORIZE_AVAILABLE:
             print("Skipping count_factors_fasta_to_tsv test - module not available")
             return
@@ -299,9 +299,9 @@ class TestLSFBatchFactorize:
             temp_path = Path(temp_dir)
             output_tsv = temp_path / "output.tsv"
             
-            # Test with reverse complement
+            # Test with reverse complement and 2 threads for parallel processing
             result = lsf_batch_factorize.count_factors_fasta_to_tsv(
-                test_fasta, output_tsv, with_reverse_complement=True
+                test_fasta, output_tsv, with_reverse_complement=True, num_threads=2
             )
             
             # Check result structure
@@ -335,11 +335,11 @@ class TestLSFBatchFactorize:
                 assert seq_result['sequence_length'] > 0
                 assert seq_result['factor_count'] > 0
             
-            print(f"count_factors_fasta_to_tsv with RC test passed: "
-                  f"{result['total_sequences']} sequences, {result['total_factors']} factors")
+            print(f"count_factors_fasta_to_tsv parallel with RC test passed: "
+                  f"{result['total_sequences']} sequences, {result['total_factors']} factors, 2 threads")
     
-    def test_count_factors_fasta_to_tsv_without_rc(self):
-        """Test counting factors per sequence without reverse complement."""
+    def test_count_factors_fasta_to_tsv_parallel_without_rc(self):
+        """Test counting factors per sequence with parallel factorization (without RC)."""
         if not LSF_BATCH_FACTORIZE_AVAILABLE:
             print("Skipping count_factors_fasta_to_tsv test - module not available")
             return
@@ -354,9 +354,9 @@ class TestLSFBatchFactorize:
             temp_path = Path(temp_dir)
             output_tsv = temp_path / "output_no_rc.tsv"
             
-            # Test without reverse complement
+            # Test without reverse complement and 2 threads
             result = lsf_batch_factorize.count_factors_fasta_to_tsv(
-                test_fasta, output_tsv, with_reverse_complement=False
+                test_fasta, output_tsv, with_reverse_complement=False, num_threads=2
             )
             
             # Check result structure
@@ -371,11 +371,38 @@ class TestLSFBatchFactorize:
             # Check TSV file was created
             assert output_tsv.exists(), "TSV output file should exist"
             
-            print(f"count_factors_fasta_to_tsv without RC test passed: "
+            print(f"count_factors_fasta_to_tsv parallel without RC test passed: "
+                  f"{result['total_sequences']} sequences, {result['total_factors']} factors, 2 threads")
+    
+    def test_count_factors_fasta_to_tsv_single_thread(self):
+        """Test with single thread (sequential processing)."""
+        if not LSF_BATCH_FACTORIZE_AVAILABLE:
+            print("Skipping count_factors_fasta_to_tsv single thread test")
+            return
+        
+        test_fasta = Path(__file__).parent / "resources" / "short_dna1.fasta"
+        if not test_fasta.exists():
+            print(f"Skipping test - test file not found: {test_fasta}")
+            return
+        
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            output_tsv = temp_path / "output_single.tsv"
+            
+            # Test with 1 thread (sequential)
+            result = lsf_batch_factorize.count_factors_fasta_to_tsv(
+                test_fasta, output_tsv, with_reverse_complement=True, num_threads=1
+            )
+            
+            assert result['total_sequences'] > 0
+            assert result['total_factors'] > 0
+            assert output_tsv.exists()
+            
+            print(f"count_factors_fasta_to_tsv single thread test passed: "
                   f"{result['total_sequences']} sequences, {result['total_factors']} factors")
     
-    def test_create_count_job_script(self):
-        """Test count job script creation."""
+    def test_create_count_job_script_parallel(self):
+        """Test count job script creation with parallel factorization."""
         if not LSF_BATCH_FACTORIZE_AVAILABLE:
             print("Skipping create_count_job_script test - module not available")
             return
@@ -390,11 +417,12 @@ class TestLSFBatchFactorize:
             # Create dummy input file
             input_file.touch()
             
-            # Create job script for counting with RC
+            # Create job script for counting with RC and 4 threads
             success = lsf_batch_factorize.create_count_job_script(
                 input_file=input_file,
                 output_file=output_file,
                 with_reverse_complement=True,
+                num_threads=4,
                 script_path=script_path
             )
             
@@ -410,11 +438,12 @@ class TestLSFBatchFactorize:
             assert str(input_file) in script_content
             assert str(output_file) in script_content
             assert 'with_reverse_complement = True' in script_content
+            assert 'num_threads = 4' in script_content
             
             # Check script is executable
             assert os.access(script_path, os.X_OK), "Script not executable"
             
-            print("Count job script creation test passed")
+            print("Count job script creation with parallel factorization test passed")
     
     def test_count_factors_fasta_file_not_found(self):
         """Test error handling when FASTA file doesn't exist."""
@@ -425,12 +454,11 @@ class TestLSFBatchFactorize:
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_path = Path(temp_dir)
             output_tsv = temp_path / "output.tsv"
-            # Use a path within the temp directory that doesn't exist
             nonexistent_file = temp_path / "nonexistent_file.fasta"
             
             try:
                 lsf_batch_factorize.count_factors_fasta_to_tsv(
-                    nonexistent_file, output_tsv, with_reverse_complement=True
+                    nonexistent_file, output_tsv, with_reverse_complement=True, num_threads=1
                 )
                 assert False, "Should raise FileNotFoundError"
             except FileNotFoundError:
@@ -451,9 +479,10 @@ def run_all_tests():
         test_class.test_load_benchmark_trends_not_found,
         test_class.test_check_job_output,
         test_class.test_get_file_size,
-        test_class.test_count_factors_fasta_to_tsv_with_rc,
-        test_class.test_count_factors_fasta_to_tsv_without_rc,
-        test_class.test_create_count_job_script,
+        test_class.test_count_factors_fasta_to_tsv_parallel_with_rc,
+        test_class.test_count_factors_fasta_to_tsv_parallel_without_rc,
+        test_class.test_count_factors_fasta_to_tsv_single_thread,
+        test_class.test_create_count_job_script_parallel,
         test_class.test_count_factors_fasta_file_not_found,
     ]
     

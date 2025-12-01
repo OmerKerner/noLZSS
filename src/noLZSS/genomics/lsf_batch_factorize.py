@@ -40,12 +40,6 @@ from .batch_factorize import (
 )
 
 
-# Estimated ratio of nucleotide content to total file size in FASTA files
-# Accounts for header lines, newlines, and other overhead characters
-# Based on typical FASTA format with ~10-20% overhead from headers and formatting
-NUCLEOTIDE_RATIO_ESTIMATE = 0.8
-
-
 class LSFBatchFactorizeError(NoLZSSError):
     """Raised when LSF batch factorization encounters an error."""
     pass
@@ -92,8 +86,8 @@ def estimate_fasta_nucleotides(file_path: Path) -> int:
         file_size = file_path.stat().st_size
         estimated_nucleotides = int(file_size * sequence_ratio)
     else:
-        # Fallback: use the standard estimate for FASTA overhead
-        estimated_nucleotides = int(file_path.stat().st_size * NUCLEOTIDE_RATIO_ESTIMATE)
+        # Fallback: assume 80% of file is sequence data
+        estimated_nucleotides = int(file_path.stat().st_size * 0.8)
     
     return estimated_nucleotides
 
@@ -277,8 +271,8 @@ def estimate_resources_fallback(
     Returns:
         Dictionary with resource estimates
     """
-    # Estimate nucleotides using the standard FASTA overhead ratio
-    nucleotides = int(file_size_bytes * NUCLEOTIDE_RATIO_ESTIMATE)
+    # Estimate nucleotides (assume ~1 byte per nucleotide with overhead)
+    nucleotides = int(file_size_bytes * 0.8)
     
     # Conservative estimates based on typical LZSS behavior
     # Time: roughly 0.1-1 ms per 1000 nucleotides depending on complexity
@@ -765,7 +759,7 @@ def process_files_on_cluster(
             nucleotides = estimate_fasta_nucleotides(file_path)
         except Exception as e:
             logger.warning(f"Could not estimate nucleotides for {file_path}: {e}, using file size")
-            nucleotides = int(file_path.stat().st_size * NUCLEOTIDE_RATIO_ESTIMATE)
+            nucleotides = int(file_path.stat().st_size * 0.8)
         
         # Decide number of threads
         num_threads = decide_num_threads(nucleotides, max_threads, trends)
@@ -987,23 +981,60 @@ def save_results(results: Dict[str, Any], output_dir: Path, logger: Optional[log
         logger.error(f"Failed to save results: {e}")
 
 
+def _read_binary_factor_metadata(filepath: Path) -> Tuple[str, int, int]:
+    """
+    Read metadata from a single-sequence binary factor file.
+    
+    Args:
+        filepath: Path to the binary factor file
+        
+    Returns:
+        Tuple of (sequence_id, sequence_length, factor_count)
+    """
+    import struct
+    
+    with open(filepath, 'rb') as f:
+        data = f.read()
+    
+    # Read footer from end
+    footer_start = len(data) - 48  # Footer is 48 bytes (8 + 5*8 bytes)
+    footer = data[footer_start:]
+    
+    num_factors = struct.unpack('<Q', footer[8:16])[0]
+    footer_size = struct.unpack('<Q', footer[32:40])[0]
+    total_length = struct.unpack('<Q', footer[40:48])[0]
+    
+    # Calculate where metadata starts
+    metadata_start = len(data) - footer_size
+    
+    # Read sequence ID from metadata
+    pos = metadata_start
+    end = data.find(b'\x00', pos)
+    seq_id = data[pos:end].decode('utf-8')
+    
+    return seq_id, total_length, num_factors
+
+
 def count_factors_fasta_to_tsv(
     fasta_path: Union[str, Path],
     output_path: Union[str, Path],
     with_reverse_complement: bool = True,
+    num_threads: int = 1,
     logger: Optional[logging.Logger] = None
 ) -> Dict[str, Any]:
     """
-    Count LZSS factors for each sequence in a FASTA file and write results to TSV.
+    Count LZSS factors for each sequence in a FASTA file using parallel factorization.
     
-    This function processes a FASTA file, counts the LZSS factors for each sequence
-    independently (with or without reverse complement awareness), and writes the
-    results to a TSV file with columns: sequence_id, sequence_length, factor_count.
+    This function processes a FASTA file using parallel factorization where different
+    sequences can be factorized concurrently. It counts the LZSS factors for each 
+    sequence independently (with or without reverse complement awareness), and writes 
+    the results to a TSV file with columns: sequence_id, sequence_length, factor_count.
     
     Args:
         fasta_path: Path to the input FASTA file
         output_path: Path to the output TSV file
         with_reverse_complement: Whether to use reverse complement awareness (default: True)
+        num_threads: Number of threads for parallel factorization (default: 1)
         logger: Logger instance
         
     Returns:
@@ -1025,56 +1056,56 @@ def count_factors_fasta_to_tsv(
     if not fasta_path.exists():
         raise FileNotFoundError(f"FASTA file not found: {fasta_path}")
     
-    # Import the appropriate C++ function
+    # Import the appropriate C++ parallel function
     try:
         if with_reverse_complement:
-            from .._noLZSS import factorize_fasta_dna_w_rc_per_sequence
-            factorize_func = factorize_fasta_dna_w_rc_per_sequence
+            from .._noLZSS import parallel_write_factors_binary_file_fasta_dna_w_rc_per_sequence
+            factorize_func = parallel_write_factors_binary_file_fasta_dna_w_rc_per_sequence
         else:
-            from .._noLZSS import factorize_fasta_dna_no_rc_per_sequence
-            factorize_func = factorize_fasta_dna_no_rc_per_sequence
+            from .._noLZSS import parallel_write_factors_binary_file_fasta_dna_no_rc_per_sequence
+            factorize_func = parallel_write_factors_binary_file_fasta_dna_no_rc_per_sequence
     except ImportError as e:
         raise RuntimeError(f"C++ extension not available: {e}")
     
     logger.info(f"Processing FASTA file: {fasta_path}")
     logger.info(f"Mode: {'with' if with_reverse_complement else 'without'} reverse complement")
+    logger.info(f"Using {num_threads} threads for parallel factorization")
     
-    # Factorize each sequence
-    per_seq_factors, sequence_ids = factorize_func(str(fasta_path))
-    
-    # Prepare results
-    sequence_results = []
-    total_factors = 0
-    
-    # Calculate sequence lengths from factors
-    # Factor format from C++: (start, length, ref, is_rc)
-    # - start: position in sequence where factor starts
-    # - length: length of the factor
-    # - ref: reference position (where pattern was seen before)
-    # - is_rc: boolean indicating if this was a reverse complement match
-    for seq_id, factors in zip(sequence_ids, per_seq_factors):
-        # Calculate sequence length from factors (sum of all factor lengths)
-        seq_length = sum(f[1] for f in factors)  # f[1] is the length field
-        factor_count = len(factors)
+    # Create temporary directory for binary output files
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmpdir_path = Path(tmpdir)
         
-        sequence_results.append({
-            'sequence_id': seq_id,
-            'sequence_length': seq_length,
-            'factor_count': factor_count
-        })
-        total_factors += factor_count
-    
-    # Ensure output directory exists
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    
-    # Write TSV output
-    with open(output_path, 'w', encoding='utf-8') as f:
-        # Write header
-        f.write("sequence_id\tsequence_length\tfactor_count\n")
+        # Parallel factorization - writes binary files for each sequence
+        # This is where parallelization happens - different sequences are factorized concurrently
+        total_factors = factorize_func(str(fasta_path), str(tmpdir_path), num_threads)
         
-        # Write data rows
-        for result in sequence_results:
-            f.write(f"{result['sequence_id']}\t{result['sequence_length']}\t{result['factor_count']}\n")
+        # Read metadata from binary files to generate TSV
+        binary_files = sorted(tmpdir_path.glob("*.bin"))
+        
+        if not binary_files:
+            raise RuntimeError(f"No binary output files generated for {fasta_path}")
+        
+        sequence_results = []
+        
+        for binary_file in binary_files:
+            seq_id, seq_length, factor_count = _read_binary_factor_metadata(binary_file)
+            sequence_results.append({
+                'sequence_id': seq_id,
+                'sequence_length': seq_length,
+                'factor_count': factor_count
+            })
+        
+        # Ensure output directory exists
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        # Write TSV output
+        with open(output_path, 'w', encoding='utf-8') as f:
+            # Write header
+            f.write("sequence_id\tsequence_length\tfactor_count\n")
+            
+            # Write data rows
+            for result in sequence_results:
+                f.write(f"{result['sequence_id']}\t{result['sequence_length']}\t{result['factor_count']}\n")
     
     logger.info(f"Wrote {len(sequence_results)} sequence results to {output_path}")
     logger.info(f"Total factors: {total_factors}")
@@ -1090,16 +1121,18 @@ def create_count_job_script(
     input_file: Path,
     output_file: Path,
     with_reverse_complement: bool,
+    num_threads: int,
     script_path: Path,
     python_executable: Optional[str] = None
 ) -> bool:
     """
-    Create a bash script for an LSF job that counts factors and outputs TSV.
+    Create a bash script for an LSF job that counts factors using parallel factorization.
     
     Args:
         input_file: Path to input FASTA file
         output_file: Path to output TSV file
         with_reverse_complement: Whether to use reverse complement awareness
+        num_threads: Number of threads for parallel factorization
         script_path: Path where to save the script
         python_executable: Optional Python executable path (default: sys.executable)
         
@@ -1117,9 +1150,10 @@ from noLZSS.genomics.lsf_batch_factorize import count_factors_fasta_to_tsv
 input_file = "{input_file}"
 output_file = "{output_file}"
 with_reverse_complement = {with_reverse_complement}
+num_threads = {num_threads}
 
 try:
-    result = count_factors_fasta_to_tsv(input_file, output_file, with_reverse_complement)
+    result = count_factors_fasta_to_tsv(input_file, output_file, with_reverse_complement, num_threads)
     print(f"Successfully processed {{input_file}}: {{result['total_sequences']}} sequences, {{result['total_factors']}} total factors")
     sys.exit(0)
 except Exception as e:
@@ -1132,7 +1166,7 @@ except Exception as e:
 set -e
 set -u
 
-# Run the Python factor counting
+# Run the Python factor counting with parallel factorization
 {python_executable} << 'PYTHON_EOF'
 {python_code}
 PYTHON_EOF
@@ -1168,17 +1202,18 @@ def count_factors_on_cluster(
     logger: Optional[logging.Logger] = None
 ) -> Dict[str, Dict[str, Any]]:
     """
-    Count factors in FASTA files on LSF cluster and output TSV results.
+    Count factors in FASTA files on LSF cluster using parallel factorization.
     
     This function submits LSF jobs to count LZSS factors for each sequence in
-    the provided FASTA files. Each job produces a TSV file with columns:
+    the provided FASTA files. Each job uses parallel factorization where different
+    sequences are factorized concurrently. Each job produces a TSV file with columns:
     sequence_id, sequence_length, factor_count.
     
     Args:
         file_list: List of FASTA file paths (must be local files accessible to cluster)
         output_dir: Base output directory for TSV results
         with_reverse_complement: Whether to use reverse complement awareness (default: True)
-        max_threads: Maximum threads per job (not heavily used for counting)
+        max_threads: Maximum threads per job for parallel factorization
         trends: Benchmark trend parameters (optional)
         queue: LSF queue name (optional)
         safety_factor: Safety factor for resource estimates
@@ -1210,7 +1245,7 @@ def count_factors_on_cluster(
     
     mode_suffix = "w_rc" if with_reverse_complement else "no_rc"
     
-    logger.info(f"Preparing {len(file_list)} count jobs...")
+    logger.info(f"Preparing {len(file_list)} count jobs with parallel factorization...")
     
     for file_path_str in file_list:
         file_path = Path(file_path_str)
@@ -1234,19 +1269,21 @@ def count_factors_on_cluster(
             nucleotides = estimate_fasta_nucleotides(file_path)
         except Exception as e:
             logger.warning(f"Could not estimate nucleotides for {file_path}: {e}, using file size")
-            nucleotides = int(file_path.stat().st_size * NUCLEOTIDE_RATIO_ESTIMATE)
+            nucleotides = int(file_path.stat().st_size * 0.8)
         
-        # Resource estimation (counting is less intensive than full factorization)
-        # Use a simpler estimate since we're only counting
+        # Decide number of threads for parallel factorization
+        num_threads = decide_num_threads(nucleotides, max_threads, trends)
+        
+        # Resource estimation
         if trends:
             estimates = estimate_resources_from_trends(
                 nucleotides, trends, 
                 FactorizationMode.WITH_REVERSE_COMPLEMENT if with_reverse_complement else FactorizationMode.WITHOUT_REVERSE_COMPLEMENT,
-                1, safety_factor
+                num_threads, safety_factor
             )
         else:
             estimates = estimate_resources_fallback(
-                file_path.stat().st_size, 1, safety_factor
+                file_path.stat().st_size, num_threads, safety_factor
             )
         
         # Round up time to minutes (minimum 5 minutes)
@@ -1257,7 +1294,7 @@ def count_factors_on_cluster(
         job_name = f"count_{base_name}"
         script_path = scripts_dir / f"{job_name}.sh"
         
-        if not create_count_job_script(file_path, output_file, with_reverse_complement, script_path):
+        if not create_count_job_script(file_path, output_file, with_reverse_complement, num_threads, script_path):
             logger.error(f"Failed to create script for {file_path}")
             continue
         
@@ -1270,7 +1307,7 @@ def count_factors_on_cluster(
             'input_file': file_path,
             'output_file': output_file,
             'script_path': script_path,
-            'num_threads': 1,  # Counting is single-threaded
+            'num_threads': num_threads,
             'memory_gb': memory_gb,
             'time_minutes': time_minutes,
             'output_log': output_log,
@@ -1359,6 +1396,7 @@ def count_factors_on_cluster(
             'status': status,
             'success': success,
             'error_message': error_msg,
+            'num_threads': job['num_threads'],
             'memory_gb': job['memory_gb'],
             'time_minutes': job['time_minutes'],
             'error_log': str(job['error_log'])
