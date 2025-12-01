@@ -16,6 +16,7 @@ The script:
 import argparse
 import logging
 import os
+import struct
 import sys
 import subprocess
 import tempfile
@@ -38,6 +39,16 @@ from .batch_factorize import (
     FactorizationMode,
     BatchFactorizeError
 )
+
+
+# Binary format constants for reading factor files
+BINARY_FOOTER_SIZE = 48  # Footer is 48 bytes (8 + 5*8 bytes)
+BINARY_NUM_FACTORS_OFFSET = 8
+BINARY_NUM_FACTORS_END = 16
+BINARY_FOOTER_SIZE_OFFSET = 32
+BINARY_FOOTER_SIZE_END = 40
+BINARY_TOTAL_LENGTH_OFFSET = 40
+BINARY_TOTAL_LENGTH_END = 48
 
 
 class LSFBatchFactorizeError(NoLZSSError):
@@ -991,18 +1002,16 @@ def _read_binary_factor_metadata(filepath: Path) -> Tuple[str, int, int]:
     Returns:
         Tuple of (sequence_id, sequence_length, factor_count)
     """
-    import struct
-    
     with open(filepath, 'rb') as f:
         data = f.read()
     
-    # Read footer from end
-    footer_start = len(data) - 48  # Footer is 48 bytes (8 + 5*8 bytes)
+    # Read footer from end using defined constants
+    footer_start = len(data) - BINARY_FOOTER_SIZE
     footer = data[footer_start:]
     
-    num_factors = struct.unpack('<Q', footer[8:16])[0]
-    footer_size = struct.unpack('<Q', footer[32:40])[0]
-    total_length = struct.unpack('<Q', footer[40:48])[0]
+    num_factors = struct.unpack('<Q', footer[BINARY_NUM_FACTORS_OFFSET:BINARY_NUM_FACTORS_END])[0]
+    footer_size = struct.unpack('<Q', footer[BINARY_FOOTER_SIZE_OFFSET:BINARY_FOOTER_SIZE_END])[0]
+    total_length = struct.unpack('<Q', footer[BINARY_TOTAL_LENGTH_OFFSET:BINARY_TOTAL_LENGTH_END])[0]
     
     # Calculate where metadata starts
     metadata_start = len(data) - footer_size
@@ -1045,10 +1054,15 @@ def count_factors_fasta_to_tsv(
         
     Raises:
         FileNotFoundError: If the FASTA file doesn't exist
+        ValueError: If num_threads is not a positive integer
         RuntimeError: If factorization fails
     """
     if logger is None:
         logger = logging.getLogger(__name__)
+    
+    # Validate num_threads
+    if not isinstance(num_threads, int) or num_threads < 1:
+        raise ValueError(f"num_threads must be a positive integer, got: {num_threads}")
     
     fasta_path = Path(fasta_path)
     output_path = Path(output_path)
