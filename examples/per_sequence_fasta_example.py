@@ -58,7 +58,9 @@ def main():
         
         # 3. Count factors without storing them (memory efficient)
         print("\n3. Count factors (memory efficient):")
-        total_count = count_factors_fasta_dna_w_rc_per_sequence(fasta_path)
+        counts, count_ids, total_count = count_factors_fasta_dna_w_rc_per_sequence(fasta_path)
+        for seq_id, count in zip(count_ids, counts):
+            print(f"   Sequence '{seq_id}': {count} factors")
         print(f"   Total factors across all sequences: {total_count}")
         
         # 4. Write to binary file

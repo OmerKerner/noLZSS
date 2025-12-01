@@ -3,6 +3,7 @@
 #include "factorizer_core.hpp"
 #include "factorizer_helpers.hpp"
 #include <fstream>
+#include <atomic>
 #include <sdsl/rmq_succinct_sct.hpp>
 #include <sdsl/construct.hpp>
 #include <thread>
@@ -450,6 +451,132 @@ size_t parallel_write_factors_binary_file_fasta_dna_no_rc_per_sequence(
     }
     
     return total_factor_count.load();
+}
+
+FastaPerSequenceCountResult parallel_count_factors_fasta_dna_w_rc_per_sequence(
+    const std::string& fasta_path,
+    size_t num_threads) {
+    FastaParseResult parse_result = parse_fasta_sequences_and_ids(fasta_path);
+    size_t num_sequences = parse_result.sequences.size();
+
+    FastaPerSequenceCountResult result;
+    result.sequence_ids = parse_result.sequence_ids;
+    result.factor_counts.assign(num_sequences, 0);
+
+    if (num_sequences == 0) {
+        return result;
+    }
+
+    if (num_threads == 0) {
+        size_t hw = std::thread::hardware_concurrency();
+        num_threads = hw == 0 ? 1 : std::min(num_sequences, hw);
+    }
+    num_threads = std::max<size_t>(1, std::min(num_threads, num_sequences));
+
+    if (num_threads == 1) {
+        for (size_t i = 0; i < num_sequences; ++i) {
+            std::vector<std::string> single_seq = {parse_result.sequences[i]};
+            PreparedSequenceResult prep_result = prepare_multiple_dna_sequences_w_rc(single_seq);
+            size_t count = count_factors_multiple_dna_w_rc(prep_result.prepared_string);
+            result.factor_counts[i] = count;
+            result.total_factors += count;
+        }
+        return result;
+    }
+
+    std::atomic<size_t> next_sequence(0);
+    std::vector<std::thread> threads;
+    threads.reserve(num_threads);
+
+    for (size_t t = 0; t < num_threads; ++t) {
+        threads.emplace_back([&]() {
+            while (true) {
+                size_t seq_idx = next_sequence.fetch_add(1, std::memory_order_relaxed);
+                if (seq_idx >= num_sequences) {
+                    break;
+                }
+
+                std::vector<std::string> single_seq = {parse_result.sequences[seq_idx]};
+                PreparedSequenceResult prep_result = prepare_multiple_dna_sequences_w_rc(single_seq);
+                size_t local_count = count_factors_multiple_dna_w_rc(prep_result.prepared_string);
+                result.factor_counts[seq_idx] = local_count;
+            }
+        });
+    }
+
+    for (auto& thread : threads) {
+        thread.join();
+    }
+
+    for (size_t count : result.factor_counts) {
+        result.total_factors += count;
+    }
+
+    return result;
+}
+
+FastaPerSequenceCountResult parallel_count_factors_fasta_dna_no_rc_per_sequence(
+    const std::string& fasta_path,
+    size_t num_threads) {
+    FastaParseResult parse_result = parse_fasta_sequences_and_ids(fasta_path);
+    size_t num_sequences = parse_result.sequences.size();
+
+    FastaPerSequenceCountResult result;
+    result.sequence_ids = parse_result.sequence_ids;
+    result.factor_counts.assign(num_sequences, 0);
+
+    if (num_sequences == 0) {
+        return result;
+    }
+
+    if (num_threads == 0) {
+        size_t hw = std::thread::hardware_concurrency();
+        num_threads = hw == 0 ? 1 : std::min(num_sequences, hw);
+    }
+    num_threads = std::max<size_t>(1, std::min(num_threads, num_sequences));
+
+    if (num_threads == 1) {
+        for (size_t i = 0; i < num_sequences; ++i) {
+            std::vector<std::string> single_seq = {parse_result.sequences[i]};
+            PreparedSequenceResult prep_result = prepare_multiple_dna_sequences_no_rc(single_seq);
+            std::string seq_without_sentinel = prep_result.prepared_string.substr(0, prep_result.prepared_string.length() - 1);
+            size_t count = count_factors(seq_without_sentinel);
+            result.factor_counts[i] = count;
+            result.total_factors += count;
+        }
+        return result;
+    }
+
+    std::atomic<size_t> next_sequence(0);
+    std::vector<std::thread> threads;
+    threads.reserve(num_threads);
+
+    for (size_t t = 0; t < num_threads; ++t) {
+        threads.emplace_back([&]() {
+            while (true) {
+                size_t seq_idx = next_sequence.fetch_add(1, std::memory_order_relaxed);
+                if (seq_idx >= num_sequences) {
+                    break;
+                }
+
+                std::vector<std::string> single_seq = {parse_result.sequences[seq_idx]};
+                PreparedSequenceResult prep_result = prepare_multiple_dna_sequences_no_rc(single_seq);
+                std::string seq_without_sentinel = prep_result.prepared_string.substr(0, prep_result.prepared_string.length() - 1);
+                size_t local_count = count_factors(seq_without_sentinel);
+                result.factor_counts[seq_idx] = local_count;
+            }
+        });
+    }
+
+    for (auto& thread : threads) {
+        thread.join();
+    }
+
+    for (size_t count : result.factor_counts) {
+        result.total_factors += count;
+    }
+
+    return result;
 }
 
 } // namespace noLZSS

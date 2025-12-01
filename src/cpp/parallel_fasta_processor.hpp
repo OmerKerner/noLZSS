@@ -145,4 +145,46 @@ size_t parallel_write_factors_binary_file_fasta_dna_no_rc_per_sequence(
     size_t num_threads = 0
 );
 
+/**
+ * @brief Parallel counter for per-sequence factorization with reverse complement awareness.
+ *
+ * Parses a FASTA file, prepares each sequence independently (including reverse complements),
+ * and counts the total number of factors across all sequences using parallel workers.
+ *
+ * @param fasta_path Path to input FASTA file containing DNA sequences
+ * @param num_threads Number of threads to use (0 = auto-detect based on sequence count)
+ * @return Result containing per-sequence IDs, counts, and aggregate total
+ *
+ * @throws std::runtime_error If FASTA file cannot be opened or contains no valid sequences
+ * @throws std::invalid_argument If invalid nucleotides are detected
+ *
+ * @note Each sequence is processed independently with reverse complement support
+ * @note Counts factors without storing them, minimizing memory usage
+ */
+FastaPerSequenceCountResult parallel_count_factors_fasta_dna_w_rc_per_sequence(
+    const std::string& fasta_path,
+    size_t num_threads = 0
+);
+
+/**
+ * @brief Parallel counter for per-sequence factorization without reverse complement awareness.
+ *
+ * Parses a FASTA file, prepares each sequence independently (without RC), and counts factors
+ * across all sequences using multiple threads.
+ *
+ * @param fasta_path Path to input FASTA file containing DNA sequences
+ * @param num_threads Number of threads to use (0 = auto-detect based on sequence count)
+ * @return Result containing per-sequence IDs, counts, and aggregate total
+ *
+ * @throws std::runtime_error If FASTA file cannot be opened or contains no valid sequences
+ * @throws std::invalid_argument If invalid nucleotides are detected
+ *
+ * @note Each sequence is processed independently without reverse complement support
+ * @note Removes sentinel terminators before counting to ensure correctness
+ */
+FastaPerSequenceCountResult parallel_count_factors_fasta_dna_no_rc_per_sequence(
+    const std::string& fasta_path,
+    size_t num_threads = 0
+);
+
 } // namespace noLZSS

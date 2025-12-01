@@ -9,6 +9,7 @@ This module tests the per-sequence FASTA factorization functions including:
 - count_factors_fasta_dna_w_rc_per_sequence
 - count_factors_fasta_dna_no_rc_per_sequence
 - parallel versions of write functions
+- parallel versions of count functions
 
 Unlike the concatenated versions (factorize_fasta_multiple_dna_*), these functions
 factorize each sequence in the FASTA file independently without using sentinels.
@@ -30,6 +31,8 @@ try:
         count_factors_fasta_dna_no_rc_per_sequence,
         parallel_write_factors_binary_file_fasta_dna_w_rc_per_sequence,
         parallel_write_factors_binary_file_fasta_dna_no_rc_per_sequence,
+        parallel_count_factors_fasta_dna_w_rc_per_sequence,
+        parallel_count_factors_fasta_dna_no_rc_per_sequence,
     )
     CPP_AVAILABLE = True
 except ImportError as e:
@@ -163,14 +166,17 @@ class TestPerSequenceFastaFactorization:
         fasta_path = str(RESOURCES_DIR / "short_dna1.fasta")
         
         # Get full factorization
-        per_seq_factors, _ = factorize_fasta_dna_w_rc_per_sequence(fasta_path)
-        expected_count = sum(len(factors) for factors in per_seq_factors)
+        per_seq_factors, sequence_ids = factorize_fasta_dna_w_rc_per_sequence(fasta_path)
+        expected_counts = [len(factors) for factors in per_seq_factors]
+        expected_total = sum(expected_counts)
         
-        # Get count only
-        actual_count = count_factors_fasta_dna_w_rc_per_sequence(fasta_path)
-        
-        assert actual_count == expected_count, f"Count {actual_count} should match full factorization {expected_count}"
-        print(f"Count correct: {actual_count} total factors")
+        # Get count-only result
+        actual_counts, actual_ids, total_count = count_factors_fasta_dna_w_rc_per_sequence(fasta_path)
+
+        assert list(actual_ids) == list(sequence_ids), "Sequence IDs should match factorization order"
+        assert list(actual_counts) == expected_counts, "Per-sequence counts should match full factorization"
+        assert total_count == expected_total, f"Total {total_count} should match expected {expected_total}"
+        print(f"Count correct: {total_count} total factors across {len(actual_counts)} sequences")
     
     def test_count_factors_no_rc(self):
         """Test counting factors per sequence without RC."""
@@ -181,14 +187,49 @@ class TestPerSequenceFastaFactorization:
         fasta_path = str(RESOURCES_DIR / "short_dna1.fasta")
         
         # Get full factorization
-        per_seq_factors, _ = factorize_fasta_dna_no_rc_per_sequence(fasta_path)
-        expected_count = sum(len(factors) for factors in per_seq_factors)
+        per_seq_factors, sequence_ids = factorize_fasta_dna_no_rc_per_sequence(fasta_path)
+        expected_counts = [len(factors) for factors in per_seq_factors]
+        expected_total = sum(expected_counts)
         
-        # Get count only
-        actual_count = count_factors_fasta_dna_no_rc_per_sequence(fasta_path)
-        
-        assert actual_count == expected_count, f"Count {actual_count} should match full factorization {expected_count}"
-        print(f"Count correct: {actual_count} total factors")
+        # Get count-only result
+        actual_counts, actual_ids, total_count = count_factors_fasta_dna_no_rc_per_sequence(fasta_path)
+
+        assert list(actual_ids) == list(sequence_ids), "Sequence IDs should match factorization order"
+        assert list(actual_counts) == expected_counts, "Per-sequence counts should match full factorization"
+        assert total_count == expected_total, f"Total {total_count} should match expected {expected_total}"
+        print(f"Count correct: {total_count} total factors across {len(actual_counts)} sequences")
+
+    def test_parallel_count_w_rc(self):
+        """Test parallel counting per sequence with RC."""
+        if not CPP_AVAILABLE:
+            print("Skipping test - C++ extension not available")
+            return
+
+        fasta_path = str(RESOURCES_DIR / "short_dna1.fasta")
+
+        sequential = count_factors_fasta_dna_w_rc_per_sequence(fasta_path)
+        parallel_auto = parallel_count_factors_fasta_dna_w_rc_per_sequence(fasta_path)
+        parallel_threads = parallel_count_factors_fasta_dna_w_rc_per_sequence(fasta_path, 2)
+
+        assert parallel_auto == sequential, "Parallel (auto threads) should match sequential metadata"
+        assert parallel_threads == sequential, "Parallel (2 threads) should match sequential metadata"
+        print(f"Parallel count (w/ RC) consistent: {sequential[2]} total factors")
+
+    def test_parallel_count_no_rc(self):
+        """Test parallel counting per sequence without RC."""
+        if not CPP_AVAILABLE:
+            print("Skipping test - C++ extension not available")
+            return
+
+        fasta_path = str(RESOURCES_DIR / "short_dna1.fasta")
+
+        sequential = count_factors_fasta_dna_no_rc_per_sequence(fasta_path)
+        parallel_auto = parallel_count_factors_fasta_dna_no_rc_per_sequence(fasta_path)
+        parallel_threads = parallel_count_factors_fasta_dna_no_rc_per_sequence(fasta_path, 2)
+
+        assert parallel_auto == sequential, "Parallel (auto threads) should match sequential metadata"
+        assert parallel_threads == sequential, "Parallel (2 threads) should match sequential metadata"
+        print(f"Parallel count (no RC) consistent: {sequential[2]} total factors")
     
     def test_write_binary_w_rc(self):
         """Test writing per-sequence factors to separate binary files with RC."""
@@ -433,6 +474,8 @@ def run_tests():
         ("Basic factorization without RC", test_class.test_factorize_no_rc_basic),
         ("Count factors with RC", test_class.test_count_factors_w_rc),
         ("Count factors without RC", test_class.test_count_factors_no_rc),
+        ("Parallel count with RC", test_class.test_parallel_count_w_rc),
+        ("Parallel count without RC", test_class.test_parallel_count_no_rc),
         ("Write binary with RC", test_class.test_write_binary_w_rc),
         ("Write binary without RC", test_class.test_write_binary_no_rc),
         ("Parallel write sequential", test_class.test_parallel_write_sequential),

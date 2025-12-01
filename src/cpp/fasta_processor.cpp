@@ -415,48 +415,15 @@ size_t write_factors_binary_file_fasta_dna_no_rc_per_sequence(const std::string&
 /**
  * @brief Counts total factors from per-sequence DNA factorization with reverse complement.
  */
-size_t count_factors_fasta_dna_w_rc_per_sequence(const std::string& fasta_path) {
-    // Parse FASTA file into individual sequences
-    FastaParseResult parse_result = parse_fasta_sequences_and_ids(fasta_path);
-    
-    size_t total_count = 0;
-    
-    // Count factors for each sequence independently
-    for (const auto& sequence : parse_result.sequences) {
-        // Prepare single DNA sequence with reverse complement
-        std::vector<std::string> single_seq = {sequence};
-        PreparedSequenceResult prep_result = prepare_multiple_dna_sequences_w_rc(single_seq);
-        
-        // Count factors using count_factors_multiple_dna_w_rc
-        total_count += count_factors_multiple_dna_w_rc(prep_result.prepared_string);
-    }
-    
-    return total_count;
+FastaPerSequenceCountResult count_factors_fasta_dna_w_rc_per_sequence(const std::string& fasta_path) {
+    return parallel_count_factors_fasta_dna_w_rc_per_sequence(fasta_path, 1);
 }
 
 /**
  * @brief Counts total factors from per-sequence DNA factorization without reverse complement.
  */
-size_t count_factors_fasta_dna_no_rc_per_sequence(const std::string& fasta_path) {
-    // Parse FASTA file into individual sequences
-    FastaParseResult parse_result = parse_fasta_sequences_and_ids(fasta_path);
-    
-    size_t total_count = 0;
-    
-    // Count factors for each sequence independently
-    for (const auto& sequence : parse_result.sequences) {
-        // Prepare single DNA sequence (no reverse complement)
-        std::vector<std::string> single_seq = {sequence};
-        PreparedSequenceResult prep_result = prepare_multiple_dna_sequences_no_rc(single_seq);
-        
-        // Remove the sentinel at the end
-        std::string seq_without_sentinel = prep_result.prepared_string.substr(0, prep_result.prepared_string.length() - 1);
-        
-        // Count factors
-        total_count += count_factors(seq_without_sentinel);
-    }
-    
-    return total_count;
+FastaPerSequenceCountResult count_factors_fasta_dna_no_rc_per_sequence(const std::string& fasta_path) {
+    return parallel_count_factors_fasta_dna_no_rc_per_sequence(fasta_path, 1);
 }
 
 } // namespace noLZSS
