@@ -6,6 +6,7 @@ import os
 import sys
 import tempfile
 from pathlib import Path
+from unittest import mock
 
 # Try to import the batch factorization script
 try:
@@ -298,9 +299,44 @@ class TestBatchFactorize:
                 assert plot_path.stat().st_size > 0, "Plot file should not be empty"
                 
                 print("Plot comparison test passed")
-                
             except Exception as e:
                 print(f"Plot comparison test skipped - C++ extension issue: {e}")
+
+    def test_complexity_table_and_tsv(self):
+        """Test complexity table helpers with patched C++ bindings."""
+        if not BATCH_FACTORIZE_AVAILABLE:
+            print("Skipping complexity table test - module not available")
+            return
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            fasta_file = temp_path / "test.fasta"
+            fasta_file.write_text(">seq1 description\nATCG\n", encoding="utf-8")
+
+            with mock.patch.object(
+                batch_factorize,
+                "parallel_count_factors_fasta_dna_w_rc_per_sequence",
+                return_value=([5], ["seq1"], 5),
+            ) as mock_rc, mock.patch.object(
+                batch_factorize,
+                "parallel_count_factors_fasta_dna_no_rc_per_sequence",
+                return_value=([3], ["seq1"], 3),
+            ) as mock_no_rc:
+                rows = batch_factorize.compute_sequence_complexity_table(fasta_file)
+                assert rows == [("seq1", 5, 3)]
+                mock_rc.assert_called_once()
+                mock_no_rc.assert_called_once()
+
+                tsv_path = temp_path / "complexity.tsv"
+                count = batch_factorize.write_sequence_complexity_tsv(fasta_file, tsv_path)
+                assert count == 1
+                assert tsv_path.exists()
+
+                content = tsv_path.read_text(encoding="utf-8").strip().splitlines()
+                assert content[0] == "sequence_id\tcomplexity_w_rc\tcomplexity_no_rc"
+                assert content[1] == "seq1\t5\t3"
+                
+                print("Complexity table helper test passed")
 
 
 def run_tests():

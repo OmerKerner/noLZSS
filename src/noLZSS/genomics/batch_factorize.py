@@ -11,6 +11,7 @@ import gzip
 import logging
 import os
 import random
+import shutil
 import sys
 import tempfile
 import time
@@ -25,6 +26,8 @@ from ..utils import NoLZSSError
 from .._noLZSS import (
     write_factors_binary_file_fasta_multiple_dna_w_rc,
     write_factors_binary_file_fasta_multiple_dna_no_rc,
+    parallel_count_factors_fasta_dna_w_rc_per_sequence,
+    parallel_count_factors_fasta_dna_no_rc_per_sequence,
 )
 from .fasta import _parse_fasta_content
 
@@ -396,6 +399,107 @@ def get_output_paths(input_path: Path, output_dir: Path, mode: str) -> Dict[str,
         paths["with_reverse_complement"] = with_rc_dir / f"{base_name}.bin"
     
     return paths
+
+
+def compute_sequence_complexity_table(
+    fasta_path: Union[str, Path],
+    num_threads: int = 0
+) -> List[Tuple[str, int, int]]:
+    """Compute per-sequence complexity with and without reverse complement."""
+    path = Path(fasta_path)
+    if not path.exists():
+        raise BatchFactorizeError(f"FASTA file not found: {path}")
+
+    counts_w_rc, seq_ids_w_rc, _ = parallel_count_factors_fasta_dna_w_rc_per_sequence(
+        str(path), num_threads
+    )
+    counts_no_rc, seq_ids_no_rc, _ = parallel_count_factors_fasta_dna_no_rc_per_sequence(
+        str(path), num_threads
+    )
+
+    if len(seq_ids_w_rc) != len(seq_ids_no_rc):
+        raise BatchFactorizeError("Mismatch between RC and non-RC sequence counts")
+
+    if seq_ids_w_rc != seq_ids_no_rc:
+        raise BatchFactorizeError("Sequence IDs differ between RC and non-RC runs")
+
+    results: List[Tuple[str, int, int]] = []
+    for seq_id, rc_count, no_rc_count in zip(seq_ids_w_rc, counts_w_rc, counts_no_rc):
+        results.append((seq_id, int(rc_count), int(no_rc_count)))
+
+    return results
+
+
+def write_sequence_complexity_tsv(
+    fasta_path: Union[str, Path],
+    output_path: Union[str, Path],
+    num_threads: int = 0
+) -> int:
+    """Write per-sequence complexity results to a TSV file."""
+    rows = compute_sequence_complexity_table(fasta_path, num_threads)
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    with open(output_path, 'w', encoding='utf-8') as handle:
+        handle.write("sequence_id\tcomplexity_w_rc\tcomplexity_no_rc\n")
+        for seq_id, rc_count, no_rc_count in rows:
+            handle.write(f"{seq_id}\t{rc_count}\t{no_rc_count}\n")
+
+    return len(rows)
+
+
+def prepare_single_fasta_input(
+    file_path: str,
+    download_dir: Optional[Path],
+    max_retries: int,
+    logger: Optional[logging.Logger] = None
+) -> Tuple[Path, Optional[Path]]:
+    """Ensure a FASTA file is available locally and return its path plus cleanup dir."""
+    if logger is None:
+        logger = logging.getLogger(__name__)
+
+    cleanup_dir: Optional[Path] = None
+
+    if is_url(file_path):
+        target_dir = download_dir
+        if target_dir is None:
+            cleanup_dir = Path(tempfile.mkdtemp(prefix="complexity_input_"))
+            target_dir = cleanup_dir
+        else:
+            target_dir.mkdir(parents=True, exist_ok=True)
+
+        file_name = Path(urllib.parse.urlparse(file_path).path).name
+        if not file_name:
+            file_name = f"downloaded_{int(time.time())}.fasta"
+        local_path = target_dir / file_name
+
+        if not download_file(file_path, local_path, max_retries=max_retries, logger=logger):
+            raise BatchFactorizeError(f"Failed to download FASTA file: {file_path}")
+    else:
+        local_path = Path(file_path).expanduser()
+        if not local_path.exists():
+            raise BatchFactorizeError(f"FASTA file not found: {local_path}")
+
+    if is_gzipped(local_path):
+        if not is_url(file_path) and download_dir is None:
+            if cleanup_dir is None:
+                cleanup_dir = Path(tempfile.mkdtemp(prefix="complexity_input_"))
+            target_dir = cleanup_dir
+        else:
+            target_dir = cleanup_dir or local_path.parent
+
+        target_dir.mkdir(parents=True, exist_ok=True)
+
+        decompressed_path = target_dir / local_path.stem
+        if decompressed_path.suffix == '.gz':
+            decompressed_path = decompressed_path.with_suffix('')
+
+        if not decompress_gzip(local_path, decompressed_path, logger):
+            raise BatchFactorizeError(f"Failed to decompress FASTA file: {local_path}")
+
+        local_path = decompressed_path
+
+    return local_path, cleanup_dir
 
 
 def factorize_single_file(input_path: Path, output_paths: Dict[str, Path],
@@ -994,7 +1098,7 @@ Examples:
     
     # Output configuration
     parser.add_argument(
-        "--output-dir", type=Path, required=True,
+        "--output-dir", type=Path,
         help="Output directory for binary factorization results"
     )
     parser.add_argument(
@@ -1030,6 +1134,16 @@ Examples:
         "--shuffle-seed", type=int, default=None,
         help="Random seed for shuffling (for reproducibility)"
     )
+
+    # Complexity reporting options
+    parser.add_argument(
+        "--complexity-tsv", type=Path,
+        help="Write per-sequence complexity (w/ and w/o RC) for a single FASTA input"
+    )
+    parser.add_argument(
+        "--complexity-threads", type=int, default=0,
+        help="Thread count to use when computing per-sequence complexity (default: auto)"
+    )
     
     # Logging configuration
     parser.add_argument(
@@ -1057,6 +1171,42 @@ Examples:
         else:
             raise BatchFactorizeError("Must specify either --file-list or individual files")
         
+        if args.complexity_tsv:
+            if len(file_list) != 1:
+                raise BatchFactorizeError("--complexity-tsv requires exactly one FASTA input")
+            if args.shuffle_analysis:
+                raise BatchFactorizeError("--shuffle-analysis cannot be combined with --complexity-tsv")
+
+            logger.info("Computing per-sequence complexity table")
+            local_file = None
+            cleanup_dir: Optional[Path] = None
+            try:
+                local_file, cleanup_dir = prepare_single_fasta_input(
+                    file_list[0],
+                    args.download_dir,
+                    args.max_retries,
+                    logger,
+                )
+                row_count = write_sequence_complexity_tsv(
+                    local_file,
+                    args.complexity_tsv,
+                    args.complexity_threads,
+                )
+                logger.info(
+                    f"Wrote complexity table with {row_count} sequences to {args.complexity_tsv}"
+                )
+                sys.exit(0)
+            finally:
+                if cleanup_dir and cleanup_dir.exists():
+                    try:
+                        shutil.rmtree(cleanup_dir)
+                        logger.debug(f"Cleaned up temporary directory: {cleanup_dir}")
+                    except OSError:
+                        logger.warning(f"Failed to clean up temporary directory: {cleanup_dir}")
+
+        if args.output_dir is None:
+            raise BatchFactorizeError("--output-dir is required unless --complexity-tsv is provided")
+
         logger.info(f"Starting batch factorization of {len(file_list)} files")
         logger.info(f"Mode: {args.mode}")
         logger.info(f"Output directory: {args.output_dir}")
