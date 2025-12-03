@@ -367,7 +367,7 @@ def plot_factor_comparison(original_factors_file: Path, shuffled_factors_file: P
         return False
 
 
-def _count_sequence_factors(seq_info: Tuple[str, str]) -> Tuple[str, int, int]:
+def _count_sequence_factors(seq_info: Tuple[str, str]) -> Tuple[str, int, int, int]:
     """
     Count factors for a single sequence (both with and without reverse complement).
     
@@ -377,17 +377,18 @@ def _count_sequence_factors(seq_info: Tuple[str, str]) -> Tuple[str, int, int]:
         seq_info: Tuple of (sequence_id, sequence)
         
     Returns:
-        Tuple of (sequence_id, count_w_rc, count_no_rc)
+        Tuple of (sequence_id, length, count_w_rc, count_no_rc)
     """
     seq_id, sequence = seq_info
     seq_bytes = sequence.encode('ascii')
+    seq_length = len(sequence)
     count_w_rc = count_factors_dna_w_rc(seq_bytes)
     count_no_rc = count_factors(seq_bytes)
-    return (seq_id, count_w_rc, count_no_rc)
+    return (seq_id, seq_length, count_w_rc, count_no_rc)
 
 
 def compute_sequence_complexity_table(fasta_path: Union[str, Path], 
-                                     num_processes: Optional[int] = None) -> List[Tuple[str, int, int]]:
+                                     num_processes: Optional[int] = None) -> List[Tuple[str, int, int, int]]:
     """
     Compute per-sequence complexity table with both RC and no-RC factor counts.
     
@@ -399,7 +400,7 @@ def compute_sequence_complexity_table(fasta_path: Union[str, Path],
         num_processes: Number of processes to use (None = use CPU count)
         
     Returns:
-        List of tuples: (sequence_id, complexity_w_rc, complexity_no_rc)
+        List of tuples: (sequence_id, length, complexity_w_rc, complexity_no_rc)
     """
     fasta_path = Path(fasta_path)
     
@@ -438,11 +439,11 @@ def write_sequence_complexity_tsv(fasta_path: Union[str, Path],
     # Write to TSV
     with open(output_path, 'w', encoding='utf-8') as f:
         # Header
-        f.write("sequence_id\tcomplexity_w_rc\tcomplexity_no_rc\n")
+        f.write("sequence_id\tlength\tcomplexity_w_rc\tcomplexity_no_rc\n")
         
         # Data rows
-        for seq_id, count_w_rc, count_no_rc in rows:
-            f.write(f"{seq_id}\t{count_w_rc}\t{count_no_rc}\n")
+        for seq_id, length, count_w_rc, count_no_rc in rows:
+            f.write(f"{seq_id}\t{length}\t{count_w_rc}\t{count_no_rc}\n")
     
     return len(rows)
 

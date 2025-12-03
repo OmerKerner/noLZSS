@@ -886,7 +886,7 @@ exit $?
         
         # Read all results and combine
         logger.info("Reading results and creating TSV...")
-        results_by_seq = {}  # seq_id -> {'w_rc': count, 'no_rc': count}
+        results_by_seq = {}  # seq_id -> {'w_rc': count, 'no_rc': count, 'length': length}
         
         for job_name, (seq_id, mode, temp_output) in job_info.items():
             if job_statuses.get(job_name) != 'DONE':
@@ -914,11 +914,12 @@ exit $?
         
         # Write combined TSV (preserve original sequence order)
         with open(output_tsv, 'w', encoding='utf-8') as f:
-            f.write("sequence_id\tcomplexity_w_rc\tcomplexity_no_rc\n")
-            for seq_id in sequences.keys():
+            f.write("sequence_id\tlength\tcomplexity_w_rc\tcomplexity_no_rc\n")
+            for seq_id, sequence in sequences.items():
+                seq_length = len(sequence)
                 count_w_rc = results_by_seq[seq_id]['w_rc']
                 count_no_rc = results_by_seq[seq_id]['no_rc']
-                f.write(f"{seq_id}\t{count_w_rc}\t{count_no_rc}\n")
+                f.write(f"{seq_id}\t{seq_length}\t{count_w_rc}\t{count_no_rc}\n")
         
         logger.info(f"Successfully created complexity table: {output_tsv}")
         logger.info(f"Total sequences: {len(sequences)}")
