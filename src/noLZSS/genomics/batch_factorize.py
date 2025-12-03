@@ -367,28 +367,28 @@ def plot_factor_comparison(original_factors_file: Path, shuffled_factors_file: P
         return False
 
 
-def _count_sequence_factors(seq_info: Tuple[str, str]) -> Tuple[str, int, int, int]:
+def _count_sequence_factors(seq_info: Tuple[str, str, str]) -> Tuple[str, str, int, int, int]:
     """
     Count factors for a single sequence (both with and without reverse complement).
     
     This is a module-level function to support multiprocessing (must be picklable).
     
     Args:
-        seq_info: Tuple of (sequence_id, sequence)
+        seq_info: Tuple of (sequence_id, full_header, sequence)
         
     Returns:
-        Tuple of (sequence_id, length, count_w_rc, count_no_rc)
+        Tuple of (sequence_id, full_header, length, count_w_rc, count_no_rc)
     """
-    seq_id, sequence = seq_info
+    seq_id, full_header, sequence = seq_info
     seq_bytes = sequence.encode('ascii')
     seq_length = len(sequence)
     count_w_rc = count_factors_dna_w_rc(seq_bytes)
     count_no_rc = count_factors(seq_bytes)
-    return (seq_id, seq_length, count_w_rc, count_no_rc)
+    return (seq_id, full_header, seq_length, count_w_rc, count_no_rc)
 
 
 def compute_sequence_complexity_table(fasta_path: Union[str, Path], 
-                                     num_processes: Optional[int] = None) -> List[Tuple[str, int, int, int]]:
+                                     num_processes: Optional[int] = None) -> List[Tuple[str, str, int, int, int]]:
     """
     Compute per-sequence complexity table with both RC and no-RC factor counts.
     
@@ -400,18 +400,31 @@ def compute_sequence_complexity_table(fasta_path: Union[str, Path],
         num_processes: Number of processes to use (None = use CPU count)
         
     Returns:
-        List of tuples: (sequence_id, length, complexity_w_rc, complexity_no_rc)
+        List of tuples: (sequence_id, full_header, length, complexity_w_rc, complexity_no_rc)
     """
     fasta_path = Path(fasta_path)
     
-    # Read and parse FASTA file
+    # Read and parse FASTA file and extract full headers
     with open(fasta_path, 'r', encoding='utf-8') as f:
         content = f.read()
     sequences = _parse_fasta_content(content)
     
+    # Extract full headers from original content
+    headers_map = {}  # seq_id -> full_header
+    for line in content.split('\n'):
+        if line.startswith('>'):
+            full_header = line[1:].strip()  # Remove '>' and strip whitespace
+            # Extract sequence_id (first word before space or tab)
+            seq_id = full_header.split()[0] if full_header else full_header
+            headers_map[seq_id] = full_header
+    
+    # Prepare input for parallel processing: (seq_id, full_header, sequence)
+    processing_input = [(seq_id, headers_map.get(seq_id, seq_id), sequence) 
+                       for seq_id, sequence in sequences.items()]
+    
     # Process all sequences in parallel using module-level function
     with ProcessPoolExecutor(max_workers=num_processes) as executor:
-        results = list(executor.map(_count_sequence_factors, sequences.items()))
+        results = list(executor.map(_count_sequence_factors, processing_input))
     
     return results
 
@@ -439,11 +452,11 @@ def write_sequence_complexity_tsv(fasta_path: Union[str, Path],
     # Write to TSV
     with open(output_path, 'w', encoding='utf-8') as f:
         # Header
-        f.write("sequence_id\tlength\tcomplexity_w_rc\tcomplexity_no_rc\n")
+        f.write("sequence_id\theader\tlength\tcomplexity_w_rc\tcomplexity_no_rc\n")
         
         # Data rows
-        for seq_id, length, count_w_rc, count_no_rc in rows:
-            f.write(f"{seq_id}\t{length}\t{count_w_rc}\t{count_no_rc}\n")
+        for seq_id, full_header, length, count_w_rc, count_no_rc in rows:
+            f.write(f"{seq_id}\t{full_header}\t{length}\t{count_w_rc}\t{count_no_rc}\n")
     
     return len(rows)
 

@@ -912,14 +912,24 @@ exit $?
                 logger.error(f"Incomplete results for sequence: {seq_id}")
                 return False
         
+        # Extract full headers from original content
+        headers_map = {}  # seq_id -> full_header
+        for line in content.split('\n'):
+            if line.startswith('>'):
+                full_header = line[1:].strip()  # Remove '>' and strip whitespace
+                # Extract sequence_id (first word before space or tab)
+                seq_id = full_header.split()[0] if full_header else full_header
+                headers_map[seq_id] = full_header
+        
         # Write combined TSV (preserve original sequence order)
         with open(output_tsv, 'w', encoding='utf-8') as f:
-            f.write("sequence_id\tlength\tcomplexity_w_rc\tcomplexity_no_rc\n")
+            f.write("sequence_id\theader\tlength\tcomplexity_w_rc\tcomplexity_no_rc\n")
             for seq_id, sequence in sequences.items():
                 seq_length = len(sequence)
+                full_header = headers_map.get(seq_id, seq_id)
                 count_w_rc = results_by_seq[seq_id]['w_rc']
                 count_no_rc = results_by_seq[seq_id]['no_rc']
-                f.write(f"{seq_id}\t{seq_length}\t{count_w_rc}\t{count_no_rc}\n")
+                f.write(f"{seq_id}\t{full_header}\t{seq_length}\t{count_w_rc}\t{count_no_rc}\n")
         
         logger.info(f"Successfully created complexity table: {output_tsv}")
         logger.info(f"Total sequences: {len(sequences)}")
