@@ -310,30 +310,22 @@ size_t write_factors_binary_file_fasta_dna_w_rc_per_sequence(const std::string& 
 size_t write_factors_binary_file_fasta_dna_no_rc_per_sequence(const std::string& fasta_path, const std::string& out_dir);
 
 /**
- * @brief Counts total factors from per-sequence DNA factorization with reverse complement.
- *
- * Reads a FASTA file and factorizes each sequence independently with reverse complement awareness,
- * returning only the total count of factors without storing them.
- *
- * @param fasta_path Path to the FASTA file containing DNA sequences
- * @return Total number of factors across all sequences
- *
- * @throws std::runtime_error If FASTA file cannot be opened or contains no valid sequences
- * @throws std::invalid_argument If invalid nucleotides found
- *
- * @note Memory-efficient - only counts factors without storing them
- * @note Only A, C, T, G nucleotides are allowed (case insensitive)
+ * @brief Result container for per-sequence FASTA factor counting.
  */
-size_t count_factors_fasta_dna_w_rc_per_sequence(const std::string& fasta_path);
+struct FastaPerSequenceCountResult {
+    std::vector<std::string> sequence_ids;
+    std::vector<size_t> factor_counts;
+    size_t total_factors = 0;
+};
 
 /**
- * @brief Counts total factors from per-sequence DNA factorization without reverse complement.
+ * @brief Counts per-sequence factors from DNA factorization with reverse complement.
  *
- * Reads a FASTA file and factorizes each sequence independently without reverse complement awareness,
- * returning only the total count of factors without storing them.
+ * Reads a FASTA file and factorizes each sequence independently with reverse complement awareness,
+ * returning per-sequence counts along with sequence metadata and the aggregate total.
  *
  * @param fasta_path Path to the FASTA file containing DNA sequences
- * @return Total number of factors across all sequences
+ * @return Result containing sequence IDs, per-sequence counts, and the total count
  *
  * @throws std::runtime_error If FASTA file cannot be opened or contains no valid sequences
  * @throws std::invalid_argument If invalid nucleotides found
@@ -341,6 +333,23 @@ size_t count_factors_fasta_dna_w_rc_per_sequence(const std::string& fasta_path);
  * @note Memory-efficient - only counts factors without storing them
  * @note Only A, C, T, G nucleotides are allowed (case insensitive)
  */
-size_t count_factors_fasta_dna_no_rc_per_sequence(const std::string& fasta_path);
+FastaPerSequenceCountResult count_factors_fasta_dna_w_rc_per_sequence(const std::string& fasta_path);
+
+/**
+ * @brief Counts per-sequence factors from DNA factorization without reverse complement.
+ *
+ * Reads a FASTA file and factorizes each sequence independently without reverse complement awareness,
+ * returning per-sequence counts along with sequence metadata and the aggregate total.
+ *
+ * @param fasta_path Path to the FASTA file containing DNA sequences
+ * @return Result containing sequence IDs, per-sequence counts, and the total count
+ *
+ * @throws std::runtime_error If FASTA file cannot be opened or contains no valid sequences
+ * @throws std::invalid_argument If invalid nucleotides found
+ *
+ * @note Memory-efficient - only counts factors without storing them
+ * @note Only A, C, T, G nucleotides are allowed (case insensitive)
+ */
+FastaPerSequenceCountResult count_factors_fasta_dna_no_rc_per_sequence(const std::string& fasta_path);
 
 } // namespace noLZSS

@@ -3,6 +3,7 @@
 #include "factorizer_core.hpp"
 #include "factorizer_helpers.hpp"
 #include <fstream>
+#include <atomic>
 #include <sdsl/rmq_succinct_sct.hpp>
 #include <sdsl/construct.hpp>
 #include <thread>

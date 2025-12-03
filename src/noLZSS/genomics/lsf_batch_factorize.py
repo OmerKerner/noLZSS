@@ -676,6 +676,273 @@ def check_job_output(
     return True, None
 
 
+def compute_sequence_complexity_table_on_cluster(
+    fasta_path: Union[str, Path],
+    output_tsv: Union[str, Path],
+    scripts_dir: Optional[Path] = None,
+    logs_dir: Optional[Path] = None,
+    queue: Optional[str] = None,
+    check_interval: int = 60,
+    extra_bsub_args: Optional[List[str]] = None,
+    python_executable: Optional[str] = None,
+    logger: Optional[logging.Logger] = None
+) -> bool:
+    """
+    Compute sequence complexity table using LSF cluster.
+    
+    Parses FASTA and submits individual jobs for each sequence (both RC and no-RC counting)
+    to maximize parallelization on the cluster. Combines results into a TSV file.
+    
+    Args:
+        fasta_path: Path to the FASTA file
+        output_tsv: Path to output TSV file
+        scripts_dir: Directory for job scripts (default: temp directory)
+        logs_dir: Directory for job logs (default: temp directory)
+        queue: LSF queue name (optional)
+        check_interval: Interval for checking job status (seconds)
+        extra_bsub_args: Additional bsub arguments
+        python_executable: Python executable path (default: sys.executable)
+        logger: Logger instance
+        
+    Returns:
+        True if successful, False otherwise
+    """
+    if logger is None:
+        logger = logging.getLogger(__name__)
+    
+    if python_executable is None:
+        python_executable = sys.executable
+    
+    fasta_path = Path(fasta_path)
+    output_tsv = Path(output_tsv)
+    
+    # Create temporary directories if not provided
+    cleanup_temp = False
+    if scripts_dir is None or logs_dir is None:
+        temp_dir = Path(tempfile.mkdtemp(prefix="complexity_cluster_"))
+        scripts_dir = temp_dir / "scripts"
+        logs_dir = temp_dir / "logs"
+        cleanup_temp = True
+    
+    scripts_dir.mkdir(parents=True, exist_ok=True)
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    output_tsv.parent.mkdir(parents=True, exist_ok=True)
+    
+    try:
+        # Parse FASTA file to get all sequences
+        logger.info(f"Parsing FASTA file: {fasta_path}")
+        with open(fasta_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+        
+        from .fasta import _parse_fasta_content
+        sequences = _parse_fasta_content(content)
+        
+        logger.info(f"Found {len(sequences)} sequences")
+        
+        # Create temporary output directory for individual results
+        temp_results_dir = output_tsv.parent / f"{output_tsv.stem}_temp_results"
+        temp_results_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Create and submit jobs for each sequence (both RC and no-RC)
+        logger.info("Creating job scripts for all sequences...")
+        job_ids = {}
+        job_info = {}  # Maps job_name -> (seq_id, mode)
+        
+        for seq_idx, (seq_id, sequence) in enumerate(sequences.items()):
+            # Job for counting with RC
+            job_name_w_rc = f"complexity_w_rc_{seq_idx}"
+            script_w_rc = scripts_dir / f"{job_name_w_rc}.sh"
+            temp_output_w_rc = temp_results_dir / f"{job_name_w_rc}.json"
+            
+            python_code_w_rc = f"""#!/usr/bin/env python3
+import sys
+import json
+from noLZSS._noLZSS import count_factors_dna_w_rc
+
+seq_id = "{seq_id}"
+sequence = "{sequence}"
+output_file = "{temp_output_w_rc}"
+
+try:
+    seq_bytes = sequence.encode('ascii')
+    count = count_factors_dna_w_rc(seq_bytes)
+    result = {{'seq_id': seq_id, 'count': count}}
+    with open(output_file, 'w') as f:
+        json.dump(result, f)
+    print(f"Successfully counted factors (w/ RC) for {{seq_id}}: {{count}} factors")
+    sys.exit(0)
+except Exception as e:
+    print(f"Error counting factors (w/ RC) for {{seq_id}}: {{e}}", file=sys.stderr)
+    sys.exit(1)
+"""
+            
+            with open(script_w_rc, 'w') as f:
+                f.write(f"""#!/bin/bash
+set -e
+set -u
+
+{python_executable} << 'PYTHON_EOF'
+{python_code_w_rc}
+PYTHON_EOF
+
+exit $?
+""")
+            script_w_rc.chmod(0o755)
+            
+            # Job for counting without RC
+            job_name_no_rc = f"complexity_no_rc_{seq_idx}"
+            script_no_rc = scripts_dir / f"{job_name_no_rc}.sh"
+            temp_output_no_rc = temp_results_dir / f"{job_name_no_rc}.json"
+            
+            python_code_no_rc = f"""#!/usr/bin/env python3
+import sys
+import json
+from noLZSS._noLZSS import count_factors
+
+seq_id = "{seq_id}"
+sequence = "{sequence}"
+output_file = "{temp_output_no_rc}"
+
+try:
+    seq_bytes = sequence.encode('ascii')
+    count = count_factors(seq_bytes)
+    result = {{'seq_id': seq_id, 'count': count}}
+    with open(output_file, 'w') as f:
+        json.dump(result, f)
+    print(f"Successfully counted factors (no RC) for {{seq_id}}: {{count}} factors")
+    sys.exit(0)
+except Exception as e:
+    print(f"Error counting factors (no RC) for {{seq_id}}: {{e}}", file=sys.stderr)
+    sys.exit(1)
+"""
+            
+            with open(script_no_rc, 'w') as f:
+                f.write(f"""#!/bin/bash
+set -e
+set -u
+
+{python_executable} << 'PYTHON_EOF'
+{python_code_no_rc}
+PYTHON_EOF
+
+exit $?
+""")
+            script_no_rc.chmod(0o755)
+            
+            # Submit both jobs
+            job_id_w_rc = submit_lsf_job(
+                job_name=job_name_w_rc,
+                script_path=script_w_rc,
+                num_threads=1,
+                memory_gb=4,  # Per-sequence jobs need less memory
+                time_minutes=30,
+                output_log=logs_dir / f"{job_name_w_rc}.out",
+                error_log=logs_dir / f"{job_name_w_rc}.err",
+                queue=queue,
+                extra_bsub_args=extra_bsub_args,
+                logger=logger
+            )
+            
+            job_id_no_rc = submit_lsf_job(
+                job_name=job_name_no_rc,
+                script_path=script_no_rc,
+                num_threads=1,
+                memory_gb=4,
+                time_minutes=30,
+                output_log=logs_dir / f"{job_name_no_rc}.out",
+                error_log=logs_dir / f"{job_name_no_rc}.err",
+                queue=queue,
+                extra_bsub_args=extra_bsub_args,
+                logger=logger
+            )
+            
+            if job_id_w_rc:
+                job_ids[job_name_w_rc] = job_id_w_rc
+                job_info[job_name_w_rc] = (seq_id, 'w_rc', temp_output_w_rc)
+            else:
+                logger.warning(f"Failed to submit job for {seq_id} (w/ RC)")
+            
+            if job_id_no_rc:
+                job_ids[job_name_no_rc] = job_id_no_rc
+                job_info[job_name_no_rc] = (seq_id, 'no_rc', temp_output_no_rc)
+            else:
+                logger.warning(f"Failed to submit job for {seq_id} (no RC)")
+        
+        if not job_ids:
+            logger.error("Failed to submit any jobs")
+            return False
+        
+        logger.info(f"Submitted {len(job_ids)} jobs to LSF cluster")
+        
+        # Wait for all jobs to complete
+        logger.info("Waiting for all jobs to complete...")
+        job_statuses = wait_for_jobs(job_ids, check_interval, logger)
+        
+        # Check for failures
+        failed_jobs = [name for name, status in job_statuses.items() if status != 'DONE']
+        if failed_jobs:
+            logger.error(f"{len(failed_jobs)} jobs failed: {failed_jobs}")
+            return False
+        
+        # Read all results and combine
+        logger.info("Reading results and creating TSV...")
+        results_by_seq = {}  # seq_id -> {'w_rc': count, 'no_rc': count}
+        
+        for job_name, (seq_id, mode, temp_output) in job_info.items():
+            if job_statuses.get(job_name) != 'DONE':
+                continue
+            
+            try:
+                with open(temp_output, 'r') as f:
+                    result = json.load(f)
+                
+                if seq_id not in results_by_seq:
+                    results_by_seq[seq_id] = {}
+                results_by_seq[seq_id][mode] = result['count']
+            except Exception as e:
+                logger.error(f"Failed to read result for {seq_id} ({mode}): {e}")
+                return False
+        
+        # Verify we have both counts for all sequences
+        for seq_id in sequences.keys():
+            if seq_id not in results_by_seq:
+                logger.error(f"Missing results for sequence: {seq_id}")
+                return False
+            if 'w_rc' not in results_by_seq[seq_id] or 'no_rc' not in results_by_seq[seq_id]:
+                logger.error(f"Incomplete results for sequence: {seq_id}")
+                return False
+        
+        # Write combined TSV (preserve original sequence order)
+        with open(output_tsv, 'w', encoding='utf-8') as f:
+            f.write("sequence_id\tcomplexity_w_rc\tcomplexity_no_rc\n")
+            for seq_id in sequences.keys():
+                count_w_rc = results_by_seq[seq_id]['w_rc']
+                count_no_rc = results_by_seq[seq_id]['no_rc']
+                f.write(f"{seq_id}\t{count_w_rc}\t{count_no_rc}\n")
+        
+        logger.info(f"Successfully created complexity table: {output_tsv}")
+        logger.info(f"Total sequences: {len(sequences)}")
+        
+        # Clean up temp results
+        import shutil
+        shutil.rmtree(temp_results_dir, ignore_errors=True)
+        
+        return True
+        
+    except Exception as e:
+        logger.error(f"Error computing complexity table on cluster: {e}")
+        return False
+    
+    finally:
+        if cleanup_temp and 'temp_dir' in locals():
+            try:
+                import shutil
+                shutil.rmtree(temp_dir)
+                logger.debug(f"Cleaned up temporary directory: {temp_dir}")
+            except Exception:
+                pass
+
+
 def process_files_on_cluster(
     file_list: List[str],
     output_dir: Path,

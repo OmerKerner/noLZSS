@@ -163,14 +163,19 @@ class TestPerSequenceFastaFactorization:
         fasta_path = str(RESOURCES_DIR / "short_dna1.fasta")
         
         # Get full factorization
-        per_seq_factors, _ = factorize_fasta_dna_w_rc_per_sequence(fasta_path)
-        expected_count = sum(len(factors) for factors in per_seq_factors)
+        per_seq_factors, sequence_ids_factorize = factorize_fasta_dna_w_rc_per_sequence(fasta_path)
+        expected_counts = [len(factors) for factors in per_seq_factors]
+        expected_total = sum(expected_counts)
         
         # Get count only
-        actual_count = count_factors_fasta_dna_w_rc_per_sequence(fasta_path)
+        counts, sequence_ids_count, total_count = count_factors_fasta_dna_w_rc_per_sequence(fasta_path)
         
-        assert actual_count == expected_count, f"Count {actual_count} should match full factorization {expected_count}"
-        print(f"Count correct: {actual_count} total factors")
+        assert len(counts) == len(expected_counts), "Should have same number of sequences"
+        assert sequence_ids_count == sequence_ids_factorize, "Sequence IDs should match"
+        for i, (actual, expected) in enumerate(zip(counts, expected_counts)):
+            assert actual == expected, f"Sequence {i} count {actual} should match {expected}"
+        assert total_count == expected_total, f"Total {total_count} should match {expected_total}"
+        print(f"Count correct: {len(counts)} sequences, {total_count} total factors")
     
     def test_count_factors_no_rc(self):
         """Test counting factors per sequence without RC."""
@@ -181,14 +186,19 @@ class TestPerSequenceFastaFactorization:
         fasta_path = str(RESOURCES_DIR / "short_dna1.fasta")
         
         # Get full factorization
-        per_seq_factors, _ = factorize_fasta_dna_no_rc_per_sequence(fasta_path)
-        expected_count = sum(len(factors) for factors in per_seq_factors)
+        per_seq_factors, sequence_ids_factorize = factorize_fasta_dna_no_rc_per_sequence(fasta_path)
+        expected_counts = [len(factors) for factors in per_seq_factors]
+        expected_total = sum(expected_counts)
         
         # Get count only
-        actual_count = count_factors_fasta_dna_no_rc_per_sequence(fasta_path)
+        counts, sequence_ids_count, total_count = count_factors_fasta_dna_no_rc_per_sequence(fasta_path)
         
-        assert actual_count == expected_count, f"Count {actual_count} should match full factorization {expected_count}"
-        print(f"Count correct: {actual_count} total factors")
+        assert len(counts) == len(expected_counts), "Should have same number of sequences"
+        assert sequence_ids_count == sequence_ids_factorize, "Sequence IDs should match"
+        for i, (actual, expected) in enumerate(zip(counts, expected_counts)):
+            assert actual == expected, f"Sequence {i} count {actual} should match {expected}"
+        assert total_count == expected_total, f"Total {total_count} should match {expected_total}"
+        print(f"Count correct: {len(counts)} sequences, {total_count} total factors")
     
     def test_write_binary_w_rc(self):
         """Test writing per-sequence factors to separate binary files with RC."""

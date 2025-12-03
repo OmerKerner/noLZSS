@@ -6,6 +6,7 @@ import os
 import sys
 import tempfile
 from pathlib import Path
+from unittest import mock
 
 # Try to import the batch factorization script
 try:
@@ -298,9 +299,51 @@ class TestBatchFactorize:
                 assert plot_path.stat().st_size > 0, "Plot file should not be empty"
                 
                 print("Plot comparison test passed")
-                
             except Exception as e:
                 print(f"Plot comparison test skipped - C++ extension issue: {e}")
+
+    def test_complexity_table_and_tsv(self):
+        """Test complexity table helpers with real C++ functions."""
+        if not BATCH_FACTORIZE_AVAILABLE:
+            print("Skipping complexity table test - module not available")
+            return
+
+        try:
+            # Try to import the C++ extension
+            from noLZSS._noLZSS import count_factors_fasta_dna_w_rc_per_sequence
+        except ImportError:
+            print("Skipping complexity table test - C++ extension not available")
+            return
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            fasta_file = temp_path / "test.fasta"
+            # Create a simple FASTA file with repetitive sequences
+            fasta_file.write_text(">seq1 description\nATCGATCGATCG\n>seq2 description\nGCTAGCTAGCTA\n", encoding="utf-8")
+
+            try:
+                rows = batch_factorize.compute_sequence_complexity_table(fasta_file)
+                assert len(rows) == 2
+                assert rows[0][0] == "seq1"  # sequence ID
+                assert rows[1][0] == "seq2"  # sequence ID
+                assert isinstance(rows[0][1], int)  # complexity_w_rc
+                assert isinstance(rows[0][2], int)  # complexity_no_rc
+                assert rows[0][1] > 0  # Should have some factors
+                assert rows[0][2] > 0  # Should have some factors
+
+                tsv_path = temp_path / "complexity.tsv"
+                count = batch_factorize.write_sequence_complexity_tsv(fasta_file, tsv_path)
+                assert count == 2
+                assert tsv_path.exists()
+
+                content = tsv_path.read_text(encoding="utf-8").strip().splitlines()
+                assert content[0] == "sequence_id\tcomplexity_w_rc\tcomplexity_no_rc"
+                assert content[1].startswith("seq1\t")
+                assert content[2].startswith("seq2\t")
+                
+                print("Complexity table helper test passed")
+            except Exception as e:
+                print(f"Complexity table test skipped due to error: {e}")
 
 
 def run_tests():

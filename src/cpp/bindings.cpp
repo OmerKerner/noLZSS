@@ -1334,19 +1334,30 @@ Note:
 
     m.def("count_factors_fasta_dna_w_rc_per_sequence", [](const std::string& fasta_path) {
         py::gil_scoped_release release;
-        size_t count = noLZSS::count_factors_fasta_dna_w_rc_per_sequence(fasta_path);
+        auto cpp_result = noLZSS::count_factors_fasta_dna_w_rc_per_sequence(fasta_path);
         py::gil_scoped_acquire acquire;
-        return count;
-    }, py::arg("fasta_path"), R"doc(Count total factors from per-sequence DNA factorization with reverse complement.
+
+        py::list counts_list;
+        for (size_t count : cpp_result.factor_counts) {
+            counts_list.append(py::int_(count));
+        }
+
+        py::list sequence_ids_list;
+        for (const auto& seq_id : cpp_result.sequence_ids) {
+            sequence_ids_list.append(py::str(seq_id));
+        }
+
+        return py::make_tuple(counts_list, sequence_ids_list, cpp_result.total_factors);
+    }, py::arg("fasta_path"), R"doc(Count per-sequence factors from DNA FASTA (with reverse complement).
 
 Reads a FASTA file and factorizes each sequence independently with reverse complement awareness,
-returning only the total count of factors without storing them.
+returning per-sequence counts, sequence IDs, and the aggregate total without storing factors.
 
 Args:
     fasta_path: Path to the FASTA file containing DNA sequences
 
 Returns:
-    int: Total number of factors across all sequences
+    Tuple[List[int], List[str], int]: (per-sequence counts, sequence IDs, total factors)
 
 Raises:
     RuntimeError: If FASTA file cannot be opened or contains no valid sequences
@@ -1359,19 +1370,30 @@ Note:
 
     m.def("count_factors_fasta_dna_no_rc_per_sequence", [](const std::string& fasta_path) {
         py::gil_scoped_release release;
-        size_t count = noLZSS::count_factors_fasta_dna_no_rc_per_sequence(fasta_path);
+        auto cpp_result = noLZSS::count_factors_fasta_dna_no_rc_per_sequence(fasta_path);
         py::gil_scoped_acquire acquire;
-        return count;
-    }, py::arg("fasta_path"), R"doc(Count total factors from per-sequence DNA factorization without reverse complement.
+
+        py::list counts_list;
+        for (size_t count : cpp_result.factor_counts) {
+            counts_list.append(py::int_(count));
+        }
+
+        py::list sequence_ids_list;
+        for (const auto& seq_id : cpp_result.sequence_ids) {
+            sequence_ids_list.append(py::str(seq_id));
+        }
+
+        return py::make_tuple(counts_list, sequence_ids_list, cpp_result.total_factors);
+    }, py::arg("fasta_path"), R"doc(Count per-sequence factors from DNA FASTA (without reverse complement).
 
 Reads a FASTA file and factorizes each sequence independently without reverse complement awareness,
-returning only the total count of factors without storing them.
+returning per-sequence counts, sequence IDs, and the aggregate total without storing factors.
 
 Args:
     fasta_path: Path to the FASTA file containing DNA sequences
 
 Returns:
-    int: Total number of factors across all sequences
+    Tuple[List[int], List[str], int]: (per-sequence counts, sequence IDs, total factors)
 
 Raises:
     RuntimeError: If FASTA file cannot be opened or contains no valid sequences

@@ -25,6 +25,8 @@ from ..utils import NoLZSSError
 from .._noLZSS import (
     write_factors_binary_file_fasta_multiple_dna_w_rc,
     write_factors_binary_file_fasta_multiple_dna_no_rc,
+    count_factors,
+    count_factors_dna_w_rc,
 )
 from .fasta import _parse_fasta_content
 
@@ -364,10 +366,84 @@ def plot_factor_comparison(original_factors_file: Path, shuffled_factors_file: P
         return False
 
 
+def _count_sequence_factors(seq_info: Tuple[str, str]) -> Tuple[str, int, int]:
+    """
+    Count factors for a single sequence (both with and without reverse complement).
+    
+    This is a module-level function to support multiprocessing (must be picklable).
+    
+    Args:
+        seq_info: Tuple of (sequence_id, sequence)
+        
+    Returns:
+        Tuple of (sequence_id, count_w_rc, count_no_rc)
+    """
+    seq_id, sequence = seq_info
+    seq_bytes = sequence.encode('ascii')
+    count_w_rc = count_factors_dna_w_rc(seq_bytes)
+    count_no_rc = count_factors(seq_bytes)
+    return (seq_id, count_w_rc, count_no_rc)
 
 
+def compute_sequence_complexity_table(fasta_path: Union[str, Path], 
+                                     num_processes: Optional[int] = None) -> List[Tuple[str, int, int]]:
+    """
+    Compute per-sequence complexity table with both RC and no-RC factor counts.
+    
+    Uses Python multiprocessing to process all sequences in parallel.
+    Each sequence is counted both with and without reverse complement.
+    
+    Args:
+        fasta_path: Path to the FASTA file
+        num_processes: Number of processes to use (None = use CPU count)
+        
+    Returns:
+        List of tuples: (sequence_id, complexity_w_rc, complexity_no_rc)
+    """
+    fasta_path = Path(fasta_path)
+    
+    # Read and parse FASTA file
+    with open(fasta_path, 'r', encoding='utf-8') as f:
+        content = f.read()
+    sequences = _parse_fasta_content(content)
+    
+    # Process all sequences in parallel using module-level function
+    with ProcessPoolExecutor(max_workers=num_processes) as executor:
+        results = list(executor.map(_count_sequence_factors, sequences.items()))
+    
+    return results
 
 
+def write_sequence_complexity_tsv(fasta_path: Union[str, Path], 
+                                  output_path: Union[str, Path],
+                                  num_processes: Optional[int] = None) -> int:
+    """
+    Write per-sequence complexity table to TSV file.
+    
+    Args:
+        fasta_path: Path to the FASTA file
+        output_path: Path to output TSV file
+        num_processes: Number of processes to use (None = use 2)
+        
+    Returns:
+        Number of sequences written
+    """
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    
+    # Compute complexity table
+    rows = compute_sequence_complexity_table(fasta_path, num_processes)
+    
+    # Write to TSV
+    with open(output_path, 'w', encoding='utf-8') as f:
+        # Header
+        f.write("sequence_id\tcomplexity_w_rc\tcomplexity_no_rc\n")
+        
+        # Data rows
+        for seq_id, count_w_rc, count_no_rc in rows:
+            f.write(f"{seq_id}\t{count_w_rc}\t{count_no_rc}\n")
+    
+    return len(rows)
 
 
 def get_output_paths(input_path: Path, output_dir: Path, mode: str) -> Dict[str, Path]:

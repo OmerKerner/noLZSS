@@ -8,6 +8,7 @@ concatenation.
 
 import tempfile
 import os
+from pathlib import Path
 
 # Import the new functions
 from noLZSS._noLZSS import (
@@ -58,27 +59,34 @@ def main():
         
         # 3. Count factors without storing them (memory efficient)
         print("\n3. Count factors (memory efficient):")
-        total_count = count_factors_fasta_dna_w_rc_per_sequence(fasta_path)
+        counts, seq_ids, total_count = count_factors_fasta_dna_w_rc_per_sequence(fasta_path)
+        print(f"   Per-sequence factor counts:")
+        for seq_id, count in zip(seq_ids, counts):
+            print(f"     - '{seq_id}': {count} factors")
         print(f"   Total factors across all sequences: {total_count}")
         
-        # 4. Write to binary file
-        print("\n4. Write factors to binary file:")
-        with tempfile.NamedTemporaryFile(suffix='.bin', delete=False) as tmp:
-            output_path = tmp.name
-        
-        count = write_factors_binary_file_fasta_dna_w_rc_per_sequence(fasta_path, output_path)
-        file_size = os.path.getsize(output_path)
-        print(f"   Wrote {count} factors to {output_path}")
-        print(f"   File size: {file_size} bytes")
-        os.remove(output_path)
+        # 4. Write to binary files (one per sequence)
+        print("\n4. Write factors to binary files (one per sequence):")
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_dir = tmpdir
+            
+            count = write_factors_binary_file_fasta_dna_w_rc_per_sequence(fasta_path, output_dir)
+            
+            # List generated files
+            output_files = list(Path(output_dir).glob("*.bin"))
+            print(f"   Wrote {count} factors to {len(output_files)} files in {output_dir}")
+            for f in output_files:
+                file_size = f.stat().st_size
+                print(f"     - {f.name}: {file_size} bytes")
         
         # 5. Parallel processing
         print("\n5. Parallel processing (4 threads):")
-        count_parallel = parallel_write_factors_binary_file_fasta_dna_w_rc_per_sequence(
-            fasta_path, output_path, num_threads=4
-        )
-        print(f"   Processed {count_parallel} factors using parallel processing")
-        os.remove(output_path)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_dir = tmpdir
+            count_parallel = parallel_write_factors_binary_file_fasta_dna_w_rc_per_sequence(
+                fasta_path, output_dir, num_threads=4
+            )
+            print(f"   Processed {count_parallel} factors using parallel processing")
         
         # 6. Key differences from concatenated version
         print("\n6. Key Differences from Concatenated Version:")
