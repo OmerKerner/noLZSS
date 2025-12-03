@@ -3,7 +3,8 @@ Batch FASTA file factorization script with support for local and remote files.
 
 This script processes multiple FASTA files and factorizes each one using optimized
 C++ functions that handle validation and binary output. It supports parallel downloads
-and factorization for improved performance.
+and factorization for improved performance. Also supports per-sequence complexity
+TSV generation mode.
 """
 
 import argparse
@@ -1037,6 +1038,185 @@ def process_with_shuffle_analysis(file_list: List[str], output_dir: Path, mode: 
     return combined_results
 
 
+def complexity_file_worker(job_info: Tuple[str, Path, Path, Optional[int], str]) -> Tuple[str, Dict[str, any]]:
+    """
+    Worker function for parallel complexity TSV generation.
+    
+    Args:
+        job_info: Tuple of (original_path, input_path, output_path, num_processes, logger_name)
+        
+    Returns:
+        Tuple of (original_path, result_dict)
+    """
+    original_path, input_path, output_path, num_processes, logger_name = job_info
+    
+    # Create a logger for this process
+    logger = logging.getLogger(logger_name)
+    
+    try:
+        logger.info(f"Computing complexity TSV for {input_path.name}")
+        
+        # Generate complexity TSV
+        num_sequences = write_sequence_complexity_tsv(
+            fasta_path=input_path,
+            output_path=output_path,
+            num_processes=num_processes
+        )
+        
+        logger.info(f"Successfully generated complexity TSV for {input_path.name} ({num_sequences} sequences)")
+        return original_path, {"success": True, "num_sequences": num_sequences}
+        
+    except Exception as e:
+        logger.error(f"Failed to generate complexity TSV for {input_path.name}: {e}")
+        # Clean up partial output file
+        if output_path.exists():
+            try:
+                output_path.unlink()
+                logger.debug(f"Cleaned up partial output file: {output_path}")
+            except OSError:
+                pass
+        return original_path, {"error": str(e)}
+
+
+def process_file_list_complexity(file_list: List[str], output_dir: Path,
+                                download_dir: Optional[Path] = None, skip_existing: bool = True,
+                                max_retries: int = 3, max_workers: Optional[int] = None,
+                                num_processes: Optional[int] = None,
+                                logger: Optional[logging.Logger] = None) -> Dict[str, Dict[str, any]]:
+    """
+    Process a list of FASTA files to generate per-sequence complexity TSV files.
+    
+    Args:
+        file_list: List of file paths or URLs
+        output_dir: Base output directory for TSV files
+        download_dir: Directory for downloaded files (uses temp if None)
+        skip_existing: Whether to skip existing output files
+        max_retries: Maximum download retry attempts
+        max_workers: Maximum number of worker processes (None = auto)
+        num_processes: Number of processes for complexity computation per file
+        logger: Logger instance
+        
+    Returns:
+        Dictionary mapping file names to their processing results
+    """
+    if logger is None:
+        logger = logging.getLogger(__name__)
+    
+    results = {}
+    decompressed_files = []  # Track files that were decompressed for cleanup
+    
+    # Create complexity output directory
+    complexity_dir = output_dir / "complexity"
+    complexity_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Use provided download directory or create temp directory
+    if download_dir is None:
+        download_dir = Path(tempfile.mkdtemp(prefix="batch_complexity_"))
+        cleanup_temp = True
+        logger.info(f"Using temporary download directory: {download_dir}")
+    else:
+        download_dir.mkdir(parents=True, exist_ok=True)
+        cleanup_temp = False
+    
+    try:
+        # Step 1: Parallel download
+        logger.info(f"Starting parallel download of {len(file_list)} files")
+        
+        download_jobs = []
+        for file_path in file_list:
+            download_jobs.append((file_path, download_dir, max_retries, logger.name))
+        
+        prepared_files = []
+        
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_to_path = {executor.submit(download_file_worker, job): job[0] 
+                            for job in download_jobs}
+            
+            for future in as_completed(future_to_path):
+                original_path = future_to_path[future]
+                try:
+                    file_path, success, local_path = future.result()
+                    if success and local_path:
+                        prepared_files.append((file_path, local_path))
+                        logger.info(f"Successfully prepared {file_path}")
+                        
+                        # Check if this file was decompressed (different from original download path)
+                        original_download_path = download_dir / Path(urllib.parse.urlparse(file_path).path).name
+                        if not is_url(file_path):
+                            original_download_path = Path(file_path)
+                        
+                        if local_path != original_download_path and local_path.exists():
+                            decompressed_files.append(local_path)
+                        
+                    else:
+                        # Determine error type
+                        if not success:
+                            if is_url(file_path):
+                                results[file_path] = {"error": "download_failed"}
+                            else:
+                                results[file_path] = {"error": "file_not_found"}
+                        
+                except Exception as e:
+                    logger.error(f"Unexpected error processing {original_path}: {e}")
+                    results[original_path] = {"error": "processing_error"}
+        
+        logger.info(f"Download complete: {len(prepared_files)} files ready for complexity analysis")
+        
+        # Step 2: Parallel complexity TSV generation
+        if prepared_files:
+            logger.info(f"Starting parallel complexity analysis of {len(prepared_files)} files")
+            
+            complexity_jobs = []
+            for original_path, local_path in prepared_files:
+                base_name = local_path.stem
+                output_path = complexity_dir / f"{base_name}_complexity.tsv"
+                
+                # Check if output already exists and skip if requested
+                if skip_existing and output_path.exists():
+                    logger.info(f"Skipping {original_path} (output already exists: {output_path})")
+                    results[original_path] = {"success": True, "skipped": True}
+                    continue
+                
+                complexity_jobs.append((original_path, local_path, output_path, num_processes, logger.name))
+            
+            # Use ProcessPoolExecutor for CPU-intensive complexity computation
+            with ProcessPoolExecutor(max_workers=max_workers) as executor:
+                future_to_path = {executor.submit(complexity_file_worker, job): job[0] 
+                                for job in complexity_jobs}
+                
+                for future in as_completed(future_to_path):
+                    original_path = future_to_path[future]
+                    try:
+                        file_path, complexity_result = future.result()
+                        results[file_path] = complexity_result
+                        logger.info(f"Completed complexity analysis for {file_path}")
+                        
+                    except Exception as e:
+                        logger.error(f"Complexity analysis error for {original_path}: {e}")
+                        results[original_path] = {"error": "complexity_error"}
+        
+    finally:
+        # Clean up decompressed files
+        for decompressed_file in decompressed_files:
+            try:
+                if decompressed_file.exists():
+                    decompressed_file.unlink()
+                    logger.debug(f"Cleaned up decompressed file: {decompressed_file}")
+            except OSError:
+                logger.warning(f"Failed to clean up decompressed file: {decompressed_file}")
+        
+        # Clean up temporary download directory if we created it
+        if cleanup_temp:
+            try:
+                import shutil
+                shutil.rmtree(download_dir)
+                logger.debug(f"Cleaned up temporary directory: {download_dir}")
+            except OSError:
+                logger.warning(f"Failed to clean up temporary directory: {download_dir}")
+    
+    return results
+
+
 def main():
     """Main entry point for the batch factorization script."""
     parser = argparse.ArgumentParser(
@@ -1055,6 +1235,9 @@ Examples:
   
   # Process files with shuffle analysis (creates shuffled controls and comparison plots)
   python -m noLZSS.genomics.batch_factorize file.fasta --output-dir results --mode with_reverse_complement --shuffle-analysis --shuffle-seed 42
+  
+  # Generate per-sequence complexity TSV files
+  python -m noLZSS.genomics.batch_factorize --file-list files.txt --output-dir results --complexity-tsv --complexity-processes 4
         """
     )
     
@@ -1106,6 +1289,14 @@ Examples:
         "--shuffle-seed", type=int, default=None,
         help="Random seed for shuffling (for reproducibility)"
     )
+    parser.add_argument(
+        "--complexity-tsv", action="store_true",
+        help="Generate per-sequence complexity TSV files instead of binary factorization"
+    )
+    parser.add_argument(
+        "--complexity-processes", type=int, default=None,
+        help="Number of processes for complexity computation per file (default: CPU count)"
+    )
     
     # Logging configuration
     parser.add_argument(
@@ -1133,13 +1324,60 @@ Examples:
         else:
             raise BatchFactorizeError("Must specify either --file-list or individual files")
         
-        logger.info(f"Starting batch factorization of {len(file_list)} files")
-        logger.info(f"Mode: {args.mode}")
+        # Check for mutually exclusive modes
+        if args.complexity_tsv and args.shuffle_analysis:
+            raise BatchFactorizeError("Cannot specify both --complexity-tsv and --shuffle-analysis")
+        
+        logger.info(f"Starting batch processing of {len(file_list)} files")
         logger.info(f"Output directory: {args.output_dir}")
         
-        # Process files (with or without shuffle analysis)
-        if args.shuffle_analysis:
-            logger.info("Shuffle analysis enabled - will create and factorize shuffled controls")
+        # Process files based on mode
+        if args.complexity_tsv:
+            logger.info("Mode: Complexity TSV generation")
+            if args.complexity_processes:
+                logger.info(f"Complexity processes per file: {args.complexity_processes}")
+            
+            results = process_file_list_complexity(
+                file_list=file_list,
+                output_dir=args.output_dir,
+                download_dir=args.download_dir,
+                skip_existing=not args.force,
+                max_retries=args.max_retries,
+                max_workers=args.max_workers,
+                num_processes=args.complexity_processes,
+                logger=logger
+            )
+            
+            # Print summary
+            total_files = len(results)
+            successful_files = sum(1 for r in results.values() if r.get("success", False))
+            skipped_files = sum(1 for r in results.values() if r.get("skipped", False))
+            failed_files = sum(1 for r in results.values() if "error" in r)
+            
+            logger.info("="*60)
+            logger.info("COMPLEXITY TSV GENERATION SUMMARY")
+            logger.info("="*60)
+            logger.info(f"Total files: {total_files}")
+            logger.info(f"Successfully processed: {successful_files}")
+            logger.info(f"Skipped (already exist): {skipped_files}")
+            logger.info(f"Failed: {failed_files}")
+            
+            if failed_files > 0:
+                logger.info("\nFailed files:")
+                for file_path, result in results.items():
+                    if "error" in result:
+                        logger.info(f"  {file_path}: {result['error']}")
+            
+            # Exit with appropriate code
+            if failed_files > 0:
+                logger.warning(f"Completed with {failed_files} failures")
+                sys.exit(1)
+            else:
+                logger.info("All files processed successfully")
+                sys.exit(0)
+        
+        elif args.shuffle_analysis:
+            logger.info(f"Mode: Factorization with shuffle analysis ({args.mode})")
             combined_results = process_with_shuffle_analysis(
                 file_list=file_list,
                 output_dir=args.output_dir,
@@ -1173,7 +1411,9 @@ Examples:
             else:
                 logger.info("All files (original and shuffled) processed successfully")
                 sys.exit(0)
+        
         else:
+            logger.info(f"Mode: Factorization ({args.mode})")
             results = process_file_list(
                 file_list=file_list,
                 output_dir=args.output_dir,
