@@ -170,7 +170,8 @@ size_t nolzss_dna_w_rc(const std::string& T, Sink&& sink) {
  * @note All factors are emitted, including the last one
  * @note Reverse complement matches are encoded with the RC_MASK in the ref field
  * @note start_pos allows factorization to begin from a specific position, useful for reference+target factorization
- * @note Tie-breaking: When forward and reverse complement candidates have equal length, the forward candidate is preferred.
+ * @note Tie-breaking: Both forward and RC candidates are tracked independently during the tree walk,
+ *       then their TRUE LCPs are computed and compared. When true lengths are equal, forward is preferred.
  *       Among candidates of the same type, the one with the earliest position (smallest start for forward, smallest end for RC) wins.
  */
 template<class Sink>
@@ -218,12 +219,18 @@ size_t nolzss_multiple_dna_w_rc(const std::string& S, Sink&& sink, size_t start_
     size_t factors = 0;
 
     while (i < N) { // only factorize inside T
-        // At factor start i (0-based in T), walk up ancestors and pick best candidate
-        size_t best_len_depth = 0;   // best candidate's depth (proxy for length)
-        bool   best_is_rc      = false;
-        size_t best_fwd_start  = 0;  // start in T (for FWD)
-        size_t best_rc_end     = 0;  // end in T (for RC)
-        size_t best_rc_posS    = 0;  // pos in S where RC candidate suffix starts (for LCP)
+        // At factor start i (0-based in T), walk up ancestors and track best FWD and RC candidates independently
+        
+        // Track best FWD candidate
+        bool   have_fwd       = false;
+        size_t best_fwd_start = 0;  // start in T (for FWD)
+        size_t best_fwd_depth = 0;  // tree depth of best FWD candidate
+        
+        // Track best RC candidate
+        bool   have_rc        = false;
+        size_t best_rc_end    = 0;  // end in T (for RC)
+        size_t best_rc_posS   = 0;  // pos in S where RC candidate suffix starts (for LCP)
+        size_t best_rc_depth  = 0;  // tree depth of best RC candidate
 
         // Walk from leaf to root via level_anc
         for (size_t step = 1; step <= lambda_node_depth; ++step) {
@@ -249,32 +256,33 @@ size_t nolzss_multiple_dna_w_rc(const std::string& S, Sink&& sink, size_t start_
                 break;
             }
 
-            // Choose the better of the valid candidates at this depth
+            // Update best FWD candidate independently
             if (okF) {
-                if (ell > best_len_depth ||
-                    (ell == best_len_depth && !best_is_rc && (jF + ell - 1) < (best_fwd_start + best_len_depth - 1))) {
-                    best_len_depth = ell;
-                    best_is_rc     = false;
+                if (ell > best_fwd_depth ||
+                    (ell == best_fwd_depth && (jF + ell - 1) < (best_fwd_start + best_fwd_depth - 1))) {
+                    best_fwd_depth = ell;
                     best_fwd_start = jF;
+                    have_fwd = true;
                 }
             }
+            
+            // Update best RC candidate independently
             if (okR) {
                 size_t posS_R = cst.csa[kR]; // suffix position in S for LCP
-                // RC only wins if strictly longer, or same length and current best is also RC with worse end position
-                // (forward candidates are preferred over RC at equal length)
-                if (ell > best_len_depth ||
-                    (ell == best_len_depth && best_is_rc && (endRC < best_rc_end))) {
-                    best_len_depth = ell;
-                    best_is_rc     = true;
-                    best_rc_end    = endRC;
-                    best_rc_posS   = posS_R;
+                if (ell > best_rc_depth ||
+                    (ell == best_rc_depth && (endRC < best_rc_end))) {
+                    best_rc_depth = ell;
+                    best_rc_end   = endRC;
+                    best_rc_posS  = posS_R;
+                    have_rc = true;
                 }
             }
         }
 
         size_t emit_len = 1;
         uint64_t emit_ref = i; // default for literal
-        if (best_len_depth == 0) {
+        
+        if (!have_fwd && !have_rc) {
             // No previous occurrence (FWD nor RC) — literal of length 1
             Factor f{static_cast<uint64_t>(i), static_cast<uint64_t>(emit_len), static_cast<uint64_t>(emit_ref)};
             sink(f);
@@ -287,18 +295,35 @@ size_t nolzss_multiple_dna_w_rc(const std::string& S, Sink&& sink, size_t start_
             continue;
         }
 
-        if (!best_is_rc) {
-            // Finalize FWD with true LCP and non-overlap cap
-            size_t cap = i - best_fwd_start; // i-1 - (best_fwd_start) + 1
-            size_t L   = lcp(cst, i, best_fwd_start);
-            emit_len   = std::min(L, cap);
-            emit_ref   = static_cast<uint64_t>(best_fwd_start);
+        // Compute true lengths for both candidates
+        size_t fwd_true_len = 0;
+        size_t rc_true_len = 0;
+        
+        if (have_fwd) {
+            size_t cap = i - best_fwd_start; // non-overlap cap
+            size_t L = lcp(cst, i, best_fwd_start);
+            fwd_true_len = std::min(L, cap);
+        }
+        
+        if (have_rc) {
+            rc_true_len = lcp(cst, i, best_rc_posS);
+        }
+        
+        // Choose based on TRUE length, with FWD preference at equal length
+        bool use_fwd = false;
+        if (have_fwd && have_rc) {
+            use_fwd = (fwd_true_len >= rc_true_len);  // FWD wins ties
         } else {
-            // Finalize RC with true LCP (against suffix in R) 
-            size_t L   = lcp(cst, i, best_rc_posS);
-            emit_len   = L;
-            size_t start_pos_val = best_rc_end - L + 2;
-            emit_ref   = RC_MASK | static_cast<uint64_t>(start_pos_val); // start-anchored + RC flag
+            use_fwd = have_fwd;
+        }
+        
+        if (use_fwd) {
+            emit_len = fwd_true_len;
+            emit_ref = static_cast<uint64_t>(best_fwd_start);
+        } else {
+            emit_len = rc_true_len;
+            size_t start_pos_val = best_rc_end - emit_len + 2;
+            emit_ref = RC_MASK | static_cast<uint64_t>(start_pos_val); // start-anchored + RC flag
         }
         
         // Safety: ensure progress
