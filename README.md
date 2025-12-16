@@ -113,6 +113,10 @@ The library implements the **Non-overlapping Lempel-Ziv-Storer-Szymanski (LZSS)*
 - **Range Minimum Queries**: For efficient lowest common ancestor computations
 - **Sink-based Processing**: Memory-efficient processing using callback functions
 
+### Tie-Breaking for DNA Factorization
+
+When factorizing DNA sequences with reverse complement awareness, if both a forward match and a reverse complement match have the same length, the **forward match is preferred**. Among candidates of the same type, the one with the earliest position wins.
+
 ## Performance
 
 - **Time Complexity**: 𝒪(𝑛 lg<sup>ϵ</sup> 𝑛) for factorization, where n is input length, and 𝜖 ∈ (0,1]

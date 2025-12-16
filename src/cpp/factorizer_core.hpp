@@ -170,6 +170,8 @@ size_t nolzss_dna_w_rc(const std::string& T, Sink&& sink) {
  * @note All factors are emitted, including the last one
  * @note Reverse complement matches are encoded with the RC_MASK in the ref field
  * @note start_pos allows factorization to begin from a specific position, useful for reference+target factorization
+ * @note Tie-breaking: When forward and reverse complement candidates have equal length, the forward candidate is preferred.
+ *       Among candidates of the same type, the one with the earliest position (smallest start for forward, smallest end for RC) wins.
  */
 template<class Sink>
 size_t nolzss_multiple_dna_w_rc(const std::string& S, Sink&& sink, size_t start_pos) {
@@ -258,8 +260,10 @@ size_t nolzss_multiple_dna_w_rc(const std::string& S, Sink&& sink, size_t start_
             }
             if (okR) {
                 size_t posS_R = cst.csa[kR]; // suffix position in S for LCP
+                // RC only wins if strictly longer, or same length and current best is also RC with worse end position
+                // (forward candidates are preferred over RC at equal length)
                 if (ell > best_len_depth ||
-                    (ell == best_len_depth && (best_is_rc ? (endRC < best_rc_end) : true))) {
+                    (ell == best_len_depth && best_is_rc && (endRC < best_rc_end))) {
                     best_len_depth = ell;
                     best_is_rc     = true;
                     best_rc_end    = endRC;
