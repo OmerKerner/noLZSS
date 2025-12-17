@@ -698,6 +698,40 @@ def test_reverse_complement_awareness():
         # Length should be positive
         assert length > 0
 
+def test_factorize_dna_w_rc_sanity_checks():
+    """Sanity check tests for factorize_dna_w_rc with known expected outputs"""
+    import noLZSS._noLZSS as cpp
+    
+    # Test case 1: AC
+    result = cpp.factorize_dna_w_rc(b'AC')
+    expected = [(0, 1, 0, False), (1, 1, 1, False)]
+    assert result == expected, f"Test 'AC' failed: expected {expected}, got {result}"
+    
+    # Test case 2: ACTGA
+    result = cpp.factorize_dna_w_rc(b'ACTGA')
+    expected = [(0, 1, 0, False), (1, 1, 1, False), (2, 1, 2, False), (3, 1, 3, False), (4, 1, 0, False)]
+    assert result == expected, f"Test 'ACTGA' failed: expected {expected}, got {result}"
+    
+    # Test case 3: ATGAT
+    result = cpp.factorize_dna_w_rc(b'ATGAT')
+    expected = [(0, 1, 0, False), (1, 1, 1, False), (2, 1, 2, False), (3, 2, 0, False)]
+    assert result == expected, f"Test 'ATGAT' failed: expected {expected}, got {result}"
+    
+    # Test case 4: ATGCAT (should have RC match)
+    result = cpp.factorize_dna_w_rc(b'ATGCAT')
+    expected = [(0, 1, 0, False), (1, 1, 1, False), (2, 1, 2, False), (3, 3, 0, True)]
+    assert result == expected, f"Test 'ATGCAT' failed: expected {expected}, got {result}"
+
+    # Test case 5: ATGATCTCA
+    result = cpp.factorize_dna_w_rc(b'ATGATCTCA')
+    expected = [(0, 1, 0, False), (1, 1, 1, False), (2, 1, 2, False), (3, 2, 0, False), (5, 1, 5, False), (6, 3, 1, True)]
+    assert result == expected, f"Test 'ATGATCTCA' failed: expected {expected}, got {result}"
+
+    # Test case 6: TATACATAG
+    result = cpp.factorize_dna_w_rc(b'TATACATAG')
+    expected = [(0, 1, 0, False), (1, 1, 1, False), (2, 2, 0, False), (4, 1, 4, False), (5, 3, 1, False), (8, 1, 8, False)]
+    assert result == expected, f"Test 'TATACATAG' failed: expected {expected}, got {result}"
+
 def test_multiple_dna_binary_output():
     """Test binary output functions for multiple DNA sequences"""
     import noLZSS._noLZSS as cpp

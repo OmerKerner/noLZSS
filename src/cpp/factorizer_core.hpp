@@ -192,9 +192,9 @@ size_t nolzss_multiple_dna_w_rc(const std::string& S, Sink&& sink, size_t start_
     sdsl::int_vector<64> fwd_starts(cst.csa.size(), INF);
     sdsl::int_vector<64> rc_ends   (cst.csa.size(), INF);
 
-    const size_t T_end = N;           // end of original
-    const size_t R_beg = N;       // first char of rc
-    const size_t R_end = S.size();   // end of S
+    const size_t T_end = N;           // end of original (exclusive)
+    const size_t R_beg = N + 1;       // first char of rc (skip sentinel at position N)
+    const size_t R_end = S.size() - 1;   // exclude final sentinel
 
     for (size_t k = 0; k < cst.csa.size(); ++k) {
         size_t posS = cst.csa[k];
@@ -309,20 +309,38 @@ size_t nolzss_multiple_dna_w_rc(const std::string& S, Sink&& sink, size_t start_
             rc_true_len = lcp(cst, i, best_rc_posS);
         }
         
-        // Choose based on TRUE length, with FWD preference at equal length
+        // Choose based on TRUE length, with FWD preference at equal length.
+        // A literal (self-reference, length 1) is always available as a fallback.
+        // Only use RC if it provides strictly longer match than both FWD and literal.
         bool use_fwd = false;
-        if (have_fwd && have_rc) {
-            use_fwd = (fwd_true_len >= rc_true_len);  // FWD wins ties
+        bool use_literal = false;
+        
+        if (have_fwd && fwd_true_len >= 1) {
+            // Have a real forward match
+            if (have_rc && rc_true_len > fwd_true_len) {
+                use_fwd = false;  // RC is strictly longer
+            } else {
+                use_fwd = true;   // FWD wins (including ties)
+            }
         } else {
-            use_fwd = have_fwd;
+            // No real forward match; compare RC against literal (length 1)
+            if (have_rc && rc_true_len > 1) {
+                use_fwd = false;  // RC is strictly longer than literal
+            } else {
+                use_literal = true;  // Use literal (self-reference)
+            }
         }
         
-        if (use_fwd) {
+        if (use_literal) {
+            // Emit literal
+            emit_len = 1;
+            emit_ref = static_cast<uint64_t>(i);
+        } else if (use_fwd) {
             emit_len = fwd_true_len;
             emit_ref = static_cast<uint64_t>(best_fwd_start);
         } else {
             emit_len = rc_true_len;
-            size_t start_pos_val = best_rc_end - emit_len + 2;
+            size_t start_pos_val = best_rc_end - emit_len + 1;  // start = end - len + 1
             emit_ref = RC_MASK | static_cast<uint64_t>(start_pos_val); // start-anchored + RC flag
         }
         
