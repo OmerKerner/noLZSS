@@ -91,8 +91,10 @@ size_t parallel_write_factors_binary_file_fasta_multiple_dna_w_rc(
     
     size_t sentinel_idx = 0;
     for (size_t i = 0; i < factor_count; ++i) {
-        Factor f;
-        temp_is.read(reinterpret_cast<char*>(&f), sizeof(Factor));
+        Factor f = {0, 0, 0};
+        if (!temp_is.read(reinterpret_cast<char*>(&f), sizeof(Factor))) {
+            throw std::runtime_error("Error reading factor from output file at index " + std::to_string(i));
+        }
         total_length += f.length;
         
         // Check if this is a sentinel factor
@@ -151,8 +153,10 @@ size_t parallel_write_factors_binary_file_fasta_multiple_dna_no_rc(
     
     size_t sentinel_idx = 0;
     for (size_t i = 0; i < factor_count; ++i) {
-        Factor f;
-        temp_is.read(reinterpret_cast<char*>(&f), sizeof(Factor));
+        Factor f = {0, 0, 0};
+        if (!temp_is.read(reinterpret_cast<char*>(&f), sizeof(Factor))) {
+            throw std::runtime_error("Error reading factor from output file at index " + std::to_string(i));
+        }
         total_length += f.length;
         
         // Check if this is a sentinel factor
@@ -214,8 +218,10 @@ size_t parallel_write_factors_dna_w_reference_fasta_files_to_binary(
     
     size_t sentinel_idx = 0;
     for (size_t i = 0; i < factor_count; ++i) {
-        Factor f;
-        temp_is.read(reinterpret_cast<char*>(&f), sizeof(Factor));
+        Factor f = {0, 0, 0};
+        if (!temp_is.read(reinterpret_cast<char*>(&f), sizeof(Factor))) {
+            throw std::runtime_error("Error reading factor from output file at index " + std::to_string(i));
+        }
         total_length += f.length;
         
         // Check if this is a sentinel factor
