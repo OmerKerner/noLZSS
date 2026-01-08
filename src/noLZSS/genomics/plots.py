@@ -1925,6 +1925,287 @@ def plot_reference_seq_lz_factor_plot(
     return None
 
 
+def _compute_strand_bias_grid(
+    factors: List[Tuple[int, ...]],
+    grid_size: Union[int, Tuple[int, int]],
+    total_length: Optional[int] = None
+) -> Tuple[Any, Any, Any, Any, Any]:
+    """Compute forward/reverse-complement coverage and log2 bias grid.
+
+    The grid is built in genomic coordinates (x = target position, y = reference
+    position). Each bin accumulates the number of nucleotides contributed by the
+    portion of every factor that lies inside that bin. Factors that cross bin
+    boundaries are split at both x and y bin edges so that partial coverage is
+    counted correctly.
+    """
+    try:
+        import numpy as np
+    except ImportError as e:
+        missing_dep = str(e).split("'")[1] if "'" in str(e) else str(e)
+        raise ImportError(
+            f"Missing required dependency: {missing_dep}. "
+            f"Install with: pip install numpy"
+        )
+
+    if isinstance(grid_size, int):
+        x_bins = y_bins = grid_size
+    elif isinstance(grid_size, Sequence) and len(grid_size) == 2:
+        x_bins, y_bins = grid_size
+    else:
+        raise ValueError("grid_size must be an int or a tuple of two ints")
+
+    if x_bins <= 0 or y_bins <= 0:
+        raise ValueError("grid_size must be positive")
+
+    if not factors:
+        raise PlotError("No factors available to compute strand bias grid")
+
+    x_max = float(total_length) if total_length is not None else max(start + length for start, length, *_ in factors)
+    y_max = float(total_length) if total_length is not None else max(ref + length for _, length, ref, *_ in factors)
+
+    if x_max <= 0 or y_max <= 0:
+        raise PlotError("Invalid factor coordinates for strand bias grid")
+
+    x_edges = np.linspace(0, x_max, x_bins + 1)
+    y_edges = np.linspace(0, y_max, y_bins + 1)
+
+    forward_grid = np.zeros((y_bins, x_bins), dtype=float)
+    rc_grid = np.zeros_like(forward_grid)
+
+    def _y_at(x_pos: float, start: float, length: float, ref_pos: float, is_rc: bool) -> float:
+        return (ref_pos + length - (x_pos - start)) if is_rc else (ref_pos + (x_pos - start))
+
+    for factor in factors:
+        if len(factor) == 4:
+            start, length, ref, is_rc = factor
+        elif len(factor) == 3:
+            start, length, ref = factor
+            is_rc = False
+        else:
+            continue
+
+        x_start = float(start)
+        x_end = float(start + length)
+
+        # Collect breakpoints where the segment crosses any bin edge in x or y.
+        breakpoints = [x_start, x_end]
+
+        # x-axis bin edges that fall inside the factor
+        internal_x_edges = x_edges[(x_edges > x_start) & (x_edges < x_end)]
+        if len(internal_x_edges) > 0:
+            breakpoints.extend(internal_x_edges.tolist())
+
+        # y-axis bin edges mapped back to x positions along the segment
+        if is_rc:
+            mapped_x = start + ref + length - y_edges
+        else:
+            mapped_x = start + y_edges - ref
+
+        mapped_x = mapped_x[(mapped_x > x_start) & (mapped_x < x_end)]
+        if len(mapped_x) > 0:
+            breakpoints.extend(mapped_x.tolist())
+
+        breakpoints = sorted(set(breakpoints))
+
+        for i in range(len(breakpoints) - 1):
+            seg_start = breakpoints[i]
+            seg_end = breakpoints[i + 1]
+            seg_length = seg_end - seg_start
+            if seg_length <= 0:
+                continue
+
+            mid_x = (seg_start + seg_end) / 2.0
+            mid_y = _y_at(mid_x, start, length, ref, is_rc)
+
+            x_idx = int(np.searchsorted(x_edges, mid_x, side='right') - 1)
+            y_idx = int(np.searchsorted(y_edges, mid_y, side='right') - 1)
+
+            if not (0 <= x_idx < x_bins and 0 <= y_idx < y_bins):
+                continue
+
+            if is_rc:
+                rc_grid[y_idx, x_idx] += seg_length
+            else:
+                forward_grid[y_idx, x_idx] += seg_length
+
+    total_forward = forward_grid.sum()
+    total_rc = rc_grid.sum()
+
+    eps = 1e-9
+    norm_forward = forward_grid / (total_forward if total_forward > 0 else 1.0)
+    norm_rc = rc_grid / (total_rc if total_rc > 0 else 1.0)
+
+    bias_grid = np.log2((norm_forward + eps) / (norm_rc + eps))
+    mask = (forward_grid + rc_grid) == 0
+    bias_grid = np.ma.array(bias_grid, mask=mask)
+
+    return x_edges, y_edges, forward_grid, rc_grid, bias_grid
+
+
+    def plot_strand_bias_heatmap(
+        fasta_filepath: Optional[Union[str, Path]] = None,
+        factors_filepath: Optional[Union[str, Path]] = None,
+        name: Optional[str] = None,
+        grid_size: Union[int, Tuple[int, int]] = 50,
+        save_path: Optional[Union[str, Path]] = None,
+        show_plot: bool = True
+    ) -> None:
+        """
+        Visualize forward vs reverse-complement bias across the factor map.
+
+        The plot partitions the factor plane (target position vs reference position)
+        into a square grid (default 50x50). Each bin accumulates nucleotide coverage
+        from factors that overlap that bin; contributions are split when factors cross
+        bin boundaries. Color encodes the log2 ratio between forward and reverse-
+        complement coverage, normalized by the total coverage of each strand so that
+        global strand imbalances are accounted for.
+
+        Args:
+            fasta_filepath: FASTA file to factorize (mutually exclusive with
+                factors_filepath).
+            factors_filepath: Enhanced binary factors file with metadata (mutually
+                exclusive with fasta_filepath).
+            name: Optional label for the plot title (defaults to input stem).
+            grid_size: Number of bins per axis (int) or explicit (x_bins, y_bins)
+                tuple. Default: 50.
+            save_path: Optional path to save the heatmap image.
+            show_plot: Whether to display the plot.
+        """
+        try:
+            import matplotlib.pyplot as plt
+            import numpy as np
+        except ImportError as e:
+            missing_dep = str(e).split("'")[1] if "'" in str(e) else str(e)
+            raise ImportError(
+                f"Missing required dependency: {missing_dep}. "
+                f"Install with: pip install matplotlib numpy"
+            )
+
+        from .._noLZSS import factorize_fasta_multiple_dna_w_rc
+        from ..utils import read_factors_binary_file_with_metadata
+
+        if (fasta_filepath is None) == (factors_filepath is None):
+            raise ValueError("Exactly one of fasta_filepath or factors_filepath must be provided")
+
+        if fasta_filepath is not None:
+            input_filepath = Path(fasta_filepath)
+            input_type = "fasta"
+        else:
+            input_filepath = Path(cast(Path, factors_filepath))
+            input_type = "binary"
+
+        if not input_filepath.exists():
+            raise FileNotFoundError(f"Input file not found: {input_filepath}")
+
+        if name is None:
+            name = input_filepath.stem
+
+        try:
+            if input_type == "fasta":
+                factors, sentinel_factor_indices, sequence_names = factorize_fasta_multiple_dna_w_rc(str(input_filepath))
+                total_length = None
+            else:
+                metadata = read_factors_binary_file_with_metadata(input_filepath)
+                factors = metadata['factors']
+                sentinel_factor_indices = metadata.get('sentinel_factor_indices', [])
+                sequence_names = metadata.get('sequence_names', [])
+                total_length = metadata.get('total_length')
+
+            x_edges, y_edges, forward_grid, rc_grid, bias_grid = _compute_strand_bias_grid(
+                factors,
+                grid_size,
+                total_length=total_length
+            )
+
+            x_bins = len(x_edges) - 1
+            y_bins = len(y_edges) - 1
+
+            forward_total = forward_grid.sum()
+            rc_total = rc_grid.sum()
+
+            valid_bias = bias_grid.compressed()
+            vmax = np.max(np.abs(valid_bias)) if valid_bias.size > 0 else 1.0
+            if vmax == 0:
+                vmax = 1.0
+
+            cmap = plt.get_cmap('coolwarm').copy()
+            cmap.set_bad('lightgray', alpha=0.35)
+
+            fig, ax = plt.subplots(figsize=(10, 8))
+            im = ax.imshow(
+                bias_grid,
+                origin='lower',
+                aspect='equal',
+                extent=[x_edges[0], x_edges[-1], y_edges[0], y_edges[-1]],
+                cmap=cmap,
+                vmin=-vmax,
+                vmax=vmax
+            )
+
+            cbar = plt.colorbar(im, ax=ax, shrink=0.8)
+            cbar.set_label('log2((forward/total_forward)/(rc/total_rc))', fontsize=11)
+
+            # Add sequence boundaries from sentinel factors if available
+            sentinel_positions = []
+            sequence_boundaries: List[Tuple[float, float, str]] = []
+            if sentinel_factor_indices:
+                for idx in sentinel_factor_indices:
+                    if 0 <= idx < len(factors):
+                        sentinel_positions.append(factors[idx][0])
+
+                prev_pos = 0.0
+                for i, pos in enumerate(sentinel_positions):
+                    seq_name = sequence_names[i] if i < len(sequence_names) else f"seq_{i}"
+                    sequence_boundaries.append((prev_pos, pos, seq_name))
+                    prev_pos = pos + 1
+
+                max_pos = max(x_edges[-1], y_edges[-1])
+                tail_name = sequence_names[len(sentinel_positions)] if len(sequence_names) > len(sentinel_positions) else f"seq_{len(sentinel_positions)}"
+                sequence_boundaries.append((prev_pos, max_pos, tail_name))
+            elif sequence_names:
+                max_pos = max(x_edges[-1], y_edges[-1])
+                sequence_boundaries.append((0.0, max_pos, sequence_names[0]))
+
+            for pos in sentinel_positions:
+                ax.axvline(pos, color='green', linestyle='--', linewidth=1.2, alpha=0.6)
+                ax.axhline(pos, color='green', linestyle='--', linewidth=1.2, alpha=0.6)
+
+            for start_pos, end_pos, seq_name in sequence_boundaries:
+                mid_pos = (start_pos + end_pos) / 2
+                ax.text(mid_pos, y_edges[0] - 0.02 * (y_edges[-1] - y_edges[0]), seq_name,
+                        ha='center', va='top', fontsize=9, color='black', rotation=0)
+                ax.text(x_edges[0] - 0.02 * (x_edges[-1] - x_edges[0]), mid_pos, seq_name,
+                        ha='right', va='center', fontsize=9, color='black', rotation=90)
+
+            max_coord = max(x_edges[-1], y_edges[-1])
+            ax.plot([0, max_coord], [0, max_coord], color='gray', linestyle=':', linewidth=1, alpha=0.6)
+
+            ax.set_xlabel('Target position (bp)', fontsize=12)
+            ax.set_ylabel('Reference position (bp)', fontsize=12)
+            ax.set_title(
+                f"Strand Bias Heatmap - {name} (grid {x_bins}x{y_bins})\n"
+                f"Forward bp: {forward_total:.0f}, Reverse-complement bp: {rc_total:.0f}",
+                fontsize=13, weight='bold'
+            )
+            ax.grid(True, linestyle='--', alpha=0.2, linewidth=0.5)
+
+            plt.tight_layout()
+
+            if save_path:
+                save_path = Path(save_path)
+                save_path.parent.mkdir(parents=True, exist_ok=True)
+                plt.savefig(save_path, dpi=300, bbox_inches='tight')
+                print(f"Strand bias heatmap saved to {save_path}")
+
+            if show_plot:
+                plt.show()
+            else:
+                plt.close(fig)
+
+        except Exception as e:
+            raise PlotError(f"Failed to create strand bias heatmap: {e}")
+
+
 def plot_factor_length_ccdf(
     factors_filepath: Union[str, Path],
     save_path: Optional[Union[str, Path]] = None,
@@ -2520,6 +2801,18 @@ if __name__ == "__main__":
     self_factors_parser.add_argument('--interactive', action='store_true', help='Use interactive Panel/Datashader plot instead of simple matplotlib')
     self_factors_parser.add_argument('--return_panel', action='store_true', help='Whether to return the Panel app (interactive mode only)')
 
+    # Subparser for strand-bias heatmap
+    strand_bias_parser = subparsers.add_parser(
+        'strand-bias-heatmap',
+        help='Forward vs reverse-complement bias heatmap over the factor map'
+    )
+    strand_bias_parser.add_argument('--fasta_filepath', help='Path to FASTA file')
+    strand_bias_parser.add_argument('--factors_filepath', help='Path to binary factors file')
+    strand_bias_parser.add_argument('--name', default=None, help='Name for the plot title')
+    strand_bias_parser.add_argument('--grid_size', type=int, default=50, help='Number of bins per axis (default: 50)')
+    strand_bias_parser.add_argument('--save_path', default=None, help='Path to save the plot image')
+    strand_bias_parser.add_argument('--no-show', action='store_true', help='Do not display the plot')
+
     # Subparser for factor length CCDF
     ccdf_parser = subparsers.add_parser('factor-length-ccdf', help='Plot empirical CCDF of factor lengths on log-log axes')
     ccdf_parser.add_argument('factors_filepath', help='Path to binary factors file')
@@ -2586,6 +2879,15 @@ if __name__ == "__main__":
                 save_path=args.save_path,
                 show_plot=not args.no_show
             )
+    elif args.command == 'strand-bias-heatmap':
+        plot_strand_bias_heatmap(
+            fasta_filepath=args.fasta_filepath,
+            factors_filepath=args.factors_filepath,
+            name=args.name,
+            grid_size=args.grid_size,
+            save_path=args.save_path,
+            show_plot=not args.no_show
+        )
     elif args.command == 'factor-length-ccdf':
         plot_factor_length_ccdf(
             factors_filepath=args.factors_filepath,

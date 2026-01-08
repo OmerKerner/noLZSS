@@ -217,6 +217,19 @@ os.remove("factors.bin")
 
 ### Plotting and Visualization
 
+- Forward vs reverse-complement strand bias over the factor plane:
+
+```bash
+python -m noLZSS.genomics.plots strand-bias-heatmap \
+    --factors_filepath results/your_factors.bin \
+    --grid_size 75 \
+    --save_path bias_heatmap.png --no-show
+```
+
+The heatmap bins the factor map into a grid (default 50x50) and colors each
+cell by the log2 forward/RC coverage ratio, accounting for factors that cross
+bin boundaries and for global strand coverage differences.
+
 ### Performance Comparison
 
 ### Advanced Genomics Example
