@@ -2042,168 +2042,171 @@ def _compute_strand_bias_grid(
     return x_edges, y_edges, forward_grid, rc_grid, bias_grid
 
 
-    def plot_strand_bias_heatmap(
-        fasta_filepath: Optional[Union[str, Path]] = None,
-        factors_filepath: Optional[Union[str, Path]] = None,
-        name: Optional[str] = None,
-        grid_size: Union[int, Tuple[int, int]] = 50,
-        save_path: Optional[Union[str, Path]] = None,
-        show_plot: bool = True
-    ) -> None:
-        """
-        Visualize forward vs reverse-complement bias across the factor map.
+def plot_strand_bias_heatmap(
+    fasta_filepath: Optional[Union[str, Path]] = None,
+    factors_filepath: Optional[Union[str, Path]] = None,
+    name: Optional[str] = None,
+    grid_size: Union[int, Tuple[int, int]] = 50,
+    save_path: Optional[Union[str, Path]] = None,
+    show_plot: bool = True
+) -> None:
+    """
+    Visualize forward vs reverse-complement bias across the factor map.
 
-        The plot partitions the factor plane (target position vs reference position)
-        into a square grid (default 50x50). Each bin accumulates nucleotide coverage
-        from factors that overlap that bin; contributions are split when factors cross
-        bin boundaries. Color encodes the log2 ratio between forward and reverse-
-        complement coverage, normalized by the total coverage of each strand so that
-        global strand imbalances are accounted for.
+    The plot partitions the factor plane (target position vs reference position)
+    into a square grid (default 50x50). Each bin accumulates nucleotide coverage
+    from factors that overlap that bin; contributions are split when factors cross
+    bin boundaries. Color encodes the log2 ratio between forward and reverse-
+    complement coverage, normalized by the total coverage of each strand so that
+    global strand imbalances are accounted for.
 
-        Args:
-            fasta_filepath: FASTA file to factorize (mutually exclusive with
-                factors_filepath).
-            factors_filepath: Enhanced binary factors file with metadata (mutually
-                exclusive with fasta_filepath).
-            name: Optional label for the plot title (defaults to input stem).
-            grid_size: Number of bins per axis (int) or explicit (x_bins, y_bins)
-                tuple. Default: 50.
-            save_path: Optional path to save the heatmap image.
-            show_plot: Whether to display the plot.
-        """
-        try:
-            import matplotlib.pyplot as plt
-            import numpy as np
-        except ImportError as e:
-            missing_dep = str(e).split("'")[1] if "'" in str(e) else str(e)
-            raise ImportError(
-                f"Missing required dependency: {missing_dep}. "
-                f"Install with: pip install matplotlib numpy"
-            )
+    Args:
+        fasta_filepath: FASTA file to factorize (mutually exclusive with
+            factors_filepath).
+        factors_filepath: Enhanced binary factors file with metadata (mutually
+            exclusive with fasta_filepath).
+        name: Optional label for the plot title (defaults to input stem).
+        grid_size: Number of bins per axis (int) or explicit (x_bins, y_bins)
+            tuple. Default: 50.
+        save_path: Optional path to save the heatmap image.
+        show_plot: Whether to display the plot.
+    """
+    try:
+        import matplotlib.pyplot as plt
+        import numpy as np
+    except ImportError as e:
+        missing_dep = str(e).split("'")[1] if "'" in str(e) else str(e)
+        raise ImportError(
+            f"Missing required dependency: {missing_dep}. "
+            f"Install with: pip install matplotlib numpy"
+        )
 
-        from .._noLZSS import factorize_fasta_multiple_dna_w_rc
-        from ..utils import read_factors_binary_file_with_metadata
+    from .._noLZSS import factorize_fasta_multiple_dna_w_rc
+    from ..utils import read_factors_binary_file_with_metadata
 
-        if (fasta_filepath is None) == (factors_filepath is None):
-            raise ValueError("Exactly one of fasta_filepath or factors_filepath must be provided")
+    if (fasta_filepath is None) == (factors_filepath is None):
+        raise ValueError("Exactly one of fasta_filepath or factors_filepath must be provided")
 
-        if fasta_filepath is not None:
-            input_filepath = Path(fasta_filepath)
-            input_type = "fasta"
+    if fasta_filepath is not None:
+        input_filepath = Path(fasta_filepath)
+        input_type = "fasta"
+    else:
+        input_filepath = Path(cast(Path, factors_filepath))
+        input_type = "binary"
+
+    if not input_filepath.exists():
+        raise FileNotFoundError(f"Input file not found: {input_filepath}")
+
+    if name is None:
+        name = input_filepath.stem
+
+    try:
+        if input_type == "fasta":
+            factors, sentinel_factor_indices, sequence_names = factorize_fasta_multiple_dna_w_rc(str(input_filepath))
+            total_length = None
         else:
-            input_filepath = Path(cast(Path, factors_filepath))
-            input_type = "binary"
+            metadata = read_factors_binary_file_with_metadata(input_filepath)
+            factors = metadata['factors']
+            sentinel_factor_indices = metadata.get('sentinel_factor_indices', [])
+            sequence_names = metadata.get('sequence_names', [])
+            total_length = metadata.get('total_length')
 
-        if not input_filepath.exists():
-            raise FileNotFoundError(f"Input file not found: {input_filepath}")
+        x_edges, y_edges, forward_grid, rc_grid, bias_grid = _compute_strand_bias_grid(
+            factors,
+            grid_size,
+            total_length=total_length
+        )
 
-        if name is None:
-            name = input_filepath.stem
+        x_bins = len(x_edges) - 1
+        y_bins = len(y_edges) - 1
 
-        try:
-            if input_type == "fasta":
-                factors, sentinel_factor_indices, sequence_names = factorize_fasta_multiple_dna_w_rc(str(input_filepath))
-                total_length = None
-            else:
-                metadata = read_factors_binary_file_with_metadata(input_filepath)
-                factors = metadata['factors']
-                sentinel_factor_indices = metadata.get('sentinel_factor_indices', [])
-                sequence_names = metadata.get('sequence_names', [])
-                total_length = metadata.get('total_length')
+        forward_total = forward_grid.sum()
+        rc_total = rc_grid.sum()
 
-            x_edges, y_edges, forward_grid, rc_grid, bias_grid = _compute_strand_bias_grid(
-                factors,
-                grid_size,
-                total_length=total_length
-            )
+        valid_bias = bias_grid.compressed()
+        vmax = np.max(np.abs(valid_bias)) if valid_bias.size > 0 else 1.0
+        if vmax == 0:
+            vmax = 1.0
 
-            x_bins = len(x_edges) - 1
-            y_bins = len(y_edges) - 1
+        # Flip colormap so forward-enriched bins are blue and RC-enriched bins are red
+        cmap = plt.get_cmap('coolwarm_r').copy()
+        cmap.set_bad('lightgray', alpha=0.35)
 
-            forward_total = forward_grid.sum()
-            rc_total = rc_grid.sum()
+        fig, ax = plt.subplots(figsize=(10, 8))
+        im = ax.imshow(
+            bias_grid,
+            origin='lower',
+            aspect='equal',
+            extent=[x_edges[0], x_edges[-1], y_edges[0], y_edges[-1]],
+            cmap=cmap,
+            vmin=-vmax,
+            vmax=vmax
+        )
 
-            valid_bias = bias_grid.compressed()
-            vmax = np.max(np.abs(valid_bias)) if valid_bias.size > 0 else 1.0
-            if vmax == 0:
-                vmax = 1.0
+        cbar = plt.colorbar(im, ax=ax, shrink=0.8)
+        cbar.set_label('log2((forward/total_forward)/(rc/total_rc))', fontsize=11)
+        cbar.ax.text(1.05, 1.02, 'Forward bias', ha='left', va='bottom', fontsize=9, transform=cbar.ax.transAxes)
+        cbar.ax.text(1.05, -0.02, 'RC bias', ha='left', va='top', fontsize=9, transform=cbar.ax.transAxes)
 
-            cmap = plt.get_cmap('coolwarm').copy()
-            cmap.set_bad('lightgray', alpha=0.35)
+        # Add sequence boundaries from sentinel factors if available
+        sentinel_positions = []
+        sequence_boundaries: List[Tuple[float, float, str]] = []
+        if sentinel_factor_indices:
+            for idx in sentinel_factor_indices:
+                if 0 <= idx < len(factors):
+                    sentinel_positions.append(factors[idx][0])
 
-            fig, ax = plt.subplots(figsize=(10, 8))
-            im = ax.imshow(
-                bias_grid,
-                origin='lower',
-                aspect='equal',
-                extent=[x_edges[0], x_edges[-1], y_edges[0], y_edges[-1]],
-                cmap=cmap,
-                vmin=-vmax,
-                vmax=vmax
-            )
+            prev_pos = 0.0
+            for i, pos in enumerate(sentinel_positions):
+                seq_name = sequence_names[i] if i < len(sequence_names) else f"seq_{i}"
+                sequence_boundaries.append((prev_pos, pos, seq_name))
+                prev_pos = pos + 1
 
-            cbar = plt.colorbar(im, ax=ax, shrink=0.8)
-            cbar.set_label('log2((forward/total_forward)/(rc/total_rc))', fontsize=11)
+            max_pos = max(x_edges[-1], y_edges[-1])
+            tail_name = sequence_names[len(sentinel_positions)] if len(sequence_names) > len(sentinel_positions) else f"seq_{len(sentinel_positions)}"
+            sequence_boundaries.append((prev_pos, max_pos, tail_name))
+        elif sequence_names:
+            max_pos = max(x_edges[-1], y_edges[-1])
+            sequence_boundaries.append((0.0, max_pos, sequence_names[0]))
 
-            # Add sequence boundaries from sentinel factors if available
-            sentinel_positions = []
-            sequence_boundaries: List[Tuple[float, float, str]] = []
-            if sentinel_factor_indices:
-                for idx in sentinel_factor_indices:
-                    if 0 <= idx < len(factors):
-                        sentinel_positions.append(factors[idx][0])
+        for pos in sentinel_positions:
+            ax.axvline(pos, color='green', linestyle='--', linewidth=1.2, alpha=0.6)
+            ax.axhline(pos, color='green', linestyle='--', linewidth=1.2, alpha=0.6)
 
-                prev_pos = 0.0
-                for i, pos in enumerate(sentinel_positions):
-                    seq_name = sequence_names[i] if i < len(sequence_names) else f"seq_{i}"
-                    sequence_boundaries.append((prev_pos, pos, seq_name))
-                    prev_pos = pos + 1
+        for start_pos, end_pos, seq_name in sequence_boundaries:
+            mid_pos = (start_pos + end_pos) / 2
+            ax.text(mid_pos, y_edges[0] - 0.02 * (y_edges[-1] - y_edges[0]), seq_name,
+                    ha='center', va='top', fontsize=9, color='black', rotation=0)
+            ax.text(x_edges[0] - 0.02 * (x_edges[-1] - x_edges[0]), mid_pos, seq_name,
+                    ha='right', va='center', fontsize=9, color='black', rotation=90)
 
-                max_pos = max(x_edges[-1], y_edges[-1])
-                tail_name = sequence_names[len(sentinel_positions)] if len(sequence_names) > len(sentinel_positions) else f"seq_{len(sentinel_positions)}"
-                sequence_boundaries.append((prev_pos, max_pos, tail_name))
-            elif sequence_names:
-                max_pos = max(x_edges[-1], y_edges[-1])
-                sequence_boundaries.append((0.0, max_pos, sequence_names[0]))
+        max_coord = max(x_edges[-1], y_edges[-1])
+        ax.plot([0, max_coord], [0, max_coord], color='gray', linestyle=':', linewidth=1, alpha=0.6)
 
-            for pos in sentinel_positions:
-                ax.axvline(pos, color='green', linestyle='--', linewidth=1.2, alpha=0.6)
-                ax.axhline(pos, color='green', linestyle='--', linewidth=1.2, alpha=0.6)
+        ax.set_xlabel('Target position (bp)', fontsize=12)
+        ax.set_ylabel('Reference position (bp)', fontsize=12)
+        ax.set_title(
+            f"Strand Bias Heatmap - {name} (grid {x_bins}x{y_bins})\n"
+            f"Forward bp: {forward_total:.0f}, Reverse-complement bp: {rc_total:.0f}",
+            fontsize=13, weight='bold'
+        )
+        ax.grid(True, linestyle='--', alpha=0.2, linewidth=0.5)
 
-            for start_pos, end_pos, seq_name in sequence_boundaries:
-                mid_pos = (start_pos + end_pos) / 2
-                ax.text(mid_pos, y_edges[0] - 0.02 * (y_edges[-1] - y_edges[0]), seq_name,
-                        ha='center', va='top', fontsize=9, color='black', rotation=0)
-                ax.text(x_edges[0] - 0.02 * (x_edges[-1] - x_edges[0]), mid_pos, seq_name,
-                        ha='right', va='center', fontsize=9, color='black', rotation=90)
+        plt.tight_layout()
 
-            max_coord = max(x_edges[-1], y_edges[-1])
-            ax.plot([0, max_coord], [0, max_coord], color='gray', linestyle=':', linewidth=1, alpha=0.6)
+        if save_path:
+            save_path = Path(save_path)
+            save_path.parent.mkdir(parents=True, exist_ok=True)
+            plt.savefig(save_path, dpi=300, bbox_inches='tight')
+            print(f"Strand bias heatmap saved to {save_path}")
 
-            ax.set_xlabel('Target position (bp)', fontsize=12)
-            ax.set_ylabel('Reference position (bp)', fontsize=12)
-            ax.set_title(
-                f"Strand Bias Heatmap - {name} (grid {x_bins}x{y_bins})\n"
-                f"Forward bp: {forward_total:.0f}, Reverse-complement bp: {rc_total:.0f}",
-                fontsize=13, weight='bold'
-            )
-            ax.grid(True, linestyle='--', alpha=0.2, linewidth=0.5)
+        if show_plot:
+            plt.show()
+        else:
+            plt.close(fig)
 
-            plt.tight_layout()
-
-            if save_path:
-                save_path = Path(save_path)
-                save_path.parent.mkdir(parents=True, exist_ok=True)
-                plt.savefig(save_path, dpi=300, bbox_inches='tight')
-                print(f"Strand bias heatmap saved to {save_path}")
-
-            if show_plot:
-                plt.show()
-            else:
-                plt.close(fig)
-
-        except Exception as e:
-            raise PlotError(f"Failed to create strand bias heatmap: {e}")
+    except Exception as e:
+        raise PlotError(f"Failed to create strand bias heatmap: {e}")
 
 
 def plot_factor_length_ccdf(
