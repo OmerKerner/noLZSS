@@ -56,13 +56,35 @@ PreparedSequenceResult prepare_multiple_dna_sequences_w_rc(const std::vector<std
         return {"", 0, {}};
     }
     
-    // Check if we have too many sequences
-    if (sequences.size() > 125) {
+    // Count non-empty sequences and warn about empty ones
+    size_t non_empty_count = 0;
+    size_t empty_count = 0;
+    for (const auto& seq : sequences) {
+        if (!seq.empty()) {
+            non_empty_count++;
+        } else {
+            empty_count++;
+        }
+    }
+    
+    // Warn if any empty sequences were found
+    if (empty_count > 0) {
+        std::cerr << "Warning: Skipping " << empty_count << " empty sequence(s) in prepare_multiple_dna_sequences_w_rc" << std::endl;
+    }
+    
+    // Check if all sequences were empty
+    if (non_empty_count == 0) {
+        throw std::runtime_error("All sequences are empty - cannot prepare for factorization");
+    }
+    
+    // Check if we have too many non-empty sequences
+    if (non_empty_count > 125) {
         throw std::invalid_argument("Too many sequences: maximum 125 sequences supported (due to sentinel character limitations)");
     }
     
-    // Validate sequences contain only valid DNA nucleotides
+    // Validate sequences contain only valid DNA nucleotides (skip empty sequences)
     for (size_t i = 0; i < sequences.size(); ++i) {
+        if (sequences[i].empty()) continue;  // Skip empty sequences
         for (char c : sequences[i]) {
             if (c != 'A' && c != 'C' && c != 'G' && c != 'T' && 
                 c != 'a' && c != 'c' && c != 'g' && c != 't') {
@@ -74,12 +96,14 @@ PreparedSequenceResult prepare_multiple_dna_sequences_w_rc(const std::vector<std
     
     PreparedSequenceResult result;
     
-    // Calculate total size for reservation
+    // Calculate total size for reservation (skip empty sequences)
     size_t total_size = 0;
     for (const auto& seq : sequences) {
-        total_size += seq.length() * 2; // Original + reverse complement
+        if (!seq.empty()) {
+            total_size += seq.length() * 2; // Original + reverse complement
+        }
     }
-    total_size += sequences.size() * 2; // Add space for sentinels
+    total_size += non_empty_count * 2; // Add space for sentinels
     result.prepared_string.reserve(total_size);
     
     // Generate sentinel characters avoiding 0 and uppercase DNA nucleotides A(65), C(67), G(71), T(84)
@@ -100,8 +124,11 @@ PreparedSequenceResult prepare_multiple_dna_sequences_w_rc(const std::vector<std
         }
     };
     
-    // First, add original sequences with sentinels
+    // First, add original sequences with sentinels (skip empty sequences)
+    size_t sentinel_idx = 0;
     for (size_t i = 0; i < sequences.size(); ++i) {
+        if (sequences[i].empty()) continue;  // Skip empty sequences
+        
         // Convert to uppercase
         std::string seq = sequences[i];
         for (char& c : seq) {
@@ -111,15 +138,18 @@ PreparedSequenceResult prepare_multiple_dna_sequences_w_rc(const std::vector<std
         
         // Add sentinel and track its position
         size_t sentinel_pos = result.prepared_string.length();
-        char sentinel = get_sentinel(i);
+        char sentinel = get_sentinel(sentinel_idx);
         result.prepared_string += sentinel;
         result.sentinel_positions.push_back(sentinel_pos);
+        sentinel_idx++;
     }
     
     result.original_length = result.prepared_string.length();
     
-    // Then, add reverse complements with different sentinels
+    // Then, add reverse complements with different sentinels (skip empty sequences)
     for (int i = static_cast<int>(sequences.size()) - 1; i >= 0; --i) {
+        if (sequences[i].empty()) continue;  // Skip empty sequences
+        
         // Convert to uppercase first
         std::string seq = sequences[i];
         for (char& c : seq) {
@@ -130,11 +160,12 @@ PreparedSequenceResult prepare_multiple_dna_sequences_w_rc(const std::vector<std
         std::string rc = revcomp(seq);
         result.prepared_string += rc;
         
-        // Add sentinel and track its position (offset by sequences.size() to make them unique)
+        // Add sentinel and track its position
         size_t sentinel_pos = result.prepared_string.length();
-        char sentinel = get_sentinel(sequences.size() + (sequences.size() - 1 - i));
+        char sentinel = get_sentinel(sentinel_idx);
         result.prepared_string += sentinel;
         result.sentinel_positions.push_back(sentinel_pos);
+        sentinel_idx++;
     }
     
     return result;
@@ -165,13 +196,35 @@ PreparedSequenceResult prepare_multiple_dna_sequences_no_rc(const std::vector<st
         return {"", 0, {}};
     }
     
-    // Check if we have too many sequences
-    if (sequences.size() > 250) {
+    // Count non-empty sequences and warn about empty ones
+    size_t non_empty_count = 0;
+    size_t empty_count = 0;
+    for (const auto& seq : sequences) {
+        if (!seq.empty()) {
+            non_empty_count++;
+        } else {
+            empty_count++;
+        }
+    }
+    
+    // Warn if any empty sequences were found
+    if (empty_count > 0) {
+        std::cerr << "Warning: Skipping " << empty_count << " empty sequence(s) in prepare_multiple_dna_sequences_no_rc" << std::endl;
+    }
+    
+    // Check if all sequences were empty
+    if (non_empty_count == 0) {
+        throw std::runtime_error("All sequences are empty - cannot prepare for factorization");
+    }
+    
+    // Check if we have too many non-empty sequences
+    if (non_empty_count > 250) {
         throw std::invalid_argument("Too many sequences: maximum 250 sequences supported (due to sentinel character limitations)");
     }
     
-    // Validate sequences contain only valid DNA nucleotides
+    // Validate sequences contain only valid DNA nucleotides (skip empty sequences)
     for (size_t i = 0; i < sequences.size(); ++i) {
+        if (sequences[i].empty()) continue;  // Skip empty sequences
         for (char c : sequences[i]) {
             if (c != 'A' && c != 'C' && c != 'G' && c != 'T' && 
                 c != 'a' && c != 'c' && c != 'g' && c != 't') {
@@ -183,12 +236,14 @@ PreparedSequenceResult prepare_multiple_dna_sequences_no_rc(const std::vector<st
     
     PreparedSequenceResult result;
     
-    // Calculate total size for reservation
+    // Calculate total size for reservation (skip empty sequences)
     size_t total_size = 0;
     for (const auto& seq : sequences) {
-        total_size += seq.length();
+        if (!seq.empty()) {
+            total_size += seq.length();
+        }
     }
-    total_size += sequences.size(); // Add space for sentinels
+    total_size += (non_empty_count > 0 ? non_empty_count - 1 : 0); // Add space for sentinels (between sequences)
     result.prepared_string.reserve(total_size);
     
     // Generate sentinel characters avoiding 0 and uppercase DNA nucleotides A(65), C(67), G(71), T(84)
@@ -209,8 +264,12 @@ PreparedSequenceResult prepare_multiple_dna_sequences_no_rc(const std::vector<st
         }
     };
     
-    // Add original sequences with sentinels
+    // Add original sequences with sentinels (skip empty sequences)
+    size_t sentinel_idx = 0;
+    size_t processed_count = 0;
     for (size_t i = 0; i < sequences.size(); ++i) {
+        if (sequences[i].empty()) continue;  // Skip empty sequences
+        
         // Convert to uppercase
         std::string seq = sequences[i];
         for (char& c : seq) {
@@ -219,11 +278,13 @@ PreparedSequenceResult prepare_multiple_dna_sequences_no_rc(const std::vector<st
         result.prepared_string += seq;
         
         // Add sentinel and track its position (only between sequences, not after the last one)
-        if (i < sequences.size() - 1) {
+        processed_count++;
+        if (processed_count < non_empty_count) {
             size_t sentinel_pos = result.prepared_string.length();
-            char sentinel = get_sentinel(i);
+            char sentinel = get_sentinel(sentinel_idx);
             result.prepared_string += sentinel;
             result.sentinel_positions.push_back(sentinel_pos);
+            sentinel_idx++;
         }
     }
     
