@@ -110,3 +110,6 @@ docs/doxygen/
 ~$*
 
 # End of file
+
+# CodeQL build artifacts
+_codeql_*
