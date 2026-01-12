@@ -1,4 +1,4 @@
-import numpy as np
+import math
 import pytest
 
 from noLZSS.genomics.plots import _compute_strand_bias_grid
@@ -34,7 +34,7 @@ def test_strand_bias_grid_splits_crossing_factors():
     assert bias_grid.mask.sum() == 0
 
     # Mixed bin has modest forward enrichment
-    expected_bias = np.log2((0.5) / (1/3))  # (0.5 forward share) / (0.333 reverse share)
+    expected_bias = math.log2((0.5) / (1/3))  # (0.5 forward share) / (0.333 reverse share)
     assert bias_grid[0, 0] == pytest.approx(expected_bias, rel=1e-3)
 
     # Pure forward / pure reverse bins show strong signed bias
