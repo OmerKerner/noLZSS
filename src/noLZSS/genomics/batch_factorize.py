@@ -489,6 +489,77 @@ def get_output_paths(input_path: Path, output_dir: Path, mode: str) -> Dict[str,
     return paths
 
 
+def validate_output_binary(output_path: Path, logger: Optional[logging.Logger] = None) -> bool:
+    """
+    Validate that an output binary file exists and has valid metadata.
+    
+    Uses read_binary_file_metadata() which reads only the footer (48 bytes + metadata),
+    not the full factor data. This is a lightweight check for skip logic.
+    
+    Args:
+        output_path: Path to the binary output file
+        logger: Logger instance for debug messages
+        
+    Returns:
+        True if file exists and has valid metadata with num_factors > 0, False otherwise
+    """
+    if logger is None:
+        logger = logging.getLogger(__name__)
+    
+    if not output_path.exists():
+        return False
+    
+    try:
+        from ..utils import read_binary_file_metadata
+        metadata = read_binary_file_metadata(output_path)
+        
+        if metadata.get('num_factors', 0) == 0:
+            logger.debug(f"Output file has 0 factors, treating as invalid: {output_path}")
+            return False
+        
+        return True
+    except Exception as e:
+        logger.debug(f"Output file validation failed for {output_path}: {e}")
+        return False
+
+
+def get_output_paths_from_source(file_path: str, output_dir: Path, mode: str) -> Dict[str, Path]:
+    """
+    Generate output file paths based on source file path (URL or local) and mode.
+    Works with original source path before download, enabling early output checking.
+    
+    Args:
+        file_path: Original file path or URL
+        output_dir: Base output directory
+        mode: Factorization mode
+        
+    Returns:
+        Dictionary mapping mode names to output file paths
+    """
+    if is_url(file_path):
+        parsed = urllib.parse.urlparse(file_path)
+        file_name = Path(parsed.path).name
+    else:
+        file_name = Path(file_path).name
+    
+    # Remove compression and FASTA extensions to get base name
+    base_name = file_name
+    for ext in ['.gz', '.gzip']:
+        if base_name.lower().endswith(ext):
+            base_name = base_name[:-len(ext)]
+    
+    base_name = Path(base_name).stem  # Remove remaining extension
+    
+    paths = {}
+    if mode in [FactorizationMode.WITHOUT_REVERSE_COMPLEMENT, FactorizationMode.BOTH]:
+        paths["without_reverse_complement"] = output_dir / "without_reverse_complement" / f"{base_name}.bin"
+    
+    if mode in [FactorizationMode.WITH_REVERSE_COMPLEMENT, FactorizationMode.BOTH]:
+        paths["with_reverse_complement"] = output_dir / "with_reverse_complement" / f"{base_name}.bin"
+    
+    return paths
+
+
 def factorize_single_file(input_path: Path, output_paths: Dict[str, Path],
                          skip_existing: bool = True, 
                          logger: Optional[logging.Logger] = None) -> Dict[str, bool]:
@@ -682,12 +753,139 @@ def factorize_file_worker(job_info: Tuple[str, Path, Dict[str, Path], bool, str]
     return original_path, factorization_results
 
 
+def process_single_file_complete(file_info: Tuple[str, Path, Path, str, bool, int, str]) -> Tuple[str, Dict[str, bool]]:
+    """
+    Process a single file end-to-end: check output → download → decompress → validate → factorize → cleanup.
+    
+    This function implements the complete per-file pipeline suitable for parallel processing.
+    It checks if valid outputs already exist before downloading, enabling efficient resumable jobs.
+    
+    Args:
+        file_info: Tuple of (file_path, output_dir, download_dir, mode, skip_existing, max_retries, logger_name)
+        
+    Returns:
+        Tuple of (original_file_path, factorization_results)
+    """
+    file_path, output_dir, download_dir, mode, skip_existing, max_retries, logger_name = file_info
+    
+    # Create a logger for this process
+    logger = logging.getLogger(logger_name)
+    
+    try:
+        # Step 1: Check if output already exists and is valid
+        if skip_existing:
+            output_paths = get_output_paths_from_source(file_path, output_dir, mode)
+            all_outputs_valid = True
+            
+            for mode_name, output_path in output_paths.items():
+                # Create output directory if it doesn't exist (doesn't create the file)
+                output_path.parent.mkdir(parents=True, exist_ok=True)
+                
+                if not validate_output_binary(output_path, logger):
+                    all_outputs_valid = False
+                    break
+            
+            if all_outputs_valid:
+                logger.info(f"Skipping {file_path} - all outputs already exist and are valid")
+                return file_path, {mode_name: True for mode_name in output_paths.keys()}
+        
+        # Step 2: Download file (if URL)
+        local_path = None
+        downloaded_file = None
+        
+        if is_url(file_path):
+            # Download remote file
+            file_name = Path(urllib.parse.urlparse(file_path).path).name
+            if not file_name:
+                file_name = f"downloaded_{hash(file_path) % 10000}.fasta"
+            
+            downloaded_file = download_dir / file_name
+            
+            if not download_file(file_path, downloaded_file, max_retries=max_retries, logger=logger):
+                logger.error(f"Failed to download {file_path}")
+                return file_path, {"error": "download_failed"}
+            
+            local_path = downloaded_file
+        else:
+            # Local file
+            local_path = Path(file_path)
+            if not local_path.exists():
+                logger.error(f"Local file not found: {file_path}")
+                return file_path, {"error": "file_not_found"}
+        
+        # Step 3: Decompress (if gzipped)
+        decompressed_file = None
+        
+        if is_gzipped(local_path):
+            logger.info(f"Detected gzipped file: {local_path}")
+            decompressed_path = local_path.with_suffix('')  # Remove .gz extension if present
+            if decompressed_path.suffix == '.gz':
+                decompressed_path = decompressed_path.with_suffix('')
+            
+            # If decompressed file already exists, use it
+            if decompressed_path.exists():
+                logger.info(f"Decompressed file already exists: {decompressed_path}")
+                decompressed_file = local_path  # Save for cleanup (the compressed file)
+                local_path = decompressed_path
+            else:
+                # Decompress the file
+                if not decompress_gzip(local_path, decompressed_path, logger):
+                    logger.error(f"Failed to decompress {local_path}")
+                    # Cleanup downloaded file if it was downloaded
+                    if downloaded_file and downloaded_file.exists():
+                        try:
+                            downloaded_file.unlink()
+                        except OSError:
+                            pass
+                    return file_path, {"error": "decompression_failed"}
+                
+                decompressed_file = local_path  # Save compressed file for cleanup
+                local_path = decompressed_path
+        
+        # Step 4: Validate input FASTA (already done by factorize_single_file, but we note it here)
+        
+        # Step 5: Factorize
+        output_paths = get_output_paths(local_path, output_dir, mode)
+        factorization_results = factorize_single_file(
+            local_path, output_paths, skip_existing=False, logger=logger  # Already checked above
+        )
+        
+        # Step 6: Cleanup temporary files for this file
+        # Clean up decompressed file if it was created
+        if decompressed_file and decompressed_file.exists() and decompressed_file != local_path:
+            try:
+                if is_url(file_path):  # Only cleanup if we downloaded it
+                    decompressed_file.unlink()
+                    logger.debug(f"Cleaned up compressed file: {decompressed_file}")
+            except OSError:
+                logger.warning(f"Failed to clean up compressed file: {decompressed_file}")
+        
+        # Clean up decompressed file if it was created from download
+        if downloaded_file and is_gzipped(downloaded_file if downloaded_file.exists() else Path("/")):
+            # If we downloaded a gzipped file and decompressed it, clean up the decompressed version
+            if local_path.exists() and local_path != downloaded_file and is_url(file_path):
+                try:
+                    local_path.unlink()
+                    logger.debug(f"Cleaned up decompressed file: {local_path}")
+                except OSError:
+                    logger.warning(f"Failed to clean up decompressed file: {local_path}")
+        
+        return file_path, factorization_results
+        
+    except Exception as e:
+        logger.error(f"Unexpected error processing {file_path}: {e}")
+        return file_path, {"error": str(e)}
+
+
 def process_file_list(file_list: List[str], output_dir: Path, mode: str,
                      download_dir: Optional[Path] = None, skip_existing: bool = True,
                      max_retries: int = 3, max_workers: Optional[int] = None, 
                      logger: Optional[logging.Logger] = None) -> Dict[str, Dict[str, bool]]:
     """
-    Process a list of FASTA files (local or remote) with parallel download and factorization.
+    Process a list of FASTA files (local or remote) with per-file parallel pipeline.
+    
+    Each file is processed end-to-end independently: check output → download → decompress → 
+    validate → factorize → cleanup. Files with valid outputs are skipped early without download.
     
     Args:
         file_list: List of file paths or URLs
@@ -696,7 +894,7 @@ def process_file_list(file_list: List[str], output_dir: Path, mode: str,
         download_dir: Directory for downloaded files (uses temp if None)
         skip_existing: Whether to skip existing output files
         max_retries: Maximum download retry attempts
-        max_workers: Maximum number of worker threads/processes (None = auto)
+        max_workers: Maximum number of worker processes (None = auto)
         logger: Logger instance
         
     Returns:
@@ -706,7 +904,6 @@ def process_file_list(file_list: List[str], output_dir: Path, mode: str,
         logger = logging.getLogger(__name__)
     
     results = {}
-    decompressed_files = []  # Track files that were decompressed for cleanup
     
     # Use provided download directory or create temp directory
     if download_dir is None:
@@ -718,84 +915,38 @@ def process_file_list(file_list: List[str], output_dir: Path, mode: str,
         cleanup_temp = False
     
     try:
-        # Step 1: Parallel download
-        logger.info(f"Starting parallel download of {len(file_list)} files")
+        # Single-phase parallel processing with per-file pipeline
+        logger.info(f"Starting parallel processing of {len(file_list)} files")
         
-        download_jobs = []
+        # Prepare job information for each file
+        processing_jobs = []
         for file_path in file_list:
-            download_jobs.append((file_path, download_dir, max_retries, logger.name))
+            processing_jobs.append((file_path, output_dir, download_dir, mode, skip_existing, max_retries, logger.name))
         
-        prepared_files = []
-        
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            future_to_path = {executor.submit(download_file_worker, job): job[0] 
-                            for job in download_jobs}
+        # Use ProcessPoolExecutor for complete per-file processing
+        with ProcessPoolExecutor(max_workers=max_workers) as executor:
+            future_to_path = {executor.submit(process_single_file_complete, job): job[0] 
+                            for job in processing_jobs}
             
             for future in as_completed(future_to_path):
                 original_path = future_to_path[future]
                 try:
-                    file_path, success, local_path = future.result()
-                    if success and local_path:
-                        prepared_files.append((file_path, local_path))
-                        logger.info(f"Successfully prepared {file_path}")
-                        
-                        # Check if this file was decompressed (different from original download path)
-                        original_download_path = download_dir / Path(urllib.parse.urlparse(file_path).path).name
-                        if not is_url(file_path):
-                            original_download_path = Path(file_path)
-                        
-                        if local_path != original_download_path and local_path.exists():
-                            decompressed_files.append(local_path)
-                        
+                    file_path, file_results = future.result()
+                    results[file_path] = file_results
+                    
+                    # Log result
+                    if "error" in file_results:
+                        logger.warning(f"Failed to process {file_path}: {file_results.get('error', 'unknown')}")
                     else:
-                        # Determine error type
-                        if not success:
-                            if is_url(file_path):
-                                results[file_path] = {"error": "download_failed"}
-                            else:
-                                results[file_path] = {"error": "file_not_found"}
-                        
+                        logger.info(f"Successfully processed {file_path}")
+                    
                 except Exception as e:
                     logger.error(f"Unexpected error processing {original_path}: {e}")
                     results[original_path] = {"error": "processing_error"}
         
-        logger.info(f"Download complete: {len(prepared_files)} files ready for factorization")
-        
-        # Step 2: Parallel factorization
-        if prepared_files:
-            logger.info(f"Starting parallel factorization of {len(prepared_files)} files")
-            
-            factorization_jobs = []
-            for original_path, local_path in prepared_files:
-                output_paths = get_output_paths(local_path, output_dir, mode)
-                factorization_jobs.append((original_path, local_path, output_paths, skip_existing, logger.name))
-            
-            # Use ProcessPoolExecutor for CPU-intensive factorization work
-            with ProcessPoolExecutor(max_workers=max_workers) as executor:
-                future_to_path = {executor.submit(factorize_file_worker, job): job[0] 
-                                for job in factorization_jobs}
-                
-                for future in as_completed(future_to_path):
-                    original_path = future_to_path[future]
-                    try:
-                        file_path, factorization_results = future.result()
-                        results[file_path] = factorization_results
-                        logger.info(f"Completed factorization for {file_path}")
-                        
-                    except Exception as e:
-                        logger.error(f"Factorization error for {original_path}: {e}")
-                        results[original_path] = {"error": "factorization_error"}
+        logger.info(f"Completed processing {len(file_list)} files")
         
     finally:
-        # Clean up decompressed files
-        for decompressed_file in decompressed_files:
-            try:
-                if decompressed_file.exists():
-                    decompressed_file.unlink()
-                    logger.debug(f"Cleaned up decompressed file: {decompressed_file}")
-            except OSError:
-                logger.warning(f"Failed to clean up decompressed file: {decompressed_file}")
-        
         # Clean up temporary download directory if we created it
         if cleanup_temp:
             try:
