@@ -23,6 +23,7 @@ FastaParseResult parse_fasta_sequences_and_ids(const std::string& fasta_path) {
     std::string line;
     std::string current_sequence;
     std::string current_id;
+    size_t empty_sequence_count = 0;
 
     while (std::getline(file, line)) {
         // Remove trailing whitespace
@@ -36,9 +37,15 @@ FastaParseResult parse_fasta_sequences_and_ids(const std::string& fasta_path) {
 
         if (line[0] == '>') {
             // Header line - finish previous sequence if exists
-            if (!current_sequence.empty()) {
-                result.sequences.push_back(current_sequence);
-                result.sequence_ids.push_back(current_id);
+            if (!current_id.empty()) {
+                if (!current_sequence.empty()) {
+                    result.sequences.push_back(current_sequence);
+                    result.sequence_ids.push_back(current_id);
+                } else {
+                    // Warn about empty sequence
+                    std::cerr << "Warning: Skipping empty sequence with ID: " << current_id << std::endl;
+                    empty_sequence_count++;
+                }
                 current_sequence.clear();
             }
             
@@ -68,9 +75,20 @@ FastaParseResult parse_fasta_sequences_and_ids(const std::string& fasta_path) {
     }
 
     // Add the last sequence if it exists
-    if (!current_sequence.empty()) {
-        result.sequences.push_back(current_sequence);
-        result.sequence_ids.push_back(current_id);
+    if (!current_id.empty()) {
+        if (!current_sequence.empty()) {
+            result.sequences.push_back(current_sequence);
+            result.sequence_ids.push_back(current_id);
+        } else {
+            // Warn about empty sequence
+            std::cerr << "Warning: Skipping empty sequence with ID: " << current_id << std::endl;
+            empty_sequence_count++;
+        }
+    }
+    
+    // Report summary if any empty sequences were skipped
+    if (empty_sequence_count > 0) {
+        std::cerr << "Warning: Skipped " << empty_sequence_count << " empty sequence(s) in FASTA file" << std::endl;
     }
 
     file.close();

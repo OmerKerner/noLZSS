@@ -179,8 +179,21 @@ size_t nolzss_multiple_dna_w_rc(const std::string& S, Sink&& sink, size_t start_
     // Early return for empty input to avoid CST construction on empty string
     if (S.empty()) return 0;
     
+    // Validate minimum string length to avoid underflow and SDSL errors
+    // Format is: T1!T2@...Tn$rt(Tn)%...rt(T1)&
+    // Minimum valid input: "A$A&" (4 chars: sequence + sentinel + rc + sentinel)
+    if (S.size() < 4) {
+        std::cerr << "Warning: Input string too short for factorization with reverse complement (size=" 
+                  << S.size() << "). Returning 0 factors." << std::endl;
+        return 0;
+    }
+    
     const size_t N = (S.size() / 2) - 1;
-    if (N == 0) return 0;
+    if (N == 0) {
+        std::cerr << "Warning: Computed N=0 from input size=" << S.size() 
+                  << ". Returning 0 factors." << std::endl;
+        return 0;
+    }
     
     // Validate start_pos
     if (start_pos >= N) {

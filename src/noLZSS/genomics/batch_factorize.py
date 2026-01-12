@@ -507,6 +507,21 @@ def factorize_single_file(input_path: Path, output_paths: Dict[str, Path],
     if logger is None:
         logger = logging.getLogger(__name__)
     
+    # Pre-validation: Check if file exists and is readable
+    if not input_path.exists():
+        logger.error(f"Input file does not exist: {input_path}")
+        return {mode: False for mode in output_paths.keys()}
+    
+    if not input_path.is_file():
+        logger.error(f"Input path is not a file: {input_path}")
+        return {mode: False for mode in output_paths.keys()}
+    
+    # Check file size to catch obviously empty files
+    file_size = input_path.stat().st_size
+    if file_size == 0:
+        logger.warning(f"Input file is empty: {input_path}")
+        return {mode: False for mode in output_paths.keys()}
+    
     results = {}
     
     # Define a helper function for factorizing a single mode
@@ -537,6 +552,22 @@ def factorize_single_file(input_path: Path, output_paths: Dict[str, Path],
             logger.info(f"Successfully completed {mode} factorization for {input_path.name} "
                        f"({factor_count} factors)")
             return mode, True
+        
+        except RuntimeError as e:
+            # Catch specific C++ runtime errors (e.g., empty sequences, invalid input)
+            error_msg = str(e)
+            if "empty" in error_msg.lower() or "no valid sequences" in error_msg.lower():
+                logger.warning(f"Skipping {mode} factorization for {input_path.name}: {error_msg}")
+            else:
+                logger.error(f"Runtime error in {mode} factorization for {input_path.name}: {error_msg}")
+            # Clean up partial output file
+            if output_path.exists():
+                try:
+                    output_path.unlink()
+                    logger.debug(f"Cleaned up partial output file: {output_path}")
+                except OSError:
+                    pass
+            return mode, False
             
         except Exception as e:
             logger.error(f"Failed {mode} factorization for {input_path.name}: {e}")
