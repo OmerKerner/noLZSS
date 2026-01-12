@@ -810,9 +810,6 @@ size_t ParallelFactorizer::parallel_factorize_multiple_dna_w_rc(const std::strin
     // The original sequence length (before adding RC)
     const size_t N = original_length - 1; // -1 for the sentinel
     
-    // Additional check to prevent underflow when original_length == 0
-    if (N == 0 || N > original_length) return 0; // N > original_length catches underflow
-    
     // Ensure start_pos is within bounds
     if (start_pos >= N) {
         throw std::invalid_argument("start_pos must be less than the original sequence length");

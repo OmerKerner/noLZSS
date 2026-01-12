@@ -87,8 +87,6 @@ class TestEmptySequenceHandling:
     def test_parallel_factorization_empty_string(self):
         """Test parallel factorization with empty string"""
         # Test with DNA w/ RC parallel function - use the file-based version
-        import noLZSS._noLZSS as cpp
-        
         with tempfile.NamedTemporaryFile(mode='w', suffix='.bin', delete=False) as f:
             output_path = f.name
         
@@ -105,8 +103,6 @@ class TestEmptySequenceHandling:
     
     def test_prepare_empty_sequences_list(self):
         """Test that prepare_multiple_dna_sequences_w_rc handles empty list"""
-        import noLZSS._noLZSS as cpp
-        
         # Empty list should return empty prepared result
         # Result is a tuple: (prepared_string, original_length, sentinel_positions)
         result = cpp.prepare_multiple_dna_sequences_w_rc([])
