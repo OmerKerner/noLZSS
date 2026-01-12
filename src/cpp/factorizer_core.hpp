@@ -176,6 +176,9 @@ size_t nolzss_dna_w_rc(const std::string& T, Sink&& sink) {
  */
 template<class Sink>
 size_t nolzss_multiple_dna_w_rc(const std::string& S, Sink&& sink, size_t start_pos) {
+    // Early return for empty input to avoid CST construction on empty string
+    if (S.empty()) return 0;
+    
     const size_t N = (S.size() / 2) - 1;
     if (N == 0) return 0;
     

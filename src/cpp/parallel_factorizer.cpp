@@ -102,18 +102,36 @@ size_t ParallelFactorizer::parallel_factorize(std::string_view text, const std::
     // Create mutexes for file access
     std::vector<std::mutex> file_mutexes(num_threads);
     
-    // Create and start worker threads
+    // Track exceptions from threads
+    std::vector<std::exception_ptr> thread_exceptions(num_threads, nullptr);
+    std::mutex exception_mutex;
+    
+    // Create and start worker threads with exception handling
     std::vector<std::thread> threads;
     for (size_t i = 0; i < num_threads; ++i) {
-        threads.emplace_back(&ParallelFactorizer::factorize_thread, this,
-                            std::ref(cst), std::ref(rmq),
-                            std::ref(contexts[i]), std::ref(contexts),
-                            std::ref(file_mutexes));
+        threads.emplace_back([this, &cst, &rmq, &contexts, &file_mutexes, &thread_exceptions, &exception_mutex, i]() {
+            try {
+                factorize_thread(cst, rmq, contexts[i], contexts, file_mutexes);
+            } catch (...) {
+                // Capture exception for the main thread to handle
+                std::lock_guard<std::mutex> lock(exception_mutex);
+                thread_exceptions[i] = std::current_exception();
+            }
+        });
     }
     
     // Wait for all threads to complete
     for (auto& t : threads) {
         if (t.joinable()) t.join();
+    }
+    
+    // Check for exceptions from threads
+    for (size_t i = 0; i < num_threads; ++i) {
+        if (thread_exceptions[i]) {
+            // Cleanup temporary files before rethrowing
+            cleanup_temp_files(contexts);
+            std::rethrow_exception(thread_exceptions[i]);
+        }
     }
     
     // Merge temporary files and create final output
@@ -785,12 +803,15 @@ size_t ParallelFactorizer::parallel_factorize_multiple_dna_w_rc(const std::strin
                                                                 const std::string& output_path,
                                                                 size_t num_threads,
                                                                 size_t start_pos) {
-    if (prepared_string.empty()) return 0;
+    if (prepared_string.empty() || original_length == 0) return 0;
     
     const std::string& S = prepared_string;
     
     // The original sequence length (before adding RC)
     const size_t N = original_length - 1; // -1 for the sentinel
+    
+    // Additional check to prevent underflow when original_length == 0
+    if (N == 0 || N > original_length) return 0; // N > original_length catches underflow
     
     // Ensure start_pos is within bounds
     if (start_pos >= N) {
@@ -853,10 +874,20 @@ size_t ParallelFactorizer::parallel_factorize_multiple_dna_w_rc(const std::strin
     // Create mutexes for file access
     std::vector<std::mutex> file_mutexes(num_threads);
     
-    // Lambda to pass RMQ structures to threads
+    // Track exceptions from threads
+    std::vector<std::exception_ptr> thread_exceptions(num_threads, nullptr);
+    std::mutex exception_mutex;
+    
+    // Lambda to pass RMQ structures to threads with exception handling
     auto factorize_dna_thread = [&](ThreadContext& ctx) {
-        factorize_dna_w_rc_thread(cst, rmqF, rmqRcEnd, fwd_starts, rc_ends, INF, N,
-                                 ctx, contexts, file_mutexes);
+        try {
+            factorize_dna_w_rc_thread(cst, rmqF, rmqRcEnd, fwd_starts, rc_ends, INF, N,
+                                     ctx, contexts, file_mutexes);
+        } catch (...) {
+            // Capture exception for the main thread to handle
+            std::lock_guard<std::mutex> lock(exception_mutex);
+            thread_exceptions[ctx.thread_id] = std::current_exception();
+        }
     };
     
     // Create and start worker threads
@@ -868,6 +899,15 @@ size_t ParallelFactorizer::parallel_factorize_multiple_dna_w_rc(const std::strin
     // Wait for all threads to complete
     for (auto& t : threads) {
         if (t.joinable()) t.join();
+    }
+    
+    // Check for exceptions from threads
+    for (size_t i = 0; i < num_threads; ++i) {
+        if (thread_exceptions[i]) {
+            // Cleanup temporary files before rethrowing
+            cleanup_temp_files(contexts);
+            std::rethrow_exception(thread_exceptions[i]);
+        }
     }
     
     // Merge temporary files and create final output
