@@ -180,8 +180,12 @@ size_t nolzss_multiple_dna_w_rc(const std::string& S, Sink&& sink, size_t start_
     if (S.empty()) return 0;
     
     // Validate minimum string length to avoid underflow and SDSL errors
-    // Format is: T1!T2@...Tn$rt(Tn)%...rt(T1)&
-    // Minimum valid input: "A$A&" (4 chars: sequence + sentinel + rc + sentinel)
+    // Format for w/ RC: T1!T2@...Tn$rt(Tn)%...rt(T1)&
+    // Minimum valid input: "A$A&" (4 chars: sequence + sentinel + reverse_complement + sentinel)
+    // - Position 0: Single nucleotide (e.g., 'A')
+    // - Position 1: Sentinel separating original from RC (e.g., '$')
+    // - Position 2: Reverse complement of the nucleotide (e.g., 'A' is revcomp of 'T')
+    // - Position 3: Final sentinel (e.g., '&')
     if (S.size() < 4) {
         std::cerr << "Warning: Input string too short for factorization with reverse complement (size=" 
                   << S.size() << "). Returning 0 factors." << std::endl;
