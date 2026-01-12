@@ -851,24 +851,25 @@ def process_single_file_complete(file_info: Tuple[str, Path, Path, str, bool, in
         )
         
         # Step 6: Cleanup temporary files for this file
-        # Clean up decompressed file if it was created
-        if decompressed_file and decompressed_file.exists() and decompressed_file != local_path:
-            try:
-                if is_url(file_path):  # Only cleanup if we downloaded it
+        # Only cleanup files if they were downloaded (not local files)
+        if is_url(file_path):
+            # Clean up compressed file if we decompressed it
+            if decompressed_file and decompressed_file.exists():
+                try:
                     decompressed_file.unlink()
                     logger.debug(f"Cleaned up compressed file: {decompressed_file}")
-            except OSError:
-                logger.warning(f"Failed to clean up compressed file: {decompressed_file}")
-        
-        # Clean up decompressed file if it was created from download
-        if downloaded_file and is_gzipped(downloaded_file if downloaded_file.exists() else Path("/")):
-            # If we downloaded a gzipped file and decompressed it, clean up the decompressed version
-            if local_path.exists() and local_path != downloaded_file and is_url(file_path):
-                try:
-                    local_path.unlink()
-                    logger.debug(f"Cleaned up decompressed file: {local_path}")
                 except OSError:
-                    logger.warning(f"Failed to clean up decompressed file: {local_path}")
+                    logger.warning(f"Failed to clean up compressed file: {decompressed_file}")
+            
+            # Clean up decompressed file if we used it for factorization
+            if downloaded_file and downloaded_file.exists() and is_gzipped(downloaded_file):
+                # The decompressed file (local_path) should be cleaned up
+                if local_path.exists() and local_path != downloaded_file:
+                    try:
+                        local_path.unlink()
+                        logger.debug(f"Cleaned up decompressed file: {local_path}")
+                    except OSError:
+                        logger.warning(f"Failed to clean up decompressed file: {local_path}")
         
         return file_path, factorization_results
         
