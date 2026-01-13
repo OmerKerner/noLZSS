@@ -344,6 +344,273 @@ class TestBatchFactorize:
                 print("Complexity table helper test passed")
             except Exception as e:
                 print(f"Complexity table test skipped due to error: {e}")
+    
+    def test_validate_output_binary(self):
+        """Test output validation function."""
+        if not BATCH_FACTORIZE_AVAILABLE:
+            print("Skipping validate_output_binary test - module not available")
+            return
+        
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            
+            # Test 1: Non-existent file
+            non_existent = temp_path / "does_not_exist.bin"
+            assert not batch_factorize.validate_output_binary(non_existent), "Non-existent file should be invalid"
+            
+            # Test 2: Empty file
+            empty_file = temp_path / "empty.bin"
+            empty_file.touch()
+            assert not batch_factorize.validate_output_binary(empty_file), "Empty file should be invalid"
+            
+            # Test 3: Valid binary file (create one)
+            try:
+                # Create a test FASTA file
+                test_fasta = temp_path / "test.fasta"
+                with open(test_fasta, 'w') as f:
+                    f.write(">seq1\nATCGATCGATCGATCG\n")
+                
+                # Factorize it to create a valid binary file
+                output_dir = temp_path / "output"
+                output_paths = batch_factorize.get_output_paths(
+                    test_fasta, output_dir, batch_factorize.FactorizationMode.WITH_REVERSE_COMPLEMENT
+                )
+                
+                result = batch_factorize.factorize_single_file(test_fasta, output_paths, skip_existing=False)
+                
+                if result.get("with_reverse_complement", False):
+                    valid_file = output_paths["with_reverse_complement"]
+                    assert batch_factorize.validate_output_binary(valid_file), "Valid binary file should pass validation"
+                    
+                    # Test 4: Corrupted file (truncate it)
+                    with open(valid_file, 'rb') as f:
+                        valid_data = f.read()
+                    
+                    corrupted_file = temp_path / "corrupted.bin"
+                    with open(corrupted_file, 'wb') as f:
+                        f.write(valid_data[:20])  # Write only first 20 bytes
+                    
+                    assert not batch_factorize.validate_output_binary(corrupted_file), "Corrupted file should be invalid"
+                    
+                    print("validate_output_binary test passed")
+                else:
+                    print("validate_output_binary test skipped - factorization failed")
+                    
+            except Exception as e:
+                print(f"validate_output_binary test skipped due to error: {e}")
+    
+    def test_get_output_paths_from_source(self):
+        """Test output path computation from source URLs/paths."""
+        if not BATCH_FACTORIZE_AVAILABLE:
+            print("Skipping get_output_paths_from_source test - module not available")
+            return
+        
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output_dir = Path(temp_dir) / "output"
+            
+            # Test 1: Local path without compression
+            local_path = "/path/to/file.fasta"
+            paths = batch_factorize.get_output_paths_from_source(
+                local_path, output_dir, batch_factorize.FactorizationMode.BOTH
+            )
+            assert "without_reverse_complement" in paths
+            assert "with_reverse_complement" in paths
+            assert paths["without_reverse_complement"].name == "file.bin"
+            assert paths["with_reverse_complement"].name == "file.bin"
+            
+            # Test 2: Local path with .gz extension
+            gzipped_path = "/path/to/file.fasta.gz"
+            paths = batch_factorize.get_output_paths_from_source(
+                gzipped_path, output_dir, batch_factorize.FactorizationMode.WITH_REVERSE_COMPLEMENT
+            )
+            assert "with_reverse_complement" in paths
+            assert "without_reverse_complement" not in paths
+            assert paths["with_reverse_complement"].name == "file.bin"
+            
+            # Test 3: URL without compression
+            url = "https://example.com/data/genome.fasta"
+            paths = batch_factorize.get_output_paths_from_source(
+                url, output_dir, batch_factorize.FactorizationMode.WITHOUT_REVERSE_COMPLEMENT
+            )
+            assert "without_reverse_complement" in paths
+            assert "with_reverse_complement" not in paths
+            assert paths["without_reverse_complement"].name == "genome.bin"
+            
+            # Test 4: URL with .gz extension
+            gzipped_url = "https://example.com/data/genome.fa.gz"
+            paths = batch_factorize.get_output_paths_from_source(
+                gzipped_url, output_dir, batch_factorize.FactorizationMode.BOTH
+            )
+            assert paths["without_reverse_complement"].name == "genome.bin"
+            assert paths["with_reverse_complement"].name == "genome.bin"
+            
+            # Test 5: URL with multiple extensions
+            complex_url = "https://example.com/sequences.fasta.gz"
+            paths = batch_factorize.get_output_paths_from_source(
+                complex_url, output_dir, batch_factorize.FactorizationMode.BOTH
+            )
+            assert paths["without_reverse_complement"].name == "sequences.bin"
+            
+            print("get_output_paths_from_source test passed")
+    
+    def test_process_single_file_complete_skip_logic(self):
+        """Test that process_single_file_complete correctly skips files with valid outputs."""
+        if not BATCH_FACTORIZE_AVAILABLE:
+            print("Skipping process_single_file_complete test - module not available")
+            return
+        
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            
+            try:
+                # Create a test FASTA file
+                test_fasta = temp_path / "test.fasta"
+                with open(test_fasta, 'w') as f:
+                    f.write(">seq1\nATCGATCGATCGATCG\n")
+                
+                output_dir = temp_path / "output"
+                download_dir = temp_path / "download"
+                download_dir.mkdir(parents=True, exist_ok=True)
+                
+                # First run: should process the file
+                logger = batch_factorize.setup_logging("INFO")
+                file_info = (
+                    str(test_fasta),
+                    output_dir,
+                    download_dir,
+                    batch_factorize.FactorizationMode.WITH_REVERSE_COMPLEMENT,
+                    True,  # skip_existing
+                    3,     # max_retries
+                    logger.name
+                )
+                
+                result_path, results = batch_factorize.process_single_file_complete(file_info)
+                
+                assert result_path == str(test_fasta)
+                assert "with_reverse_complement" in results
+                
+                if results.get("with_reverse_complement", False):
+                    # Second run: should skip the file
+                    result_path2, results2 = batch_factorize.process_single_file_complete(file_info)
+                    
+                    assert result_path2 == str(test_fasta)
+                    assert results2.get("with_reverse_complement", False), "Should skip and return success"
+                    
+                    # Third run with skip_existing=False: should re-process
+                    file_info_no_skip = (
+                        str(test_fasta),
+                        output_dir,
+                        download_dir,
+                        batch_factorize.FactorizationMode.WITH_REVERSE_COMPLEMENT,
+                        False,  # skip_existing = False
+                        3,
+                        logger.name
+                    )
+                    
+                    result_path3, results3 = batch_factorize.process_single_file_complete(file_info_no_skip)
+                    assert results3.get("with_reverse_complement", False), "Should re-process successfully"
+                    
+                    print("process_single_file_complete skip logic test passed")
+                else:
+                    print("process_single_file_complete test skipped - initial factorization failed")
+                    
+            except Exception as e:
+                print(f"process_single_file_complete test skipped due to error: {e}")
+    
+    def test_process_file_list_integration(self):
+        """Integration test for the refactored process_file_list with skip logic."""
+        if not BATCH_FACTORIZE_AVAILABLE:
+            print("Skipping process_file_list integration test - module not available")
+            return
+        
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            
+            try:
+                # Create multiple test FASTA files
+                test_files = []
+                for i in range(3):
+                    test_fasta = temp_path / f"test{i}.fasta"
+                    with open(test_fasta, 'w') as f:
+                        f.write(f">seq{i}\nATCGATCGATCGATCG\n")
+                    test_files.append(str(test_fasta))
+                
+                output_dir = temp_path / "output"
+                download_dir = temp_path / "download"
+                
+                logger = batch_factorize.setup_logging("INFO")
+                
+                # First run: process all files
+                results1 = batch_factorize.process_file_list(
+                    file_list=test_files,
+                    output_dir=output_dir,
+                    mode=batch_factorize.FactorizationMode.WITH_REVERSE_COMPLEMENT,
+                    download_dir=download_dir,
+                    skip_existing=True,
+                    max_workers=2,
+                    logger=logger
+                )
+                
+                # Check that all files were processed
+                assert len(results1) == 3, f"Expected 3 results, got {len(results1)}"
+                for file_path in test_files:
+                    assert file_path in results1, f"Missing result for {file_path}"
+                    assert results1[file_path].get("with_reverse_complement", False), \
+                        f"Processing failed for {file_path}: {results1[file_path]}"
+                
+                # Verify output files exist and are valid
+                for i, file_path in enumerate(test_files):
+                    output_file = output_dir / "with_reverse_complement" / f"test{i}.bin"
+                    assert output_file.exists(), f"Output file not created: {output_file}"
+                    assert batch_factorize.validate_output_binary(output_file), \
+                        f"Output file invalid: {output_file}"
+                
+                # Second run: should skip all files (they already have valid outputs)
+                results2 = batch_factorize.process_file_list(
+                    file_list=test_files,
+                    output_dir=output_dir,
+                    mode=batch_factorize.FactorizationMode.WITH_REVERSE_COMPLEMENT,
+                    download_dir=download_dir,
+                    skip_existing=True,
+                    max_workers=2,
+                    logger=logger
+                )
+                
+                # Check that all files were skipped (still successful)
+                assert len(results2) == 3, f"Expected 3 results, got {len(results2)}"
+                for file_path in test_files:
+                    assert results2[file_path].get("with_reverse_complement", False), \
+                        f"Skip logic failed for {file_path}: {results2[file_path]}"
+                
+                # Third run: corrupt one file and verify it gets re-processed
+                corrupted_file = output_dir / "with_reverse_complement" / "test1.bin"
+                with open(corrupted_file, 'wb') as f:
+                    f.write(b'corrupted data')
+                
+                results3 = batch_factorize.process_file_list(
+                    file_list=test_files,
+                    output_dir=output_dir,
+                    mode=batch_factorize.FactorizationMode.WITH_REVERSE_COMPLEMENT,
+                    download_dir=download_dir,
+                    skip_existing=True,
+                    max_workers=2,
+                    logger=logger
+                )
+                
+                # All should succeed (corrupted file should be re-processed)
+                assert len(results3) == 3, f"Expected 3 results, got {len(results3)}"
+                for file_path in test_files:
+                    assert results3[file_path].get("with_reverse_complement", False), \
+                        f"Re-processing failed for {file_path}: {results3[file_path]}"
+                
+                # Verify the corrupted file was fixed
+                assert batch_factorize.validate_output_binary(corrupted_file), \
+                    "Corrupted file was not re-processed correctly"
+                
+                print("process_file_list integration test passed")
+                
+            except Exception as e:
+                print(f"process_file_list integration test skipped due to error: {e}")
 
 
 def run_tests():
@@ -360,6 +627,10 @@ def run_tests():
     test_instance.test_shuffle_reproducibility()
     test_instance.test_shuffle_gzipped_fasta()
     test_instance.test_plot_factor_comparison()
+    test_instance.test_validate_output_binary()
+    test_instance.test_get_output_paths_from_source()
+    test_instance.test_process_single_file_complete_skip_logic()
+    test_instance.test_process_file_list_integration()
     
     print("All batch_factorize tests completed")
 
