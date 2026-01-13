@@ -855,28 +855,35 @@ def process_single_file_complete(file_info: Tuple[str, Path, Path, str, bool, in
         
         # Step 5: Factorize
         output_paths = get_output_paths(local_path, output_dir, mode)
-        factorization_results = factorize_single_file(
-            local_path, output_paths, skip_existing=False, logger=logger  # skip_existing=False because validity check was done above via validate_output_binary()
-        )
         
-        # Step 6: Cleanup temporary files for this file
-        # Only cleanup files if they were downloaded (not local files)
-        if is_url(file_path):
-            # Clean up compressed file if we downloaded a gzipped file
-            if was_gzipped and compressed_file_path and compressed_file_path.exists():
-                try:
-                    compressed_file_path.unlink()
-                    logger.debug(f"Cleaned up compressed file: {compressed_file_path}")
-                except OSError as e:
-                    logger.warning(f"Failed to clean up compressed file {compressed_file_path}: {e}")
-            
-            # Clean up decompressed file only if we created it (not if it pre-existed)
-            if was_gzipped and created_decompressed_file and local_path.exists():
-                try:
-                    local_path.unlink()
-                    logger.debug(f"Cleaned up decompressed file: {local_path}")
-                except OSError as e:
-                    logger.warning(f"Failed to clean up decompressed file {local_path}: {e}")
+        try:
+            factorization_results = factorize_single_file(
+                local_path, output_paths, skip_existing=False, logger=logger  # skip_existing=False because validity check was done above via validate_output_binary()
+            )
+        finally:
+            # Step 6: Cleanup temporary files for this file
+            # Always cleanup downloaded files, even if factorization fails
+            # Only cleanup files if they were downloaded (not local files)
+            if is_url(file_path):
+                # Clean up compressed file if we downloaded a gzipped file
+                if was_gzipped and compressed_file_path and compressed_file_path.exists():
+                    try:
+                        compressed_file_path.unlink()
+                        logger.debug(f"Cleaned up compressed file: {compressed_file_path}")
+                    except OSError as e:
+                        logger.warning(f"Failed to clean up compressed file {compressed_file_path}: {e}")
+                
+                # Clean up local_path for downloaded files:
+                # - non-gzipped downloads (was_gzipped == False), or
+                # - decompressed files we created from gzipped downloads (was_gzipped == True and created_decompressed_file == True)
+                # Do NOT delete pre-existing decompressed files
+                should_cleanup_local = (not was_gzipped) or (was_gzipped and created_decompressed_file)
+                if should_cleanup_local and local_path.exists():
+                    try:
+                        local_path.unlink()
+                        logger.debug(f"Cleaned up downloaded file: {local_path}")
+                    except OSError as e:
+                        logger.warning(f"Failed to clean up downloaded file {local_path}: {e}")
         
         return file_path, factorization_results
         
