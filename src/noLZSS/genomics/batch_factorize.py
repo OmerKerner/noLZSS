@@ -769,6 +769,10 @@ def process_single_file_complete(file_info: Tuple[str, Path, Path, str, bool, in
     file_path, output_dir, download_dir, mode, skip_existing, max_retries, logger_name = file_info
     
     # Create a logger for this process
+    # NOTE: We recreate the logger in each worker process using the logger name.
+    # This relies on Python's logging module global registry. Custom handlers from
+    # the parent logger (e.g., file handlers) won't be automatically propagated.
+    # Workers will use the basic logging configuration.
     logger = logging.getLogger(logger_name)
     
     try:
@@ -814,9 +818,12 @@ def process_single_file_complete(file_info: Tuple[str, Path, Path, str, bool, in
                 return file_path, {"error": "file_not_found"}
         
         # Step 3: Decompress (if gzipped)
-        decompressed_file = None
+        compressed_file_path = None  # Track the compressed file for cleanup
+        created_decompressed_file = False  # Track if we created the decompressed file
+        was_gzipped = False  # Track if the file was gzipped
         
         if is_gzipped(local_path):
+            was_gzipped = True
             logger.info(f"Detected gzipped file: {local_path}")
             decompressed_path = local_path.with_suffix('')  # Remove .gz extension if present
             if decompressed_path.suffix == '.gz':
@@ -825,8 +832,9 @@ def process_single_file_complete(file_info: Tuple[str, Path, Path, str, bool, in
             # If decompressed file already exists, use it
             if decompressed_path.exists():
                 logger.info(f"Decompressed file already exists: {decompressed_path}")
-                decompressed_file = local_path  # Save for cleanup (the compressed file)
+                compressed_file_path = local_path  # Save compressed file for cleanup
                 local_path = decompressed_path
+                created_decompressed_file = False  # We didn't create it
             else:
                 # Decompress the file
                 if not decompress_gzip(local_path, decompressed_path, logger):
@@ -835,41 +843,40 @@ def process_single_file_complete(file_info: Tuple[str, Path, Path, str, bool, in
                     if downloaded_file and downloaded_file.exists():
                         try:
                             downloaded_file.unlink()
-                        except OSError:
-                            pass
+                        except OSError as e:
+                            logger.warning(f"Failed to delete downloaded file {downloaded_file}: {e}")
                     return file_path, {"error": "decompression_failed"}
                 
-                decompressed_file = local_path  # Save compressed file for cleanup
+                compressed_file_path = local_path  # Save compressed file for cleanup
                 local_path = decompressed_path
+                created_decompressed_file = True  # We created it
         
         # Step 4: Validate input FASTA (already done by factorize_single_file, but we note it here)
         
         # Step 5: Factorize
         output_paths = get_output_paths(local_path, output_dir, mode)
         factorization_results = factorize_single_file(
-            local_path, output_paths, skip_existing=False, logger=logger  # Already checked above
+            local_path, output_paths, skip_existing=False, logger=logger  # skip_existing=False because validity check was done above via validate_output_binary()
         )
         
         # Step 6: Cleanup temporary files for this file
         # Only cleanup files if they were downloaded (not local files)
         if is_url(file_path):
-            # Clean up compressed file if we decompressed it
-            if decompressed_file and decompressed_file.exists():
+            # Clean up compressed file if we downloaded a gzipped file
+            if was_gzipped and compressed_file_path and compressed_file_path.exists():
                 try:
-                    decompressed_file.unlink()
-                    logger.debug(f"Cleaned up compressed file: {decompressed_file}")
-                except OSError:
-                    logger.warning(f"Failed to clean up compressed file: {decompressed_file}")
+                    compressed_file_path.unlink()
+                    logger.debug(f"Cleaned up compressed file: {compressed_file_path}")
+                except OSError as e:
+                    logger.warning(f"Failed to clean up compressed file {compressed_file_path}: {e}")
             
-            # Clean up decompressed file if we used it for factorization
-            if downloaded_file and downloaded_file.exists() and is_gzipped(downloaded_file):
-                # The decompressed file (local_path) should be cleaned up
-                if local_path.exists() and local_path != downloaded_file:
-                    try:
-                        local_path.unlink()
-                        logger.debug(f"Cleaned up decompressed file: {local_path}")
-                    except OSError:
-                        logger.warning(f"Failed to clean up decompressed file: {local_path}")
+            # Clean up decompressed file only if we created it (not if it pre-existed)
+            if was_gzipped and created_decompressed_file and local_path.exists():
+                try:
+                    local_path.unlink()
+                    logger.debug(f"Cleaned up decompressed file: {local_path}")
+                except OSError as e:
+                    logger.warning(f"Failed to clean up decompressed file {local_path}: {e}")
         
         return file_path, factorization_results
         
@@ -925,6 +932,12 @@ def process_file_list(file_list: List[str], output_dir: Path, mode: str,
             processing_jobs.append((file_path, output_dir, download_dir, mode, skip_existing, max_retries, logger.name))
         
         # Use ProcessPoolExecutor for complete per-file processing
+        # NOTE: We use a single ProcessPoolExecutor to handle the complete per-file pipeline
+        # (including downloads and CPU-bound factorization) rather than a two-phase model with
+        # ThreadPoolExecutor for I/O and ProcessPoolExecutor for CPU work. This simplifies
+        # control flow and error handling at the cost of some overhead for I/O operations.
+        # In typical genomics workloads, factorization dominates runtime, so the impact on
+        # overall performance is minimal.
         with ProcessPoolExecutor(max_workers=max_workers) as executor:
             future_to_path = {executor.submit(process_single_file_complete, job): job[0] 
                             for job in processing_jobs}
