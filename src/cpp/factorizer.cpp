@@ -2,6 +2,7 @@
 #include "factorizer_core.hpp"  // Template implementations in detail:: namespace
 #include "factorizer_helpers.hpp"
 #include "parallel_factorizer.hpp"
+#include "gzip_io.hpp"
 #include <sdsl/suffix_trees.hpp>
 #include <sdsl/rmq_succinct_sct.hpp>
 #include <cassert>
@@ -430,18 +431,12 @@ size_t write_factors_binary_file(const std::string& in_path, const std::string& 
     uint64_t total_length = infile.tellg();
     infile.close();
     
-    // Set up binary output file with buffering
-    std::ofstream os(out_path, std::ios::binary);
-    if (!os) {
-        throw std::runtime_error("Cannot create output file: " + out_path);
-    }
-    
-    std::vector<char> buf(1<<20); // 1 MB buffer for performance
-    os.rdbuf()->pubsetbuf(buf.data(), static_cast<std::streamsize>(buf.size()));
+    // Set up gzipped output file
+    GzipWriter writer(out_path);
     
     // Stream factors directly to file without collecting in memory
     size_t n = factorize_file_stream(in_path, [&](const Factor& f){
-        os.write(reinterpret_cast<const char*>(&f), sizeof(Factor));
+        writer.write(&f, sizeof(Factor));
     });
     
     // For non-FASTA files, create minimal footer with no sequence names or sentinels
@@ -453,7 +448,7 @@ size_t write_factors_binary_file(const std::string& in_path, const std::string& 
     footer.total_length = total_length;
     
     // Write footer at the end
-    os.write(reinterpret_cast<const char*>(&footer), sizeof(footer));
+    writer.write(&footer, sizeof(footer));
     
     return n;
 }
@@ -603,22 +598,17 @@ size_t write_factors_binary_file_dna_w_rc(const std::string& in_path, const std:
     uint64_t total_length = infile.tellg();
     infile.close();
     
-    // Set up binary output file with buffering
-    std::ofstream os(out_path, std::ios::binary);
-    if (!os) {
-        throw std::runtime_error("Cannot create output file: " + out_path);
-    }
-    
-    std::vector<char> buf(1<<20); // 1 MB buffer for performance
-    os.rdbuf()->pubsetbuf(buf.data(), static_cast<std::streamsize>(buf.size()));
+    // Set up gzipped output file
+    GzipWriter writer(out_path);
     
     // Stream factors directly to file without collecting in memory
     size_t n = factorize_file_stream_dna_w_rc(in_path, [&](const Factor& f){
-        os.write(reinterpret_cast<const char*>(&f), sizeof(Factor));
+        writer.write(&f, sizeof(Factor));
     });
     
     // Write empty sequence name (single null terminator)
-    os.write("\0", 1);
+    char null_char = '\0';
+    writer.write(&null_char, 1);
     
     // For single DNA sequence files, create minimal footer
     FactorFileFooter footer;
@@ -629,7 +619,7 @@ size_t write_factors_binary_file_dna_w_rc(const std::string& in_path, const std:
     footer.total_length = total_length;
     
     // Write footer at the end
-    os.write(reinterpret_cast<const char*>(&footer), sizeof(footer));
+    writer.write(&footer, sizeof(footer));
     
     return n;
 }
@@ -756,14 +746,8 @@ size_t write_factors_binary_file_multiple_dna_w_rc(const std::string& in_path, c
     }
     std::string text((std::istreambuf_iterator<char>(infile)), std::istreambuf_iterator<char>());
     
-    // Set up binary output file with buffering
-    std::ofstream os(out_path, std::ios::binary);
-    if (!os) {
-        throw std::runtime_error("Cannot create output file: " + out_path);
-    }
-    
-    std::vector<char> buf(1<<20); // 1 MB buffer for performance
-    os.rdbuf()->pubsetbuf(buf.data(), static_cast<std::streamsize>(buf.size()));
+    // Set up gzipped output file
+    GzipWriter writer(out_path);
     
     // Calculate total_length from input text length minus start position
     uint64_t total_length = text.length() - start_pos;
@@ -771,7 +755,7 @@ size_t write_factors_binary_file_multiple_dna_w_rc(const std::string& in_path, c
     // Stream factors directly to file without collecting in memory
     size_t n = 0;
     detail::nolzss_multiple_dna_w_rc(text, [&](const Factor& f){
-        os.write(reinterpret_cast<const char*>(&f), sizeof(Factor));
+        writer.write(&f, sizeof(Factor));
         ++n;
     }, start_pos);
     
@@ -784,7 +768,7 @@ size_t write_factors_binary_file_multiple_dna_w_rc(const std::string& in_path, c
     footer.total_length = total_length;
     
     // Write footer at the end
-    os.write(reinterpret_cast<const char*>(&footer), sizeof(footer));
+    writer.write(&footer, sizeof(footer));
     
     return n;
 }
@@ -873,14 +857,8 @@ std::vector<Factor> factorize_dna_w_reference_seq(const std::string& reference_s
  * @see factorize_w_reference_file() for general (non-DNA) reference factorization to file
  */
 size_t factorize_dna_w_reference_seq_file(const std::string& reference_seq, const std::string& target_seq, const std::string& out_path) {
-    // Set up binary output file with buffering
-    std::ofstream os(out_path, std::ios::binary);
-    if (!os) {
-        throw std::runtime_error("Cannot create output file: " + out_path);
-    }
-    
-    std::vector<char> buf(1<<20); // 1 MB buffer for performance
-    os.rdbuf()->pubsetbuf(buf.data(), static_cast<std::streamsize>(buf.size()));
+    // Set up gzipped output file
+    GzipWriter writer(out_path);
     
     // Get factors using the in-memory function
     std::vector<Factor> factors = factorize_dna_w_reference_seq(reference_seq, target_seq);
@@ -890,7 +868,7 @@ size_t factorize_dna_w_reference_seq_file(const std::string& reference_seq, cons
     
     // Write factors first
     for (const Factor& f : factors) {
-        os.write(reinterpret_cast<const char*>(&f), sizeof(Factor));
+        writer.write(&f, sizeof(Factor));
     }
     
     // Create footer for reference+target factorization
@@ -902,7 +880,7 @@ size_t factorize_dna_w_reference_seq_file(const std::string& reference_seq, cons
     footer.total_length = total_length;
     
     // Write footer at the end
-    os.write(reinterpret_cast<const char*>(&footer), sizeof(footer));
+    writer.write(&footer, sizeof(footer));
     
     return factors.size();
 }
@@ -986,24 +964,18 @@ std::vector<Factor> factorize_w_reference(const std::string& reference_seq, cons
  * @see factorize_dna_w_reference_seq_file() for DNA-specific version with reverse complement
  */
 size_t factorize_w_reference_file(const std::string& reference_seq, const std::string& target_seq, const std::string& out_path) {
-    // Set up binary output file with buffering
-    std::ofstream os(out_path, std::ios::binary);
-    if (!os) {
-        throw std::runtime_error("Cannot create output file: " + out_path);
-    }
-    
-    std::vector<char> buf(1<<20); // 1 MB buffer for performance
-    os.rdbuf()->pubsetbuf(buf.data(), static_cast<std::streamsize>(buf.size()));
-    
     // Get factors using the in-memory function
     std::vector<Factor> factors = factorize_w_reference(reference_seq, target_seq);
     
     // Calculate total_length from target sequence length (what we're factorizing)
     uint64_t total_length = target_seq.length();
     
+    // Set up gzipped output file
+    GzipWriter writer(out_path);
+    
     // Write factors first
     for (const Factor& f : factors) {
-        os.write(reinterpret_cast<const char*>(&f), sizeof(Factor));
+        writer.write(&f, sizeof(Factor));
     }
     
     // Create footer for reference+target factorization
@@ -1015,7 +987,7 @@ size_t factorize_w_reference_file(const std::string& reference_seq, const std::s
     footer.total_length = total_length;
     
     // Write footer at the end
-    os.write(reinterpret_cast<const char*>(&footer), sizeof(footer));
+    writer.write(&footer, sizeof(footer));
     
     return factors.size();
 }

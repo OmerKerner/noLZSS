@@ -1,5 +1,6 @@
 #include "parallel_factorizer.hpp"
 #include "factorizer_helpers.hpp"
+#include "gzip_io.hpp"
 #include <algorithm>
 #include <iostream>
 #include <string>
@@ -538,6 +539,9 @@ void ParallelFactorizer::write_factor(const Factor& factor, const std::string& f
                                    std::mutex& file_mutex) {
     std::lock_guard<std::mutex> lock(file_mutex);
     
+    // Check if file is gzipped to decide which writer to use
+    // For temp files, we'll use standard ofstream for append operations
+    // Gzip doesn't support efficient append, so temp files remain uncompressed
     std::ofstream ofs(file_path, std::ios::binary | std::ios::app);
     if (!ofs) {
         throw std::runtime_error("Cannot open temporary file for writing: " + file_path);
