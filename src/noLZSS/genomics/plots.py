@@ -48,7 +48,8 @@ def plot_single_seq_accum_factors_from_file(
     output_dir: Optional[Union[str, Path]] = None,
     max_sequences: Optional[int] = None,
     save_factors_text: bool = True,
-    save_factors_binary: bool = False
+    save_factors_binary: bool = False,
+    min_factor_length: int = 1
 ) -> Dict[str, Dict[str, Any]]:
     """
     Process a FASTA file or binary factors file, factorize sequences (if needed), create plots, and save results.
@@ -64,6 +65,7 @@ def plot_single_seq_accum_factors_from_file(
         max_sequences: Maximum number of sequences to process (None for all)
         save_factors_text: Whether to save factors as text files (only for FASTA input)
         save_factors_binary: Whether to save factors as binary files (only for FASTA input)
+        min_factor_length: Minimum factor length to include in analysis (default: 1)
 
     Returns:
         Dictionary with processing results for each sequence:
@@ -163,6 +165,11 @@ def plot_single_seq_accum_factors_from_file(
             try:
                 factors = factorize(sequence.encode('ascii'))
                 print(f"  Factorized into {len(factors)} factors")
+                
+                # Filter by minimum length
+                if min_factor_length > 1:
+                    factors = [f for f in factors if f[1] >= min_factor_length]
+                    print(f"  After filtering (min_length={min_factor_length}): {len(factors)} factors")
             except Exception as e:
                 print(f"  Warning: Failed to factorize {seq_id}: {e}")
                 continue
@@ -348,7 +355,8 @@ def plot_multiple_seq_self_lz_factor_plot_from_file(
     name: Optional[str] = None,
     save_path: Optional[Union[str, Path]] = None,
     show_plot: bool = True,
-    return_panel: bool = False
+    return_panel: bool = False,
+    min_factor_length: int = 1
 ) -> Optional[Any]:
     """
     Create an interactive Datashader/Panel factor plot for multiple DNA sequences from a FASTA file or binary factors file.
@@ -366,6 +374,7 @@ def plot_multiple_seq_self_lz_factor_plot_from_file(
             requires optional selenium-based dependencies)
         show_plot: Whether to display/serve the plot
         return_panel: Whether to return the Panel app for embedding
+        min_factor_length: Minimum factor length to include in analysis (default: 1)
 
     Returns:
         Panel app if return_panel=True, otherwise None
@@ -437,6 +446,17 @@ def plot_multiple_seq_self_lz_factor_plot_from_file(
 
         print(f"Loaded {len(factors)} factors with {len(sentinel_factor_indices)} sentinels")
         print(f"Sequence names: {sequence_names}")
+        
+        # Filter by minimum length (excluding sentinels)
+        if min_factor_length > 1:
+            original_count = len(factors)
+            # Keep sentinel factors and filter others
+            filtered_factors = []
+            for idx, factor in enumerate(factors):
+                if idx in sentinel_factor_indices or factor[1] >= min_factor_length:
+                    filtered_factors.append(factor)
+            factors = filtered_factors
+            print(f"After filtering (min_length={min_factor_length}): {len(factors)} factors (from {original_count})")
         
         if not factors:
             raise PlotError("No factors found in input file")
@@ -887,7 +907,8 @@ def plot_multiple_seq_self_lz_factor_plot_simple(
     factors_filepath: Optional[Union[str, Path]] = None,
     name: Optional[str] = None,
     save_path: Optional[Union[str, Path]] = None,
-    show_plot: bool = True
+    show_plot: bool = True,
+    min_factor_length: int = 1
 ) -> None:
     """
     Create a simple matplotlib factor plot for multiple DNA sequences from a FASTA file or binary factors file.
@@ -902,6 +923,7 @@ def plot_multiple_seq_self_lz_factor_plot_simple(
         name: Optional name for the plot title (defaults to input filename)
         save_path: Optional path to save the plot image (PNG, PDF, SVG, etc.)
         show_plot: Whether to display the plot
+        min_factor_length: Minimum factor length to include in analysis (default: 1)
 
     Raises:
         PlotError: If plotting fails or input files cannot be processed
@@ -957,6 +979,17 @@ def plot_multiple_seq_self_lz_factor_plot_simple(
 
         print(f"Loaded {len(factors)} factors with {len(sentinel_factor_indices)} sentinels")
         print(f"Sequence names: {sequence_names}")
+        
+        # Filter by minimum length (excluding sentinels)
+        if min_factor_length > 1:
+            original_count = len(factors)
+            # Keep sentinel factors and filter others
+            filtered_factors = []
+            for idx, factor in enumerate(factors):
+                if idx in sentinel_factor_indices or factor[1] >= min_factor_length:
+                    filtered_factors.append(factor)
+            factors = filtered_factors
+            print(f"After filtering (min_length={min_factor_length}): {len(factors)} factors (from {original_count})")
         
         if not factors:
             raise PlotError("No factors found in input file")
@@ -2048,7 +2081,8 @@ def plot_strand_bias_heatmap(
     name: Optional[str] = None,
     grid_size: Union[int, Tuple[int, int]] = 50,
     save_path: Optional[Union[str, Path]] = None,
-    show_plot: bool = True
+    show_plot: bool = True,
+    min_factor_length: int = 1
 ) -> None:
     """
     Visualize forward vs reverse-complement bias across the factor map.
@@ -2070,6 +2104,7 @@ def plot_strand_bias_heatmap(
             tuple. Default: 50.
         save_path: Optional path to save the heatmap image.
         show_plot: Whether to display the plot.
+        min_factor_length: Minimum factor length to include in analysis (default: 1)
     """
     try:
         import matplotlib.pyplot as plt
@@ -2110,6 +2145,17 @@ def plot_strand_bias_heatmap(
             sentinel_factor_indices = metadata.get('sentinel_factor_indices', [])
             sequence_names = metadata.get('sequence_names', [])
             total_length = metadata.get('total_length')
+        
+        # Filter by minimum length (excluding sentinels)
+        if min_factor_length > 1:
+            original_count = len(factors)
+            # Keep sentinel factors and filter others
+            filtered_factors = []
+            for idx, factor in enumerate(factors):
+                if idx in sentinel_factor_indices or factor[1] >= min_factor_length:
+                    filtered_factors.append(factor)
+            factors = filtered_factors
+            print(f"Filtered factors by min_length={min_factor_length}: {len(factors)} factors (from {original_count})")
 
         x_edges, y_edges, forward_grid, rc_grid, bias_grid = _compute_strand_bias_grid(
             factors,
@@ -2213,7 +2259,8 @@ def plot_factor_length_ccdf(
     factors_filepath: Union[str, Path],
     save_path: Optional[Union[str, Path]] = None,
     show_plot: bool = True,
-    separate: bool = True
+    separate: bool = True,
+    min_factor_length: int = 1
 ) -> None:
     """
     Create an empirical CCDF plot of factor lengths on log-log axes from a binary factors file.
@@ -2228,6 +2275,7 @@ def plot_factor_length_ccdf(
         show_plot: Whether to display the plot
         separate: Whether to plot forward and reverse complement factors separately
             (default: True). If False, both are plotted on the same axes with different colors.
+        min_factor_length: Minimum factor length to include in analysis (default: 1)
 
     Raises:
         PlotError: If file reading or plotting fails
@@ -2255,9 +2303,21 @@ def plot_factor_length_ccdf(
         # Read factors from binary file
         metadata = read_factors_binary_file_with_metadata(factors_filepath)
         factors = metadata['factors']
+        sentinel_factor_indices = metadata.get('sentinel_factor_indices', [])
 
         if not factors:
             raise PlotError("No factors found in the binary file")
+        
+        # Filter by minimum length (excluding sentinels)
+        if min_factor_length > 1:
+            original_count = len(factors)
+            # Keep sentinel factors and filter others
+            filtered_factors = []
+            for idx, factor in enumerate(factors):
+                if idx in sentinel_factor_indices or factor[1] >= min_factor_length:
+                    filtered_factors.append(factor)
+            factors = filtered_factors
+            print(f"Filtered factors by min_length={min_factor_length}: {len(factors)} factors (from {original_count})")
 
         # Extract lengths and separate by direction
         forward_lengths = []
@@ -2370,7 +2430,8 @@ def plot_space_scale_heatmap(
     separate_strands: bool = True,
     show_marginal_ccdf: bool = True,
     sequence_index: Optional[int] = None,
-    cmap: str = 'viridis'
+    cmap: str = 'viridis',
+    min_factor_length: int = 1
 ) -> None:
     """
     Create a space-scale heatmap showing factor length distribution across genomic positions.
@@ -2401,6 +2462,7 @@ def plot_space_scale_heatmap(
         sequence_index: Optional index to select a specific sequence from multi-sequence
             files (0-based). If None, uses all sequences concatenated.
         cmap: Matplotlib colormap name (default: 'viridis')
+        min_factor_length: Minimum factor length to include in analysis (default: 1)
 
     Raises:
         PlotError: If file reading or plotting fails
@@ -2436,6 +2498,17 @@ def plot_space_scale_heatmap(
             raise PlotError("No factors found in input file")
 
         print(f"Loaded {len(factors)} factors")
+        
+        # Filter by minimum length (excluding sentinels)
+        if min_factor_length > 1:
+            original_count = len(factors)
+            # Keep sentinel factors and filter others
+            filtered_factors = []
+            for idx, factor in enumerate(factors):
+                if idx in sentinel_factor_indices or factor[1] >= min_factor_length:
+                    filtered_factors.append(factor)
+            factors = filtered_factors
+            print(f"Filtered factors by min_length={min_factor_length}: {len(factors)} factors (from {original_count})")
 
         # Split factors by sequence if requested
         if sequence_index is not None:
@@ -2793,6 +2866,7 @@ if __name__ == "__main__":
     cumulative_parser.add_argument('--max_sequences', type=int, default=None, help='Maximum number of sequences to process')
     cumulative_parser.add_argument('--save_factors_text', action='store_true', help='Save factors as text files')
     cumulative_parser.add_argument('--save_factors_binary', action='store_true', help='Save factors as binary files')
+    cumulative_parser.add_argument('--min_factor_length', type=int, default=1, help='Minimum factor length to include in analysis (default: 1)')
 
     # Subparser for self-factors-plot
     self_factors_parser = subparsers.add_parser('self-factors-plot', help='Plot self-factors (simple matplotlib by default, use --interactive for Panel/Datashader)')
@@ -2803,6 +2877,7 @@ if __name__ == "__main__":
     self_factors_parser.add_argument('--no-show', action='store_true', help='Do not display the plot')
     self_factors_parser.add_argument('--interactive', action='store_true', help='Use interactive Panel/Datashader plot instead of simple matplotlib')
     self_factors_parser.add_argument('--return_panel', action='store_true', help='Whether to return the Panel app (interactive mode only)')
+    self_factors_parser.add_argument('--min_factor_length', type=int, default=1, help='Minimum factor length to include in analysis (default: 1)')
 
     # Subparser for strand-bias heatmap
     strand_bias_parser = subparsers.add_parser(
@@ -2815,6 +2890,7 @@ if __name__ == "__main__":
     strand_bias_parser.add_argument('--grid_size', type=int, default=50, help='Number of bins per axis (default: 50)')
     strand_bias_parser.add_argument('--save_path', default=None, help='Path to save the plot image')
     strand_bias_parser.add_argument('--no-show', action='store_true', help='Do not display the plot')
+    strand_bias_parser.add_argument('--min_factor_length', type=int, default=1, help='Minimum factor length to include in analysis (default: 1)')
 
     # Subparser for factor length CCDF
     ccdf_parser = subparsers.add_parser('factor-length-ccdf', help='Plot empirical CCDF of factor lengths on log-log axes')
@@ -2822,6 +2898,7 @@ if __name__ == "__main__":
     ccdf_parser.add_argument('--save_path', default=None, help='Path to save the plot image')
     ccdf_parser.add_argument('--no-show', action='store_true', help='Do not display the plot')
     ccdf_parser.add_argument('--no-separate', action='store_true', help='Plot forward and reverse complement factors on the same axes')
+    ccdf_parser.add_argument('--min_factor_length', type=int, default=1, help='Minimum factor length to include in analysis (default: 1)')
 
     # Subparser for reference sequence plotting
     ref_plot_parser = subparsers.add_parser('reference-plot', help='Plot target sequence factorized with reference sequence')
@@ -2852,6 +2929,7 @@ if __name__ == "__main__":
     heatmap_parser.add_argument('--no-marginal', action='store_true', help='Do not show marginal CCDF plots')
     heatmap_parser.add_argument('--sequence_index', type=int, default=None, help='Index of specific sequence to plot (for multi-sequence files, 0-based)')
     heatmap_parser.add_argument('--cmap', default='viridis', help='Matplotlib colormap name (default: viridis)')
+    heatmap_parser.add_argument('--min_factor_length', type=int, default=1, help='Minimum factor length to include in analysis (default: 1)')
 
     args = parser.parse_args()
 
@@ -2861,7 +2939,8 @@ if __name__ == "__main__":
             output_dir=args.output_dir,
             max_sequences=args.max_sequences,
             save_factors_text=args.save_factors_text,
-            save_factors_binary=args.save_factors_binary
+            save_factors_binary=args.save_factors_binary,
+            min_factor_length=args.min_factor_length
         )
     elif args.command == 'self-factors-plot':
         # Choose between simple and interactive plotting
@@ -2872,7 +2951,8 @@ if __name__ == "__main__":
                 name=args.name,
                 save_path=args.save_path,
                 show_plot=not args.no_show,
-                return_panel=args.return_panel
+                return_panel=args.return_panel,
+                min_factor_length=args.min_factor_length
             )
         else:
             plot_multiple_seq_self_lz_factor_plot_simple(
@@ -2880,7 +2960,8 @@ if __name__ == "__main__":
                 factors_filepath=args.factors_filepath,
                 name=args.name,
                 save_path=args.save_path,
-                show_plot=not args.no_show
+                show_plot=not args.no_show,
+                min_factor_length=args.min_factor_length
             )
     elif args.command == 'strand-bias-heatmap':
         plot_strand_bias_heatmap(
@@ -2889,14 +2970,16 @@ if __name__ == "__main__":
             name=args.name,
             grid_size=args.grid_size,
             save_path=args.save_path,
-            show_plot=not args.no_show
+            show_plot=not args.no_show,
+            min_factor_length=args.min_factor_length
         )
     elif args.command == 'factor-length-ccdf':
         plot_factor_length_ccdf(
             factors_filepath=args.factors_filepath,
             save_path=args.save_path,
             show_plot=not args.no_show,
-            separate=not args.no_separate
+            separate=not args.no_separate,
+            min_factor_length=args.min_factor_length
         )
     elif args.command == 'reference-plot':
         # Validate that sequences are provided if factors_filepath is not
@@ -2938,7 +3021,8 @@ if __name__ == "__main__":
             separate_strands=not args.no_separate,
             show_marginal_ccdf=not args.no_marginal,
             sequence_index=args.sequence_index,
-            cmap=args.cmap
+            cmap=args.cmap,
+            min_factor_length=args.min_factor_length
         )
 
 
