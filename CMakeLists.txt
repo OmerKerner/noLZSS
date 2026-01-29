@@ -72,9 +72,13 @@ if (NOT pybind11_FOUND)
   FetchContent_MakeAvailable(pybind11)
 endif()
 
+# Find zlib for gzip compression support
+find_package(ZLIB REQUIRED)
+message(STATUS "Found ZLIB: ${ZLIB_LIBRARIES}")
+
 add_library(noLZSS_core STATIC src/cpp/factorizer.cpp src/cpp/fasta_processor.cpp src/cpp/parallel_factorizer.cpp src/cpp/parallel_fasta_processor.cpp)
 target_include_directories(noLZSS_core PUBLIC src/cpp)
-target_link_libraries(noLZSS_core PUBLIC ${SDSL_TARGET})
+target_link_libraries(noLZSS_core PUBLIC ${SDSL_TARGET} ZLIB::ZLIB)
 
 pybind11_add_module(_noLZSS src/cpp/bindings.cpp)
 target_include_directories(_noLZSS PRIVATE src/cpp)

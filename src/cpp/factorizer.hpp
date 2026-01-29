@@ -217,17 +217,20 @@ size_t count_factors_file(const std::string& path, size_t start_pos = 0);
 // Binary output
 
 /**
- * @brief Writes noLZSS factors from a file to a binary output file.
+ * @brief Writes noLZSS factors from a file to a gzipped binary output file.
  *
  * Reads text from an input file, performs factorization, and writes the factors
- * in binary format to an output file. This is useful for storing factorizations
- * efficiently or for further processing.
+ * in compressed binary format to an output file. The output is automatically gzipped
+ * for space efficiency. Files can be read back using the same functions, which
+ * automatically detect and decompress gzipped files.
  *
  * @param in_path Path to input file containing text
- * @param out_path Path to output file where binary factors will be written
+ * @param out_path Path to output file where gzipped binary factors will be written
  * @return Number of factors written to the output file
  *
- * @note Binary format: each factor is written as two uint64_t values (start, length)
+ * @note Output files are automatically gzipped using zlib compression
+ * @note Binary format: each factor is 24 bytes (3 × uint64_t: start, length, ref) followed by footer
+ * @note Reading utilities automatically detect and handle both gzipped and non-gzipped files
  * @warning This function overwrites the output file if it exists
  */
 size_t write_factors_binary_file(const std::string& in_path, const std::string& out_path);
@@ -292,17 +295,19 @@ size_t count_factors_dna_w_rc(std::string_view text);
 size_t count_factors_file_dna_w_rc(const std::string& path);
 
 /**
- * @brief Writes noLZSS factors from a DNA file with reverse complement awareness to a binary output file.
+ * @brief Writes noLZSS factors from a DNA file with reverse complement awareness to a gzipped binary output file.
  *
  * Reads DNA text from an input file, performs factorization with reverse complement support,
- * and writes the factors in binary format to an output file.
+ * and writes the factors in compressed binary format to an output file.
  *
  * @param in_path Path to input file containing DNA text
- * @param out_path Path to output file where binary factors will be written
+ * @param out_path Path to output file where gzipped binary factors will be written
  * @return Number of factors written to the output file
  *
- * @note Binary format: each factor is written as three uint64_t values (start, length, ref)
+ * @note Output files are automatically gzipped using zlib compression
+ * @note Binary format: each factor is 24 bytes (3 × uint64_t: start, length, ref) followed by footer
  * @note Reverse complement factors have RC_MASK set in the ref field
+ * @note Reading utilities automatically detect and handle both gzipped and non-gzipped files
  * @warning This function overwrites the output file if it exists
  */
 size_t write_factors_binary_file_dna_w_rc(const std::string& in_path, const std::string& out_path);
