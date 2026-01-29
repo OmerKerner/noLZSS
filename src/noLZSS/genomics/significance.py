@@ -71,9 +71,18 @@ def clopper_pearson_upper(k: int, n: int, alpha: float = 0.05) -> float:
             UserWarning
         )
         
-        # Wilson score upper bound
-        from math import sqrt
-        z = 1.645 if alpha == 0.05 else 1.96 if alpha == 0.025 else 2.576  # Approximate z-scores
+        # Wilson score upper bound - only handles common alpha values
+        if alpha == 0.05:
+            z = 1.645
+        elif alpha == 0.025:
+            z = 1.96
+        elif alpha == 0.01:
+            z = 2.326
+        else:
+            raise ValueError(
+                f"Wilson score fallback only supports alpha in [0.01, 0.025, 0.05], got {alpha}. "
+                "Install scipy for arbitrary alpha values: pip install scipy"
+            )
         
         p_hat = k / n
         denominator = 1 + z**2 / n
@@ -193,6 +202,9 @@ def infer_length_significance(
     N_real = len(real_lengths)
     N_shuf = len(shuf_lengths)
     
+    if N_real == 0:
+        warnings.warn("Real genome has no factors - analysis is meaningless", UserWarning)
+    
     if N_shuf == 0:
         raise ValueError("Shuffled genome must have at least one factor")
     
@@ -237,9 +249,13 @@ def infer_length_significance(
         Approximate probability that at least one factor has length >= L.
         
         Uses Poisson approximation: P(X >= 1) ≈ 1 - exp(-lambda) where lambda = N_real * S0(L)
+        
+        Note: For very large lambda values (e.g., when N_real is large and s0_L is high),
+        the function returns values very close to 1.0 due to numerical precision.
         """
         s0_L = np.interp(L, uniq_L, S0, left=1.0, right=0.0)
         lambda_val = N_real * s0_L
+        # For large lambda, exp(-lambda) underflows to 0, which is correct behavior
         return 1.0 - np.exp(-lambda_val)
     
     return {

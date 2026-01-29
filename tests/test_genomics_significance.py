@@ -2,7 +2,7 @@
 Tests for genomics significance analysis module.
 """
 
-import os
+import struct
 import tempfile
 from pathlib import Path
 
@@ -108,7 +108,6 @@ class TestExtractFactorLengths:
             factor_file = Path(tmpdir) / "test_factors.bin"
             
             # Write binary factor file manually
-            import struct
             factors = [(0, 5, 0), (5, 3, 2), (8, 10, 1)]
             
             with open(factor_file, 'wb') as f:
@@ -257,8 +256,6 @@ class TestCalculateFactorLengthThreshold:
             shuf_file = Path(tmpdir) / "shuf_factors.bin"
             
             # Create binary files
-            import struct
-            
             # Real genome factors (longer)
             real_factors = [(i*10, 20+i*5, i) for i in range(10)]
             with open(real_file, 'wb') as f:
@@ -293,8 +290,6 @@ class TestCalculateFactorLengthThreshold:
             plot_file = Path(tmpdir) / "plot.png"
             
             # Create minimal binary files
-            import struct
-            
             real_factors = [(0, 20, 0), (20, 25, 0)]
             with open(real_file, 'wb') as f:
                 for pos, length, ref in real_factors:

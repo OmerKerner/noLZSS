@@ -175,11 +175,9 @@ except Exception as e:
 os.remove("sample_proteins.fasta")
 ```
 
-## Performance Optimization
+## Benchmarking and Analysis
 
-## Advanced Features
-
-### Statistical Significance Analysis
+### Plotting and Visualization
 
 Determine the minimal factor length threshold for distinguishing signal from noise:
 
@@ -219,6 +217,8 @@ for i, score in enumerate(result['rarity_scores_real'][:10]):
 ```
 
 For detailed methodology and interpretation, see the [Factor Length Significance Analysis](genomics_significance.md) documentation.
+
+## Advanced Features
 
 ### Binary Factor Storage
 
