@@ -317,80 +317,128 @@ void ParallelFactorizer::factorize_dna_w_rc_thread(const cst_t& cst,
     
     // Main factorization loop - only process the original sequence (0 to N)
     while (i < N) {
-        // Walk up ancestors to find best candidate (forward or RC)
-        size_t best_len_depth = 0;
-        bool best_is_rc = false;
-        size_t best_fwd_start = 0;
-        size_t best_rc_end = 0;
-        size_t best_rc_posS = 0;
+        // At factor start i (0-based in T), walk up ancestors and track best FWD and RC candidates independently
         
+        // Track best FWD candidate
+        bool   have_fwd       = false;
+        size_t best_fwd_start = 0;  // start in T (for FWD)
+        size_t best_fwd_depth = 0;  // tree depth of best FWD candidate
+        
+        // Track best RC candidate
+        bool   have_rc        = false;
+        size_t best_rc_end    = 0;  // end in T (for RC)
+        size_t best_rc_posS   = 0;  // pos in S where RC candidate suffix starts (for LCP)
+        size_t best_rc_depth  = 0;  // tree depth of best RC candidate
+
         // Walk from leaf to root via level_anc
         for (size_t step = 1; step <= lambda_node_depth; ++step) {
             auto v = cst.bp_support.level_anc(lambda, lambda_node_depth - step);
             size_t ell = cst.depth(v);
             if (ell == 0) break; // reached root
-            
+
             auto lb = cst.lb(v), rb = cst.rb(v);
-            
-            // Forward candidate
+
+            // Forward candidate (min start in T within v's interval)
             size_t kF = rmqF(lb, rb);
             uint64_t jF = fwd_starts[kF];
-            bool okF = (jF != INF) && (jF + ell - 1 < i); // non-overlap
-            
-            // RC candidate
+            bool okF = (jF != INF) && (jF + ell - 1 < i); // non-overlap: endF <= i-1
+
+            // RC candidate (min END in T within v's interval; monotone with depth)
             size_t kR = rmqRcEnd(lb, rb);
             uint64_t endRC = rc_ends[kR];
             bool okR = (endRC != INF) && (endRC < i); // endRC <= i-1
-            
+
             if (!okF && !okR) {
-                break; // No valid candidates at deeper levels
+                // deeper nodes can only increase jF and the minimal RC end
+                // -> non-overlap won't become true again for either; stop
+                break;
             }
-            
-            // Choose better candidate
+
+            // Update best FWD candidate independently
             if (okF) {
-                if (ell > best_len_depth ||
-                    (ell == best_len_depth && !best_is_rc && (jF + ell - 1) < (best_fwd_start + best_len_depth - 1))) {
-                    best_len_depth = ell;
-                    best_is_rc = false;
+                if (ell > best_fwd_depth ||
+                    (ell == best_fwd_depth && (jF + ell - 1) < (best_fwd_start + best_fwd_depth - 1))) {
+                    have_fwd = true;
                     best_fwd_start = jF;
+                    best_fwd_depth = ell;
                 }
             }
+            
+            // Update best RC candidate independently
             if (okR) {
-                size_t posS_R = cst.csa[kR];
-                if (ell > best_len_depth ||
-                    (ell == best_len_depth && (best_is_rc ? (endRC < best_rc_end) : true))) {
-                    best_len_depth = ell;
-                    best_is_rc = true;
+                size_t posS_R = cst.csa[kR]; // suffix position in S for LCP
+                if (ell > best_rc_depth ||
+                    (ell == best_rc_depth && (endRC < best_rc_end))) {
+                    have_rc = true;
                     best_rc_end = endRC;
                     best_rc_posS = posS_R;
+                    best_rc_depth = ell;
                 }
             }
         }
-        
-        // Compute the factor to emit
+
         size_t emit_len = 1;
         uint64_t emit_ref = i; // default for literal
         
-        if (best_len_depth == 0) {
-            // Literal of length 1
-            Factor f{static_cast<uint64_t>(i), static_cast<uint64_t>(emit_len), emit_ref};
-            write_factor(f, ctx.temp_file_path, file_mutexes[ctx.thread_id]);
-        } else if (!best_is_rc) {
-            // Forward match - finalize with LCP and non-overlap cap
-            size_t cap = i - best_fwd_start;
-            size_t L = lcp(cst, i, best_fwd_start);
-            emit_len = std::min(L, cap);
-            emit_ref = static_cast<uint64_t>(best_fwd_start);
-            
-            Factor f{static_cast<uint64_t>(i), static_cast<uint64_t>(emit_len), emit_ref};
+        if (!have_fwd && !have_rc) {
+            // No previous occurrence (FWD nor RC) — literal of length 1
+            Factor f{static_cast<uint64_t>(i), static_cast<uint64_t>(emit_len), static_cast<uint64_t>(emit_ref)};
             write_factor(f, ctx.temp_file_path, file_mutexes[ctx.thread_id]);
         } else {
-            // RC match - finalize with LCP
-            size_t L = lcp(cst, i, best_rc_posS);
-            emit_len = L;
-            size_t start_pos_val = best_rc_end - L + 2;
-            emit_ref = RC_MASK | static_cast<uint64_t>(start_pos_val);
+            // Compute true lengths for both candidates
+            size_t fwd_true_len = 0;
+            size_t rc_true_len = 0;
             
+            if (have_fwd) {
+                size_t cap = i - best_fwd_start; // non-overlap cap
+                size_t L = lcp(cst, i, best_fwd_start);
+                fwd_true_len = std::min(L, cap);
+            }
+            
+            if (have_rc) {
+                rc_true_len = lcp(cst, i, best_rc_posS);
+            }
+            
+            // Choose based on TRUE length, with FWD preference at equal length.
+            // A literal (self-reference, length 1) is always available as a fallback.
+            // Only use RC if it provides strictly longer match than both FWD and literal.
+            bool use_fwd = false;
+            bool use_literal = false;
+            
+            if (have_fwd && fwd_true_len >= 1) {
+                // Have a real forward match
+                if (have_rc && rc_true_len > fwd_true_len) {
+                    use_fwd = false;  // RC is strictly longer
+                } else {
+                    use_fwd = true;   // FWD wins (including ties)
+                }
+            } else {
+                // No real forward match; compare RC against literal (length 1)
+                if (have_rc && rc_true_len > 1) {
+                    use_fwd = false;  // RC is strictly longer than literal
+                } else {
+                    use_literal = true;  // Use literal (self-reference)
+                }
+            }
+            
+            if (use_literal) {
+                // Emit literal
+                emit_len = 1;
+                emit_ref = static_cast<uint64_t>(i);
+            } else if (use_fwd) {
+                emit_len = fwd_true_len;
+                emit_ref = static_cast<uint64_t>(best_fwd_start);
+            } else {
+                emit_len = rc_true_len;
+                size_t start_pos_val = best_rc_end - emit_len + 1;  // start = end - len + 1
+                emit_ref = RC_MASK | static_cast<uint64_t>(start_pos_val); // start-anchored + RC flag
+            }
+            
+            // Safety: ensure progress
+            if (emit_len <= 0) {
+                throw std::runtime_error("emit_len must be positive to ensure factorization progress");
+            }
+
             Factor f{static_cast<uint64_t>(i), static_cast<uint64_t>(emit_len), emit_ref};
             write_factor(f, ctx.temp_file_path, file_mutexes[ctx.thread_id]);
         }
@@ -807,10 +855,27 @@ size_t ParallelFactorizer::parallel_factorize_multiple_dna_w_rc(const std::strin
     
     const std::string& S = prepared_string;
     
-    // The original sequence length (before adding RC)
-    const size_t N = original_length - 1; // -1 for the sentinel
+    // Validate minimum string length to avoid underflow and SDSL errors
+    // Format for w/ RC: T1!T2@...Tn$rt(Tn)%...rt(T1)&
+    // Minimum valid input: "A$A&" (4 chars: sequence + sentinel + reverse_complement + sentinel)
+    // - Position 0: Single nucleotide (e.g., 'A')
+    // - Position 1: Sentinel separating original from RC (e.g., '$')
+    // - Position 2: Reverse complement of the nucleotide (e.g., 'A' is revcomp of 'T')
+    // - Position 3: Final sentinel (e.g., '&')
+    if (S.size() < 4) {
+        std::cerr << "Warning: Input string too short for factorization with reverse complement (size=" 
+                  << S.size() << "). Returning 0 factors." << std::endl;
+        return 0;
+    }
+
+    const size_t N = (S.size() / 2) - 1;
+    if (N == 0) {
+        std::cerr << "Warning: Computed N=0 from input size=" << S.size() 
+                  << ". Returning 0 factors." << std::endl;
+        return 0;
+    }
     
-    // Ensure start_pos is within bounds
+    // Validate start_pos
     if (start_pos >= N) {
         throw std::invalid_argument("start_pos must be less than the original sequence length");
     }
@@ -836,17 +901,19 @@ size_t ParallelFactorizer::parallel_factorize_multiple_dna_w_rc(const std::strin
     sdsl::int_vector<64> fwd_starts(cst.csa.size(), INF);
     sdsl::int_vector<64> rc_ends(cst.csa.size(), INF);
     
-    const size_t T_end = N;
-    const size_t R_beg = N;  // first char of rc (after T and its sentinel)
-    const size_t R_end = S.size();
-    
+    const size_t T_end = N;           // end of original (exclusive)
+    const size_t R_beg = N + 1;       // first char of rc (skip sentinel at position N)
+    const size_t R_end = S.size() - 1;   // exclude final sentinel
+
     for (size_t k = 0; k < cst.csa.size(); ++k) {
         size_t posS = cst.csa[k];
         if (posS < T_end) {
-            fwd_starts[k] = posS;
+            // suffix starts in T
+            fwd_starts[k] = posS;     // 0-based start in T
         } else if (posS >= R_beg && posS < R_end) {
-            size_t jR0 = posS - R_beg;
-            size_t endT0 = N - jR0 - 1;
+            // suffix starts in R
+            size_t jR0   = posS - R_beg;         // 0-based start in R
+            size_t endT0 = N - jR0 - 1;          // mapped end in T (0-based)
             rc_ends[k] = endT0;
         }
     }

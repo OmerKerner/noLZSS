@@ -262,6 +262,35 @@ MKVLWAALL
             os.unlink(temp_path)
 
 
+class TestForwardStrandPreference:
+    """Test forward strand preference in factorization."""
+    
+    def test_forward_strand_preference_on_equal_length_factors(self):
+        """Test that forward strand is preferred over reverse complement when both produce equal-length factors."""
+        try:
+            from noLZSS.genomics.sequences import factorize_fasta_multiple_dna_w_rc
+        except ImportError:
+            print("C++ extension not available, skipping test")
+            return
+        
+        # Create a scenario where both forward and RC can produce matches
+        # Test string: 'ATAT'
+        reference = "ATAT"
+        
+        try:
+            result = factorize_fasta_multiple_dna_w_rc([reference])
+
+            start, length, ref, is_rc = result.factors[2]
+            
+            assert start == 2 and length == 2 and ref == 0 and is_rc == False, \
+                "Forward strand not preferred when both matches equal length"
+
+            print(f"✓ Forward strand preference verified: {len(result.factors)} factors")
+        except Exception as e:
+            print(f"Warning: Forward strand preference test failed: {e}")
+            assert False, f"Forward strand preference test failed: {e}"
+
+
 class TestGenomicsIntegration:
     """Test integration with main package."""
     
@@ -296,7 +325,7 @@ class TestGenomicsIntegration:
 
 if __name__ == "__main__":
     # Run tests without pytest
-    test_classes = [TestGenomicsStructure, TestFutureGenomicsFeatures, TestFASTAFunctions, TestCppFastaFunctions, TestProcessFastaWithPlots, TestGenomicsIntegration]
+    test_classes = [TestGenomicsStructure, TestFutureGenomicsFeatures, TestFASTAFunctions, TestCppFastaFunctions, TestProcessFastaWithPlots, TestForwardStrandPreference, TestGenomicsIntegration]
     
     total_tests = 0
     passed_tests = 0

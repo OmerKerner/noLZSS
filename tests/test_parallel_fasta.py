@@ -26,6 +26,7 @@ try:
         write_factors_binary_file_fasta_multiple_dna_w_rc,
         write_factors_binary_file_fasta_multiple_dna_no_rc,
         write_factors_dna_w_reference_fasta_files_to_binary,
+        factorize_fasta_multiple_dna_w_rc,
     )
     CPP_AVAILABLE = True
 except ImportError:
@@ -71,44 +72,42 @@ def create_large_fasta_file(filepath, num_sequences=3, seq_length=150000, seed=4
             total_chars += len(seq)
     return total_chars
 
-
 def read_binary_factors(filepath):
     """
     Read factors from a binary file and return them along with metadata.
-    
+
     Returns:
         tuple: (factors_list, num_sequences, num_sentinels, sequence_ids, sentinel_indices)
+        factors_list entries are tuples: (start, length, ref_id, is_rc)
     """
+    RC_MASK = 1 << 63
+
     with open(filepath, 'rb') as f:
-        # Read all data
         data = f.read()
-    
-    # Read footer from end
+
     footer_start = len(data) - 48  # Footer is 48 bytes (8 + 5*8 bytes)
     footer = data[footer_start:]
-    
-    magic = footer[0:8]
+
+    _magic = footer[0:8]
     num_factors = struct.unpack('<Q', footer[8:16])[0]
     num_sequences = struct.unpack('<Q', footer[16:24])[0]
     num_sentinels = struct.unpack('<Q', footer[24:32])[0]
     footer_size = struct.unpack('<Q', footer[32:40])[0]
-    total_length = struct.unpack('<Q', footer[40:48])[0]
-    
-    # Calculate where metadata starts
+    _total_length = struct.unpack('<Q', footer[40:48])[0]
+
     metadata_start = len(data) - footer_size
-    factors_end = metadata_start
-    
-    # Read factors (24 bytes each: start, length, ref)
+
     factors = []
     for i in range(num_factors):
         offset = i * 24
         factor_data = data[offset:offset + 24]
         start = struct.unpack('<Q', factor_data[0:8])[0]
         length = struct.unpack('<Q', factor_data[8:16])[0]
-        ref = struct.unpack('<Q', factor_data[16:24])[0]
-        factors.append((start, length, ref))
-    
-    # Read sequence IDs from metadata
+        ref_raw = struct.unpack('<Q', factor_data[16:24])[0]
+        is_rc = bool(ref_raw & RC_MASK)
+        ref = ref_raw & ~RC_MASK
+        factors.append((start, length, ref, is_rc))
+
     sequence_ids = []
     pos = metadata_start
     for _ in range(num_sequences):
@@ -116,17 +115,15 @@ def read_binary_factors(filepath):
         seq_id = data[pos:end].decode('utf-8')
         sequence_ids.append(seq_id)
         pos = end + 1
-    
-    # Read sentinel indices
+
     sentinel_indices = []
-    for i in range(num_sentinels):
+    for _ in range(num_sentinels):
         idx_data = data[pos:pos + 8]
         idx = struct.unpack('<Q', idx_data)[0]
         sentinel_indices.append(idx)
         pos += 8
-    
-    return factors, num_sequences, num_sentinels, sequence_ids, sentinel_indices
 
+    return factors, num_sequences, num_sentinels, sequence_ids, sentinel_indices
 
 @pytest.mark.skipif(not CPP_AVAILABLE, reason="C++ extension not available")
 class TestParallelFastaProcessor:
@@ -359,6 +356,77 @@ class TestParallelFastaProcessor:
             par_factors, _, _, _, _ = read_binary_factors(output2)
             
             assert seq_factors == par_factors, "Sequential wrapper should produce identical factors"
+            
+        finally:
+            if os.path.exists(output1):
+                os.remove(output1)
+            if os.path.exists(output2):
+                os.remove(output2)
+    
+    def test_consistency_parallel_vs_direct_w_rc(self):
+        """Test that parallel and direct factorization produce same results for w_rc."""
+        fasta_path = str(RESOURCES_DIR / "short_dna1.fasta")
+        
+        with tempfile.NamedTemporaryFile(suffix='.bin', delete=False) as tmp:
+            par_output = tmp.name
+        
+        try:
+            # Get factors using direct factorization
+            direct_factors = factorize_fasta_multiple_dna_w_rc(fasta_path)[0]
+            
+            # Get factors using parallel binary write with 1 thread (sequential)
+            par_count = parallel_write_factors_binary_file_fasta_multiple_dna_w_rc(
+                fasta_path, par_output, 1
+            )
+            
+            # Read factors from binary file
+            par_factors, _, _, _, _ = read_binary_factors(par_output)
+            
+            # Both methods should produce same number of factors
+            assert len(direct_factors) == par_count, \
+                f"Direct factorization returned {len(direct_factors)} factors, parallel wrote {par_count}"
+            assert len(direct_factors) == len(par_factors), \
+                f"Direct factorization returned {len(direct_factors)} factors, binary file has {len(par_factors)}"
+            
+            # Factors should be identical (direct returns list of tuples: (start, length, ref))
+            assert direct_factors == par_factors, \
+                "Direct and parallel w_rc should produce identical factors"
+            
+        finally:
+            if os.path.exists(par_output):
+                os.remove(par_output)
+    
+    def test_parallel_multithreaded_w_rc(self):
+        """Test parallel w_rc with multiple threads matches single-thread results."""
+        fasta_path = str(RESOURCES_DIR / "short_dna1.fasta")
+        
+        with tempfile.NamedTemporaryFile(suffix='.bin', delete=False) as tmp1:
+            output1 = tmp1.name
+        with tempfile.NamedTemporaryFile(suffix='.bin', delete=False) as tmp2:
+            output2 = tmp2.name
+        
+        try:
+            # Single-threaded
+            count1 = parallel_write_factors_binary_file_fasta_multiple_dna_w_rc(
+                fasta_path, output1, 1
+            )
+            
+            # Multi-threaded
+            count2 = parallel_write_factors_binary_file_fasta_multiple_dna_w_rc(
+                fasta_path, output2, 2
+            )
+            
+            # Both should produce same number of factors
+            assert count1 == count2, \
+                f"Single-thread produced {count1} factors, multi-thread produced {count2}"
+            
+            # Read both outputs
+            factors1, _, _, _, _ = read_binary_factors(output1)
+            factors2, _, _, _, _ = read_binary_factors(output2)
+            
+            # Factors should be identical
+            assert factors1 == factors2, \
+                "Single-thread and multi-thread w_rc should produce identical factors"
             
         finally:
             if os.path.exists(output1):
