@@ -175,7 +175,48 @@ except Exception as e:
 os.remove("sample_proteins.fasta")
 ```
 
-## Performance Optimization
+## Benchmarking and Analysis
+
+### Plotting and Visualization
+
+Determine the minimal factor length threshold for distinguishing signal from noise:
+
+```python
+import noLZSS
+from noLZSS.genomics import calculate_factor_length_threshold
+
+# Step 1: Factorize real genome
+noLZSS.write_factors_binary_file_fasta_multiple_dna_w_rc(
+    "genome.fasta", 
+    "genome_factors.bin"
+)
+
+# Step 2: Factorize shuffled genome (generate shuffled version first)
+noLZSS.write_factors_binary_file_fasta_multiple_dna_w_rc(
+    "genome_shuffled.fasta", 
+    "shuffled_factors.bin"
+)
+
+# Step 3: Calculate significance threshold
+result = calculate_factor_length_threshold(
+    "genome_factors.bin",
+    "shuffled_factors.bin",
+    tau_expected_fp=1.0,
+    plot_output="significance_analysis.png"
+)
+
+if result['L_star'] is not None:
+    print(f"Minimum significant factor length: {result['L_star']}")
+    print(f"Number of significant factors: {(result['rarity_scores_real'] < 0.05).sum()}")
+else:
+    print("No threshold meets the false positive criterion")
+
+# Access per-factor rarity scores
+for i, score in enumerate(result['rarity_scores_real'][:10]):
+    print(f"Factor {i}: rarity score = {score:.4f}")
+```
+
+For detailed methodology and interpretation, see the [Factor Length Significance Analysis](genomics_significance.md) documentation.
 
 ## Advanced Features
 

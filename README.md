@@ -73,6 +73,24 @@ for seq_id, factors in results:
     print(f"Sequence {seq_id}: {len(factors)} factors")
 ```
 
+#### Statistical Significance Analysis
+
+Distinguish signal from noise in genomic factorizations by comparing with shuffled genomes:
+
+```python
+from noLZSS.genomics import calculate_factor_length_threshold
+
+result = calculate_factor_length_threshold(
+    "genome_factors.bin",
+    "shuffled_factors.bin",
+    tau_expected_fp=1.0
+)
+
+print(f"Minimum significant factor length: {result['L_star']}")
+```
+
+See [Factor Length Significance Analysis](docs/genomics_significance.md) for detailed methodology.
+
 ### Batch Processing
 
 For processing multiple FASTA files, noLZSS provides batch processing scripts:
