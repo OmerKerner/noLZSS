@@ -24,4 +24,11 @@ from .._noLZSS import (
 from .fasta import *
 from .sequences import *
 from .plots import *
+from .significance import (
+    calculate_factor_length_threshold,
+    infer_length_significance,
+    extract_factor_lengths,
+    plot_significance_analysis,
+    clopper_pearson_upper,
+)
 from . import batch_factorize
