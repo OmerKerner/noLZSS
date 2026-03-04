@@ -252,77 +252,47 @@ For a genome of total length `n` bases with `k` sequences:
 
 The following diagram illustrates the complete RC-aware factorization pipeline:
 
+```mermaid
+flowchart TD
+    A["Input: DNA Sequences T₁, T₂, …, Tₖ"] --> B["Compute Reverse Complements rc(T₁), rc(T₂), …, rc(Tₖ)"]
+    B --> C["Concatenate with Sentinels\nS = T₁σ₁T₂σ₂…Tₖσₖ rc(Tₖ)σₖ₊₁…rc(T₁)σ₂ₖ"]
+    C --> D["Build Compressed Suffix Tree CST(S)"]
+    D --> E["Build Dual RMQ Structures\nrmqF over fwd_starts · rmqRC over rc_ends"]
+    E --> F{"For each position\ni in T (0 … N−1)"}
+
+    F --> G["Walk from leaf(i) toward root"]
+    G --> H["At each ancestor v:\n• Query rmqF → best FWD candidate\n• Query rmqRC → best RC candidate"]
+    H --> I["Compute true LCP for each candidate\nfwd_len = min(LCP(i,j), i−j)\nrc_len = LCP(i, posS_of_RC)"]
+    I --> J{"Select winner"}
+
+    J -- "rc_len > fwd_len" --> K["Use RC match"]
+    J -- "fwd_len ≥ rc_len" --> L["Use FWD match"]
+    J -- "no match > 1" --> M["Use literal (len=1)"]
+
+    K --> N["Emit factor (pos, len, RC_MASK | start)\nAdvance i by len"]
+    L --> N
+    M --> N
+
+    N --> F
 ```
-                        ┌──────────────────────────┐
-                        │   Input: DNA Sequences    │
-                        │   T₁, T₂, …, Tₖ          │
-                        └────────────┬─────────────┘
-                                     │
-                        ┌────────────▼─────────────┐
-                        │  Compute Reverse          │
-                        │  Complements              │
-                        │  rc(T₁), rc(T₂),…, rc(Tₖ)│
-                        └────────────┬─────────────┘
-                                     │
-                        ┌────────────▼─────────────┐
-                        │  Concatenate with         │
-                        │  Sentinels                │
-                        │                           │
-                        │  S = T₁σ₁T₂σ₂…Tₖσₖ      │
-                        │      rc(Tₖ)σₖ₊₁…rc(T₁)σ₂ₖ│
-                        └────────────┬─────────────┘
-                                     │
-              ┌──────────────────────▼──────────────────────┐
-              │         Build Compressed Suffix Tree         │
-              │                  CST(S)                      │
-              └──────────────────────┬──────────────────────┘
-                                     │
-              ┌──────────────────────▼──────────────────────┐
-              │         Build Dual RMQ Structures            │
-              │                                              │
-              │   fwd_starts[k]: position in T if suffix     │
-              │                   starts in forward part     │
-              │   rc_ends[k]:    end position in T if suffix │
-              │                   starts in RC part          │
-              │                                              │
-              │   rmqF  ← RMQ(fwd_starts)                   │
-              │   rmqRC ← RMQ(rc_ends)                       │
-              └──────────────────────┬──────────────────────┘
-                                     │
-              ┌──────────────────────▼──────────────────────┐
-              │          Factorization Loop (i = 0 … N-1)    │
-              │                                              │
-              │  For each position i in original text:       │
-              │                                              │
-              │  ┌────────────────────────────────────────┐  │
-              │  │  Walk from leaf(i) toward root         │  │
-              │  │                                        │  │
-              │  │  At each ancestor v:                   │  │
-              │  │    ├─ Query rmqF  → best FWD candidate │  │
-              │  │    └─ Query rmqRC → best RC candidate  │  │
-              │  │                                        │  │
-              │  │  Track best of each independently      │  │
-              │  └────────────────────────────────────────┘  │
-              │                     │                        │
-              │  ┌──────────────────▼─────────────────────┐  │
-              │  │  Compute true LCP for each candidate   │  │
-              │  │    fwd_len ← min(LCP(i,j), i-j)       │  │
-              │  │    rc_len  ← LCP(i, posS_of_RC)       │  │
-              │  └──────────────────┬─────────────────────┘  │
-              │                     │                        │
-              │  ┌──────────────────▼─────────────────────┐  │
-              │  │  Select winner:                        │  │
-              │  │    rc_len > fwd_len  →  use RC         │  │
-              │  │    otherwise          →  use FWD       │  │
-              │  │    no match > 1      →  use literal    │  │
-              │  └──────────────────┬─────────────────────┘  │
-              │                     │                        │
-              │  ┌──────────────────▼─────────────────────┐  │
-              │  │  Emit factor (pos, len, ref)           │  │
-              │  │    RC ref = RC_MASK | start_position   │  │
-              │  │  Advance i by length                   │  │
-              │  └────────────────────────────────────────┘  │
-              └─────────────────────────────────────────────┘
+
+The factorization loop within each position also follows a winner-selection flow:
+
+```mermaid
+flowchart LR
+    subgraph Candidate Tracking
+        direction TB
+        FWD["FWD candidate\n(earliest start, longest depth)"]
+        RC["RC candidate\n(earliest end, longest depth)"]
+    end
+
+    FWD --> TrueLCP["Compute true LCP\nfwd_len, rc_len"]
+    RC --> TrueLCP
+
+    TrueLCP --> Decision{"rc_len > fwd_len?"}
+    Decision -- Yes --> UseRC["Emit RC factor\nref = RC_MASK | start"]
+    Decision -- No --> UseFWD["Emit FWD factor\nref = start in T"]
+    Decision -- "Both ≤ 1" --> Literal["Emit literal\nref = position (self)"]
 ```
 
 ## Worked Example
