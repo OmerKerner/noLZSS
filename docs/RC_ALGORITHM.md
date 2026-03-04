@@ -258,16 +258,16 @@ flowchart TD
     B --> C["Concatenate with Sentinels\nS = T₁σ₁T₂σ₂…Tₖσₖ rc(Tₖ)σₖ₊₁…rc(T₁)σ₂ₖ"]
     C --> D["Build Compressed Suffix Tree CST(S)"]
     D --> E["Build Dual RMQ Structures\nrmqF over fwd_starts · rmqRC over rc_ends"]
-    E --> F{"For each position\ni in T (0 … N−1)"}
+    E --> F["For each position\ni in T (0 … N−1)"]
 
     F --> G["Walk from leaf(i) toward root"]
     G --> H["At each ancestor v:\n• Query rmqF → best FWD candidate\n• Query rmqRC → best RC candidate"]
     H --> I["Compute true LCP for each candidate\nfwd_len = min(LCP(i,j), i−j)\nrc_len = LCP(i, posS_of_RC)"]
-    I --> J{"Select winner"}
+    I --> J{"Compare match lengths"}
 
     J -- "rc_len > fwd_len" --> K["Use RC match"]
     J -- "fwd_len ≥ rc_len" --> L["Use FWD match"]
-    J -- "no match > 1" --> M["Use literal (len=1)"]
+    J -- "both lengths ≤ 1" --> M["Use literal (len=1)"]
 
     K --> N["Emit factor (pos, len, RC_MASK | start)\nAdvance i by len"]
     L --> N
