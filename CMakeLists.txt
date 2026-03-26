@@ -107,5 +107,9 @@ install(FILES
   src/noLZSS/genomics/__init__.py
   src/noLZSS/genomics/fasta.py
   src/noLZSS/genomics/sequences.py
+  src/noLZSS/genomics/significance.py
+  src/noLZSS/genomics/plots.py
+  src/noLZSS/genomics/batch_factorize.py
+  src/noLZSS/genomics/lsf_batch_factorize.py
   DESTINATION noLZSS/genomics
 )

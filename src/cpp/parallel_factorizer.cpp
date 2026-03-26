@@ -435,7 +435,7 @@ void ParallelFactorizer::factorize_dna_w_rc_thread(const cst_t& cst,
             }
             
             // Safety: ensure progress
-            if (emit_len <= 0) {
+            if (emit_len == 0) {
                 throw std::runtime_error("emit_len must be positive to ensure factorization progress");
             }
 
