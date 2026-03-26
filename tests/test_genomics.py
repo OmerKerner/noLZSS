@@ -325,7 +325,13 @@ class TestGenomicsIntegration:
 
 if __name__ == "__main__":
     # Run tests without pytest
-    test_classes = [TestGenomicsStructure, TestFutureGenomicsFeatures, TestFASTAFunctions, TestCppFastaFunctions, TestProcessFastaWithPlots, TestForwardStrandPreference, TestGenomicsIntegration]
+    test_classes = [
+        TestGenomicsStructure,
+        TestFutureGenomicsFeatures,
+        TestFASTAFunctions,
+        TestForwardStrandPreference,
+        TestGenomicsIntegration,
+    ]
     
     total_tests = 0
     passed_tests = 0

@@ -8,8 +8,8 @@
 namespace noLZSS {
 
 // Constants and utility functions for reverse complement handling
-/** @brief Mask for reverse complement flag in ref field (/**
- * @brief Advanced fac/**
+
+/**
  * @brief Advanced factorization function for file-based text.
  *
  * This template function reads text from a file and provides low-level access

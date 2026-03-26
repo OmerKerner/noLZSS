@@ -365,7 +365,7 @@ size_t nolzss_multiple_dna_w_rc(const std::string& S, Sink&& sink, size_t start_
         }
         
         // Safety: ensure progress
-        if (emit_len <= 0) {
+        if (emit_len == 0) {
             throw std::runtime_error("emit_len must be positive to ensure factorization progress");
         }
 
