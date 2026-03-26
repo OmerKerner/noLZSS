@@ -87,7 +87,7 @@ def clopper_pearson_upper(k: int, n: int, alpha: float = 0.05) -> float:
         p_hat = k / n
         denominator = 1 + z**2 / n
         center = (p_hat + z**2 / (2*n)) / denominator
-        margin = z * sqrt((p_hat * (1 - p_hat) / n + z**2 / (4*n**2))) / denominator
+        margin = z * np.sqrt((p_hat * (1 - p_hat) / n + z**2 / (4*n**2))) / denominator
         
         upper = min(center + margin, 1.0)
         return float(upper)
