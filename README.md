@@ -2,7 +2,10 @@
 
 [![Build Wheels](https://github.com/OmerKerner/noLZSS/actions/workflows/wheels.yml/badge.svg)](https://github.com/OmerKerner/noLZSS/actions/workflows/wheels.yml)
 [![Documentation](https://github.com/OmerKerner/noLZSS/actions/workflows/docs.yml/badge.svg)](https://omerkerner.github.io/noLZSS/)
-<img align="right" src="assets/logo.png" alt="noLZSS Logo" width=200px/>
+<img align="right"
+     src="https://raw.githubusercontent.com/OmerKerner/noLZSS/main/assets/logo.png"
+     alt="noLZSS Logo"
+     width="200" />
 
 **Non-overlapping Lempel–Ziv–Storer–Szymanski factorization**
 
