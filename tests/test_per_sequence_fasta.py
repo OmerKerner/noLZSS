@@ -418,13 +418,19 @@ class TestPerSequenceFastaFactorization:
             tmp.write("ATCGXYZ\n")  # Invalid nucleotides
         
         try:
-            # Should raise an error
+            # Default mode sanitizes and should succeed
+            per_seq_factors, seq_ids = factorize_fasta_dna_w_rc_per_sequence(fasta_path)
+            assert len(per_seq_factors) == 1
+            assert seq_ids == ["seq1"]
+            assert len(per_seq_factors[0]) > 0
+
+            # Strict mode should still raise an error
             try:
-                factorize_fasta_dna_w_rc_per_sequence(fasta_path)
-                assert False, "Should have raised an error for invalid nucleotides"
+                factorize_fasta_dna_w_rc_per_sequence(fasta_path, "strict")
+                assert False, "Should have raised an error for invalid nucleotides in strict mode"
             except (RuntimeError, ValueError) as e:
                 assert "Invalid nucleotide" in str(e) or "invalid" in str(e).lower()
-                print(f"Correctly detected invalid nucleotides: {e}")
+                print(f"Correctly detected invalid nucleotides in strict mode: {e}")
         finally:
             if os.path.exists(fasta_path):
                 os.remove(fasta_path)

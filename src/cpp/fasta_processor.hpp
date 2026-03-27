@@ -7,6 +7,11 @@
 
 namespace noLZSS {
 
+enum class FastaDnaSanitizationMode {
+    RemoveAmbiguous,
+    Strict
+};
+
 /**
  * @brief Result of parsing FASTA file containing both sequences and IDs.
  */
@@ -21,10 +26,14 @@ struct FastaParseResult {
  * Internal helper function exposed for use by parallel_fasta_processor.
  * 
  * @param fasta_path Path to the FASTA file
+ * @param sanitization_mode FASTA DNA sanitization policy
  * @return FastaParseResult containing sequences and their IDs
  * @throws std::runtime_error If file cannot be opened or contains no valid sequences
  */
-FastaParseResult parse_fasta_sequences_and_ids(const std::string& fasta_path);
+FastaParseResult parse_fasta_sequences_and_ids(
+    const std::string& fasta_path,
+    FastaDnaSanitizationMode sanitization_mode = FastaDnaSanitizationMode::RemoveAmbiguous
+);
 
 /**
  * @brief Helper function to identify sentinel factors from factorization results.
@@ -81,8 +90,11 @@ struct FastaReferenceTargetResult {
  * @param target_fasta_path Path to the target FASTA file
  * @return FastaReferenceTargetResult containing the prepared sequence data and sequence IDs
  */
-FastaReferenceTargetResult prepare_ref_target_dna_no_rc_from_fasta(const std::string& reference_fasta_path,
-                                                           const std::string& target_fasta_path);
+FastaReferenceTargetResult prepare_ref_target_dna_no_rc_from_fasta(
+    const std::string& reference_fasta_path,
+    const std::string& target_fasta_path,
+    FastaDnaSanitizationMode sanitization_mode = FastaDnaSanitizationMode::RemoveAmbiguous
+);
 
 /**
  * @brief Prepares reference and target DNA sequences from FASTA files with reverse complement.
@@ -96,8 +108,11 @@ FastaReferenceTargetResult prepare_ref_target_dna_no_rc_from_fasta(const std::st
  * @param target_fasta_path Path to the target FASTA file
  * @return FastaReferenceTargetResult containing the prepared sequence data and sequence IDs
  */
-FastaReferenceTargetResult prepare_ref_target_dna_w_rc_from_fasta(const std::string& reference_fasta_path,
-                                                          const std::string& target_fasta_path);
+FastaReferenceTargetResult prepare_ref_target_dna_w_rc_from_fasta(
+    const std::string& reference_fasta_path,
+    const std::string& target_fasta_path,
+    FastaDnaSanitizationMode sanitization_mode = FastaDnaSanitizationMode::RemoveAmbiguous
+);
 
 /**
  * @brief Factorizes multiple DNA sequences from a FASTA file with reverse complement awareness.
@@ -117,7 +132,10 @@ FastaReferenceTargetResult prepare_ref_target_dna_w_rc_from_fasta(const std::str
  * @note Reverse complement matches are supported during factorization
  * @note Nucleotide validation is performed by prepare_multiple_dna_sequences_w_rc()
  */
-FastaFactorizationResult factorize_fasta_multiple_dna_w_rc(const std::string& fasta_path);
+FastaFactorizationResult factorize_fasta_multiple_dna_w_rc(
+    const std::string& fasta_path,
+    FastaDnaSanitizationMode sanitization_mode = FastaDnaSanitizationMode::RemoveAmbiguous
+);
 
 /**
  * @brief Factorizes multiple DNA sequences from a FASTA file without reverse complement awareness.
@@ -137,7 +155,10 @@ FastaFactorizationResult factorize_fasta_multiple_dna_w_rc(const std::string& fa
  * @note Reverse complement matches are NOT supported during factorization
  * @note Nucleotide validation is performed by prepare_multiple_dna_sequences_no_rc()
  */
-FastaFactorizationResult factorize_fasta_multiple_dna_no_rc(const std::string& fasta_path);
+FastaFactorizationResult factorize_fasta_multiple_dna_no_rc(
+    const std::string& fasta_path,
+    FastaDnaSanitizationMode sanitization_mode = FastaDnaSanitizationMode::RemoveAmbiguous
+);
 
 /**
  * @brief Factorizes DNA sequences from reference and target FASTA files with reverse complement awareness.
@@ -150,8 +171,11 @@ FastaFactorizationResult factorize_fasta_multiple_dna_no_rc(const std::string& f
  * @param target_fasta_path Path to the target FASTA file
  * @return FastaFactorizationResult containing factors, sentinel indices, and sequence IDs
  */
-FastaFactorizationResult factorize_dna_rc_w_ref_fasta_files(const std::string& reference_fasta_path,
-                                                           const std::string& target_fasta_path);
+FastaFactorizationResult factorize_dna_rc_w_ref_fasta_files(
+    const std::string& reference_fasta_path,
+    const std::string& target_fasta_path,
+    FastaDnaSanitizationMode sanitization_mode = FastaDnaSanitizationMode::RemoveAmbiguous
+);
 
 /**
  * @brief Writes noLZSS factors from multiple DNA sequences in a FASTA file with reverse complement awareness to a binary output file.
@@ -174,7 +198,11 @@ FastaFactorizationResult factorize_dna_rc_w_ref_fasta_files(const std::string& r
  * @note Reverse complement matches are supported during factorization
  * @warning Ensure sufficient disk space for the output file
  */
-size_t write_factors_binary_file_fasta_multiple_dna_w_rc(const std::string& fasta_path, const std::string& out_path);
+size_t write_factors_binary_file_fasta_multiple_dna_w_rc(
+    const std::string& fasta_path,
+    const std::string& out_path,
+    FastaDnaSanitizationMode sanitization_mode = FastaDnaSanitizationMode::RemoveAmbiguous
+);
 
 /**
  * @brief Writes noLZSS factors from multiple DNA sequences in a FASTA file without reverse complement awareness to a binary output file.
@@ -197,7 +225,11 @@ size_t write_factors_binary_file_fasta_multiple_dna_w_rc(const std::string& fast
  * @note Reverse complement matches are NOT supported during factorization
  * @warning Ensure sufficient disk space for the output file
  */
-size_t write_factors_binary_file_fasta_multiple_dna_no_rc(const std::string& fasta_path, const std::string& out_path);
+size_t write_factors_binary_file_fasta_multiple_dna_no_rc(
+    const std::string& fasta_path,
+    const std::string& out_path,
+    FastaDnaSanitizationMode sanitization_mode = FastaDnaSanitizationMode::RemoveAmbiguous
+);
 
 /**
  * @brief Writes noLZSS factors from DNA sequences in reference and target FASTA files to a binary output file.
@@ -222,8 +254,9 @@ size_t write_factors_binary_file_fasta_multiple_dna_no_rc(const std::string& fas
  * @warning Ensure sufficient disk space for the output file
  */
 size_t write_factors_dna_w_reference_fasta_files_to_binary(const std::string& reference_fasta_path, 
-                                                          const std::string& target_fasta_path, 
-                                                          const std::string& out_path);
+                                                          const std::string& target_fasta_path,
+                                                          const std::string& out_path,
+                                                          FastaDnaSanitizationMode sanitization_mode = FastaDnaSanitizationMode::RemoveAmbiguous);
 
 /**
  * @brief Factorizes each DNA sequence in a FASTA file separately with reverse complement awareness.
@@ -244,7 +277,10 @@ size_t write_factors_dna_w_reference_fasta_files_to_binary(const std::string& re
  * @note Reverse complement matches are supported during factorization
  * @note Each sequence is factorized independently - no cross-sequence matches
  */
-FastaPerSequenceFactorizationResult factorize_fasta_dna_w_rc_per_sequence(const std::string& fasta_path);
+FastaPerSequenceFactorizationResult factorize_fasta_dna_w_rc_per_sequence(
+    const std::string& fasta_path,
+    FastaDnaSanitizationMode sanitization_mode = FastaDnaSanitizationMode::RemoveAmbiguous
+);
 
 /**
  * @brief Factorizes each DNA sequence in a FASTA file separately without reverse complement awareness.
@@ -265,7 +301,10 @@ FastaPerSequenceFactorizationResult factorize_fasta_dna_w_rc_per_sequence(const 
  * @note Reverse complement matches are NOT supported during factorization
  * @note Each sequence is factorized independently - no cross-sequence matches
  */
-FastaPerSequenceFactorizationResult factorize_fasta_dna_no_rc_per_sequence(const std::string& fasta_path);
+FastaPerSequenceFactorizationResult factorize_fasta_dna_no_rc_per_sequence(
+    const std::string& fasta_path,
+    FastaDnaSanitizationMode sanitization_mode = FastaDnaSanitizationMode::RemoveAmbiguous
+);
 
 /**
  * @brief Writes factors from per-sequence DNA factorization with reverse complement to separate binary files.
@@ -286,7 +325,11 @@ FastaPerSequenceFactorizationResult factorize_fasta_dna_no_rc_per_sequence(const
  * @note Reverse complement matches are supported during factorization
  * @warning Ensure sufficient disk space for the output files
  */
-size_t write_factors_binary_file_fasta_dna_w_rc_per_sequence(const std::string& fasta_path, const std::string& out_dir);
+size_t write_factors_binary_file_fasta_dna_w_rc_per_sequence(
+    const std::string& fasta_path,
+    const std::string& out_dir,
+    FastaDnaSanitizationMode sanitization_mode = FastaDnaSanitizationMode::RemoveAmbiguous
+);
 
 /**
  * @brief Writes factors from per-sequence DNA factorization without reverse complement to separate binary files.
@@ -307,7 +350,11 @@ size_t write_factors_binary_file_fasta_dna_w_rc_per_sequence(const std::string& 
  * @note Reverse complement matches are NOT supported during factorization
  * @warning Ensure sufficient disk space for the output files
  */
-size_t write_factors_binary_file_fasta_dna_no_rc_per_sequence(const std::string& fasta_path, const std::string& out_dir);
+size_t write_factors_binary_file_fasta_dna_no_rc_per_sequence(
+    const std::string& fasta_path,
+    const std::string& out_dir,
+    FastaDnaSanitizationMode sanitization_mode = FastaDnaSanitizationMode::RemoveAmbiguous
+);
 
 /**
  * @brief Result container for per-sequence FASTA factor counting.
@@ -333,7 +380,10 @@ struct FastaPerSequenceCountResult {
  * @note Memory-efficient - only counts factors without storing them
  * @note Only A, C, T, G nucleotides are allowed (case insensitive)
  */
-FastaPerSequenceCountResult count_factors_fasta_dna_w_rc_per_sequence(const std::string& fasta_path);
+FastaPerSequenceCountResult count_factors_fasta_dna_w_rc_per_sequence(
+    const std::string& fasta_path,
+    FastaDnaSanitizationMode sanitization_mode = FastaDnaSanitizationMode::RemoveAmbiguous
+);
 
 /**
  * @brief Counts per-sequence factors from DNA factorization without reverse complement.
@@ -350,6 +400,9 @@ FastaPerSequenceCountResult count_factors_fasta_dna_w_rc_per_sequence(const std:
  * @note Memory-efficient - only counts factors without storing them
  * @note Only A, C, T, G nucleotides are allowed (case insensitive)
  */
-FastaPerSequenceCountResult count_factors_fasta_dna_no_rc_per_sequence(const std::string& fasta_path);
+FastaPerSequenceCountResult count_factors_fasta_dna_no_rc_per_sequence(
+    const std::string& fasta_path,
+    FastaDnaSanitizationMode sanitization_mode = FastaDnaSanitizationMode::RemoveAmbiguous
+);
 
 } // namespace noLZSS

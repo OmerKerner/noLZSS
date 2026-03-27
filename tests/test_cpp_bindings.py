@@ -442,9 +442,16 @@ ATCGNTCG
         temp_path = f.name
     
     try:
+        # Default mode should sanitize ambiguous nucleotides and succeed
+        factors, sentinel_indices, sequence_ids = cpp.factorize_fasta_multiple_dna_w_rc(temp_path)
+        assert isinstance(factors, list) and len(factors) > 0
+        assert isinstance(sentinel_indices, list)
+        assert sequence_ids == ["seq1"]
+
+        # Strict mode should still fail on ambiguous nucleotides
         try:
-            cpp.factorize_fasta_multiple_dna_w_rc(temp_path)
-            assert False, "Should have raised an exception for invalid nucleotide"
+            cpp.factorize_fasta_multiple_dna_w_rc(temp_path, "strict")
+            assert False, "Should have raised an exception for invalid nucleotide in strict mode"
         except RuntimeError as e:
             assert "Invalid nucleotide" in str(e)
     finally:
@@ -535,9 +542,16 @@ ATCGNTCG
         temp_path = f.name
     
     try:
+        # Default mode should sanitize ambiguous nucleotides and succeed
+        factors, sentinel_indices, sequence_ids = cpp.factorize_fasta_multiple_dna_no_rc(temp_path)
+        assert isinstance(factors, list) and len(factors) > 0
+        assert isinstance(sentinel_indices, list)
+        assert sequence_ids == ["seq1"]
+
+        # Strict mode should still fail on ambiguous nucleotides
         try:
-            cpp.factorize_fasta_multiple_dna_no_rc(temp_path)
-            assert False, "Should have raised an exception for invalid nucleotide"
+            cpp.factorize_fasta_multiple_dna_no_rc(temp_path, "strict")
+            assert False, "Should have raised an exception for invalid nucleotide in strict mode"
         except RuntimeError as e:
             assert "Invalid nucleotide" in str(e)
     finally:
@@ -946,29 +960,34 @@ def test_write_factors_binary_file_fasta_validation():
     import tempfile
     import os
     
-    # Test with invalid FASTA file
+    # Test with FASTA containing valid + invalid nucleotides
     with tempfile.NamedTemporaryFile(mode='w', suffix='.fasta', delete=False) as f:
-        f.write(">invalid\nXYZ123")  # Invalid nucleotides
+        f.write(">invalid\nATCGXYZ123")  # Mixed valid/invalid nucleotides
         invalid_path = f.name
     
     with tempfile.NamedTemporaryFile(delete=False) as f:
         binary_path = f.name
     
     try:
+        # Default mode should sanitize ambiguous nucleotides and succeed
+        count_w_rc = cpp.write_factors_binary_file_fasta_multiple_dna_w_rc(invalid_path, binary_path)
+        assert count_w_rc > 0
+
+        count_no_rc = cpp.write_factors_binary_file_fasta_multiple_dna_no_rc(invalid_path, binary_path)
+        assert count_no_rc > 0
+
+        # Strict mode should still reject invalid nucleotides
         try:
-            cpp.write_factors_binary_file_fasta_multiple_dna_w_rc(invalid_path, binary_path)
-            assert False, "Should have raised an exception for invalid nucleotides"
-        except (RuntimeError, ValueError) as e:
-            # Should raise an error for invalid nucleotides
+            cpp.write_factors_binary_file_fasta_multiple_dna_w_rc(invalid_path, binary_path, "strict")
+            assert False, "Should have raised an exception for invalid nucleotides in strict mode"
+        except (RuntimeError, ValueError):
             pass
             
         try:
-            cpp.write_factors_binary_file_fasta_multiple_dna_no_rc(invalid_path, binary_path)
-            assert False, "Should have raised an exception for invalid nucleotides"
-        except (RuntimeError, ValueError) as e:
-            # Should raise an error for invalid nucleotides
+            cpp.write_factors_binary_file_fasta_multiple_dna_no_rc(invalid_path, binary_path, "strict")
+            assert False, "Should have raised an exception for invalid nucleotides in strict mode"
+        except (RuntimeError, ValueError):
             pass
-            
     finally:
         os.unlink(invalid_path)
         os.unlink(binary_path)

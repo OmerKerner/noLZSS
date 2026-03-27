@@ -64,10 +64,11 @@ static void write_fasta_metadata(std::ofstream& os,
 size_t parallel_write_factors_binary_file_fasta_multiple_dna_w_rc(
     const std::string& fasta_path, 
     const std::string& out_path,
-    size_t num_threads) {
+    size_t num_threads,
+    FastaDnaSanitizationMode sanitization_mode) {
     
     // Parse FASTA file into individual sequences with IDs
-    FastaParseResult parse_result = parse_fasta_sequences_and_ids(fasta_path);
+    FastaParseResult parse_result = parse_fasta_sequences_and_ids(fasta_path, sanitization_mode);
 
     // Prepare sequences for factorization (this will validate nucleotides)
     PreparedSequenceResult prep_result = prepare_multiple_dna_sequences_w_rc(parse_result.sequences);
@@ -129,10 +130,11 @@ size_t parallel_write_factors_binary_file_fasta_multiple_dna_w_rc(
 size_t parallel_write_factors_binary_file_fasta_multiple_dna_no_rc(
     const std::string& fasta_path,
     const std::string& out_path,
-    size_t num_threads) {
+    size_t num_threads,
+    FastaDnaSanitizationMode sanitization_mode) {
     
     // Parse FASTA file into individual sequences with IDs
-    FastaParseResult parse_result = parse_fasta_sequences_and_ids(fasta_path);
+    FastaParseResult parse_result = parse_fasta_sequences_and_ids(fasta_path, sanitization_mode);
 
     // Prepare sequences for factorization (this will validate nucleotides)
     PreparedSequenceResult prep_result = prepare_multiple_dna_sequences_no_rc(parse_result.sequences);
@@ -192,11 +194,12 @@ size_t parallel_write_factors_dna_w_reference_fasta_files_to_binary(
     const std::string& reference_fasta_path,
     const std::string& target_fasta_path,
     const std::string& out_path,
-    size_t num_threads) {
+    size_t num_threads,
+    FastaDnaSanitizationMode sanitization_mode) {
     
     // Process both FASTA files and get prepared sequence with reverse complement
     FastaReferenceTargetResult ref_target_concat_w_rc = 
-        prepare_ref_target_dna_w_rc_from_fasta(reference_fasta_path, target_fasta_path);
+        prepare_ref_target_dna_w_rc_from_fasta(reference_fasta_path, target_fasta_path, sanitization_mode);
     
     // Use the core parallel function with the prepared string and start position
     ParallelFactorizer factorizer;
@@ -316,10 +319,11 @@ static std::string sanitize_filename(const std::string& seq_id) {
 size_t parallel_write_factors_binary_file_fasta_dna_w_rc_per_sequence(
     const std::string& fasta_path,
     const std::string& out_dir,
-    size_t num_threads) {
+    size_t num_threads,
+    FastaDnaSanitizationMode sanitization_mode) {
     
     // Parse FASTA file into individual sequences with IDs
-    FastaParseResult parse_result = parse_fasta_sequences_and_ids(fasta_path);
+    FastaParseResult parse_result = parse_fasta_sequences_and_ids(fasta_path, sanitization_mode);
     
     size_t num_sequences = parse_result.sequences.size();
     
@@ -387,10 +391,11 @@ size_t parallel_write_factors_binary_file_fasta_dna_w_rc_per_sequence(
 size_t parallel_write_factors_binary_file_fasta_dna_no_rc_per_sequence(
     const std::string& fasta_path,
     const std::string& out_dir,
-    size_t num_threads) {
+    size_t num_threads,
+    FastaDnaSanitizationMode sanitization_mode) {
     
     // Parse FASTA file into individual sequences with IDs
-    FastaParseResult parse_result = parse_fasta_sequences_and_ids(fasta_path);
+    FastaParseResult parse_result = parse_fasta_sequences_and_ids(fasta_path, sanitization_mode);
     
     size_t num_sequences = parse_result.sequences.size();
     

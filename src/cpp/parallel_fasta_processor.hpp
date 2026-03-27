@@ -29,7 +29,8 @@ namespace noLZSS {
 size_t parallel_write_factors_binary_file_fasta_multiple_dna_w_rc(
     const std::string& fasta_path, 
     const std::string& out_path,
-    size_t num_threads = 0
+    size_t num_threads = 0,
+    FastaDnaSanitizationMode sanitization_mode = FastaDnaSanitizationMode::RemoveAmbiguous
 );
 
 /**
@@ -57,7 +58,8 @@ size_t parallel_write_factors_binary_file_fasta_multiple_dna_w_rc(
 size_t parallel_write_factors_binary_file_fasta_multiple_dna_no_rc(
     const std::string& fasta_path,
     const std::string& out_path,
-    size_t num_threads = 0
+    size_t num_threads = 0,
+    FastaDnaSanitizationMode sanitization_mode = FastaDnaSanitizationMode::RemoveAmbiguous
 );
 
 /**
@@ -88,7 +90,8 @@ size_t parallel_write_factors_dna_w_reference_fasta_files_to_binary(
     const std::string& reference_fasta_path,
     const std::string& target_fasta_path,
     const std::string& out_path,
-    size_t num_threads = 0
+    size_t num_threads = 0,
+    FastaDnaSanitizationMode sanitization_mode = FastaDnaSanitizationMode::RemoveAmbiguous
 );
 
 /**
@@ -115,7 +118,8 @@ size_t parallel_write_factors_dna_w_reference_fasta_files_to_binary(
 size_t parallel_write_factors_binary_file_fasta_dna_w_rc_per_sequence(
     const std::string& fasta_path,
     const std::string& out_dir,
-    size_t num_threads = 0
+    size_t num_threads = 0,
+    FastaDnaSanitizationMode sanitization_mode = FastaDnaSanitizationMode::RemoveAmbiguous
 );
 
 /**
@@ -142,7 +146,8 @@ size_t parallel_write_factors_binary_file_fasta_dna_w_rc_per_sequence(
 size_t parallel_write_factors_binary_file_fasta_dna_no_rc_per_sequence(
     const std::string& fasta_path,
     const std::string& out_dir,
-    size_t num_threads = 0
+    size_t num_threads = 0,
+    FastaDnaSanitizationMode sanitization_mode = FastaDnaSanitizationMode::RemoveAmbiguous
 );
 
 } // namespace noLZSS

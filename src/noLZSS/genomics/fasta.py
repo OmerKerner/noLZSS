@@ -230,7 +230,8 @@ def read_fasta_auto(filepath: Union[str, Path]) -> Union[
 
 def write_factors_dna_w_reference_fasta_files_to_binary(reference_fasta_path: Union[str, Path], 
                                                         target_fasta_path: Union[str, Path],
-                                                        output_path: Union[str, Path]) -> int:
+                                                        output_path: Union[str, Path],
+                                                        sanitize_mode: str = "remove_ambiguous") -> int:
     """
     Factorize DNA sequences from FASTA files with reference and write factors to binary file.
     
@@ -242,6 +243,9 @@ def write_factors_dna_w_reference_fasta_files_to_binary(reference_fasta_path: Un
         reference_fasta_path: Path to reference FASTA file containing DNA sequences
         target_fasta_path: Path to target FASTA file containing DNA sequences to factorize
         output_path: Path to output file where binary factors will be written
+        sanitize_mode: FASTA DNA sanitization mode:
+            - "remove_ambiguous" (default): remove non-ACGT characters before factorization
+            - "strict": raise an error if non-ACGT characters are present
         
     Returns:
         Number of factors written to the output file
@@ -256,7 +260,8 @@ def write_factors_dna_w_reference_fasta_files_to_binary(reference_fasta_path: Un
         - Factor start positions are absolute positions in the combined reference+target string
         - Supports reverse complement matching for DNA sequences (indicated by MSB in reference field)
         - All sequences from both FASTA files are concatenated with sentinel separators
-        - Only nucleotides A, C, T, G are allowed (case-insensitive)
+        - In default mode, non-ACGT symbols are removed before factorization
+        - Sequence positions/lengths are based on sanitized sequences
         - This function overwrites the output file if it exists
         
     Warning:
@@ -279,5 +284,9 @@ def write_factors_dna_w_reference_fasta_files_to_binary(reference_fasta_path: Un
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     
-    return _write_factors_dna_w_reference_fasta_files_to_binary(str(reference_path), str(target_path), str(output_path))
-
+    if sanitize_mode not in {"remove_ambiguous", "strict"}:
+        raise ValueError("sanitize_mode must be 'remove_ambiguous' or 'strict'")
+    
+    return _write_factors_dna_w_reference_fasta_files_to_binary(
+        str(reference_path), str(target_path), str(output_path), sanitize_mode
+    )
