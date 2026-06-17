@@ -887,12 +887,29 @@ def plot_multiple_seq_self_lz_factor_plot_from_file(
                     get_ipython()  # noqa: F821
                     return app  # In notebook, just return for display
                 except NameError:
-                    # Not in notebook, serve the app
-                    if __name__ == "__main__":
-                        pn.serve(app, show=True, port=5007)
-                    else:
-                        print("To serve the app, run: panel serve script.py --show")
-                        return app
+                    # Not in a notebook: serve the app on a local port (blocks
+                    # until interrupted). Pass return_panel=True or show_plot=False
+                    # to get the Panel object back instead of serving.
+                    import threading
+                    import webbrowser
+                    port = 5007
+                    url = f'http://localhost:{port}'
+                    print(f"\nInteractive plot server starting at: {url}")
+                    print("Opening it in your browser; if it does not open, "
+                          "navigate to the URL above.")
+                    print("Press Ctrl+C to stop the server.\n")
+                    # Open the browser in a daemon thread, NOT via pn.serve(show=True).
+                    # show=True calls webbrowser.open() on the Tornado IO loop, and on
+                    # headless/WSL systems (e.g. with Windows interop disabled) browser
+                    # detection blocks indefinitely, freezing the IO loop so the page
+                    # "loads forever". In a daemon thread a hung open() is harmless.
+                    threading.Thread(target=webbrowser.open, args=(url,), daemon=True).start()
+                    # websocket_origin='*' lets the browser's WebSocket connect no matter
+                    # which host it used (localhost, 127.0.0.1, a WSL/remote IP, or a
+                    # hostname). Bokeh otherwise only accepts Origin 'localhost:<port>'
+                    # and rejects every other origin with HTTP 403, so the plot never
+                    # loads over the WebSocket even though the HTML page renders.
+                    pn.serve(app, show=False, port=port, websocket_origin='*')
         elif return_panel:
             return app
         else:
