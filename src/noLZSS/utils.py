@@ -2,12 +2,13 @@
 Utility functions for input validation, alphabet analysis, file I/O helpers, and visualization.
 
 This module provides reusable utilities for the noLZSS package, including
-input validation, sentinel handling, alphabet analysis, binary file I/O, and plotting functions.
+input validation, sentinel handling, alphabet analysis, binary file I/O with gzip support, and plotting functions.
 """
 
 from typing import Union, Dict, Any, List, Tuple, Optional
 import math
 import struct
+import gzip
 from pathlib import Path
 from collections import Counter
 import warnings
@@ -56,6 +57,46 @@ def validate_input(data: Union[str, bytes]) -> bytes:
         raise InvalidInputError("Input data contains null bytes")
     
     return data
+
+
+def _is_gzipped_file(filepath: Path) -> bool:
+    """
+    Check if a file is gzip-compressed by reading its magic bytes.
+    
+    Args:
+        filepath: Path to the file to check
+        
+    Returns:
+        True if the file is gzipped, False otherwise
+    """
+    try:
+        with open(filepath, 'rb') as f:
+            magic = f.read(2)
+            return magic == b'\x1f\x8b'
+    except:
+        return False
+
+
+def _open_binary_file(filepath: Path, mode: str = 'rb'):
+    """
+    Open a binary file, automatically handling gzip compression.
+    
+    Args:
+        filepath: Path to the file to open
+        mode: File open mode ('rb' for reading, 'wb' for writing)
+        
+    Returns:
+        File-like object (regular file or gzip file)
+    """
+    if mode.startswith('r'):
+        # For reading, detect if file is gzipped
+        if _is_gzipped_file(filepath):
+            return gzip.open(filepath, mode)
+        else:
+            return open(filepath, mode)
+    else:
+        # For writing, always create gzipped files
+        return gzip.open(filepath, mode)
 
 
 def analyze_alphabet(data: Union[str, bytes]) -> Dict[str, Any]:
@@ -107,8 +148,10 @@ def read_factors_binary_file(filepath: Union[str, Path]) -> List[Tuple[int, int,
     """
     Read factors from a binary file written by write_factors_binary_file.
     
+    This function automatically detects and handles both gzipped and non-gzipped files.
+    
     Args:
-        filepath: Path to the binary factors file
+        filepath: Path to the binary factors file (gzipped or not)
         
     Returns:
         List of (position, length, ref) tuples
@@ -121,7 +164,7 @@ def read_factors_binary_file(filepath: Union[str, Path]) -> List[Tuple[int, int,
         raise NoLZSSError(f"File not found: {filepath}")
     
     try:
-        with open(filepath, 'rb') as f:
+        with _open_binary_file(filepath, 'rb') as f:
             # Read footer from the end of file
             f.seek(-48, 2)  # Seek to 48 bytes before end (new footer size with total_length)
             footer_data = f.read(48)  # magic 8 + 5*8 = 48
@@ -162,9 +205,10 @@ def read_binary_file_metadata(filepath: Union[str, Path]) -> Dict[str, Any]:
     This function efficiently reads just the metadata (sequence names, sentinel indices,
     and counts) from the footer of binary files, without loading the factor data.
     This is useful for quickly inspecting file contents or gathering statistics.
+    Automatically detects and handles both gzipped and non-gzipped files.
     
     Args:
-        filepath: Path to the binary factors file with metadata
+        filepath: Path to the binary factors file with metadata (gzipped or not)
         
     Returns:
         Dictionary containing:
@@ -182,7 +226,7 @@ def read_binary_file_metadata(filepath: Union[str, Path]) -> Dict[str, Any]:
         raise NoLZSSError(f"File not found: {filepath}")
     
     try:
-        with open(filepath, 'rb') as f:
+        with _open_binary_file(filepath, 'rb') as f:
             # Read footer from the end of file
             f.seek(-48, 2)  # Seek to 48 bytes before end (footer struct size with total_length)
             footer_basic = f.read(48)
@@ -253,9 +297,10 @@ def read_factors_binary_file_with_metadata(filepath: Union[str, Path]) -> Dict[s
     
     This function reads binary files written by write_factors_binary_file_fasta_multiple_dna_*
     functions that contain metadata including sequence names and sentinel factor indices.
+    Automatically detects and handles both gzipped and non-gzipped files.
     
     Args:
-        filepath: Path to the binary factors file with metadata
+        filepath: Path to the binary factors file with metadata (gzipped or not)
         
     Returns:
         Dictionary containing:
@@ -276,7 +321,7 @@ def read_factors_binary_file_with_metadata(filepath: Union[str, Path]) -> Dict[s
         raise NoLZSSError(f"File not found: {filepath}")
     
     try:
-        with open(filepath, 'rb') as f:
+        with _open_binary_file(filepath, 'rb') as f:
             # Read footer from the end of file
             f.seek(-48, 2)  # Seek to 48 bytes before end (footer struct size with total_length)
             footer_basic = f.read(48)

@@ -108,28 +108,38 @@ def count_factors_file(filepath: Union[str, Path], validate: bool = True) -> int
 
 
 def write_factors_binary_file(
-    data: Union[str, bytes], 
+    input_filepath: Union[str, Path],
     output_filepath: Union[str, Path]
-) -> None:
+) -> int:
     """
-    Factorize input and write the factors to a binary file.
+    Read text from file, factorize it, and write the factors to a gzipped binary file.
     
     Args:
-        data: Input string or bytes to factorize
-        output_filepath: Path where to write the binary factors
+        input_filepath: Path to input file containing text to factorize
+        output_filepath: Path where to write the binary factors (will be gzipped)
+        
+    Returns:
+        Number of factors written to the file
         
     Raises:
-        ValueError: If input is invalid
-        TypeError: If input type is not supported
+        ValueError: If input file cannot be read
         OSError: If unable to write to output file
+        
+    Note:
+        Output files are automatically gzipped for compression.
+        The function can read back both gzipped and non-gzipped files.
     """
-    data = validate_input(data)
-    
+    input_filepath = Path(input_filepath)
     output_filepath = Path(output_filepath)
+    
+    # Ensure input file exists
+    if not input_filepath.exists():
+        raise ValueError(f"Input file not found: {input_filepath}")
+    
     # Ensure output directory exists
     output_filepath.parent.mkdir(parents=True, exist_ok=True)
     
-    _write_factors_binary_file(data, str(output_filepath))
+    return _write_factors_binary_file(str(input_filepath), str(output_filepath))
 
 
 def factorize_with_info(data: Union[str, bytes], validate: bool = True) -> dict:
