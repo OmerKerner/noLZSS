@@ -53,7 +53,7 @@ panel = [
 [tool.scikit-build]
 wheel.expand-macos-universal-tags = true
 build-dir = "_skbuild"
-cmake.minimum-version = "3.20"
+cmake.version = ">=3.20"
 
 [tool.scikit-build.cmake.define]
 CMAKE_CXX_STANDARD = "17"
