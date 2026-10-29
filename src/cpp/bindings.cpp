@@ -36,6 +36,12 @@ static noLZSS::FastaDnaSanitizationMode parse_fasta_sanitization_mode(const std:
     throw std::invalid_argument("Invalid sanitize_mode: '" + mode + "'. Expected 'remove_ambiguous' or 'strict'.");
 }
 
+static noLZSS::RefPolicy parse_ref_policy(const std::string& policy) {
+    if (policy == "first") return noLZSS::RefPolicy::First;
+    if (policy == "last") return noLZSS::RefPolicy::Last;
+    throw std::invalid_argument("ref_policy must be 'first' or 'last', got '" + policy + "'");
+}
+
 PYBIND11_MODULE(_noLZSS, m) {
     m.doc() = "Non-overlapping Lempel-Ziv-Storer-Szymanski factorization\n\n"
               "This module provides efficient text factorization using compressed suffix trees.";
@@ -53,7 +59,7 @@ PYBIND11_MODULE(_noLZSS, m) {
         .def_readonly("sentinel_factor_indices", &noLZSS::FastaFactorizationResult::sentinel_factor_indices, "Indices of factors that are sentinels (sequence separators)");
 
     // factorize function documentation
-    m.def("factorize", [](py::buffer b) {
+    m.def("factorize", [](py::buffer b, const std::string& ref_policy) {
         // Accept any bytes-like 1-byte-per-item contiguous buffer (e.g. bytes, bytearray, memoryview)
         py::buffer_info info = b.request();
         if (info.itemsize != 1) {
@@ -68,19 +74,20 @@ PYBIND11_MODULE(_noLZSS, m) {
 
         // Release GIL while doing heavy C++ work
         py::gil_scoped_release release;
-        auto factors = noLZSS::factorize(sv);
+        auto factors = noLZSS::factorize(sv, 0, parse_ref_policy(ref_policy));
         py::gil_scoped_acquire acquire;
 
         py::list out;
         for (auto &f : factors) out.append(py::make_tuple(f.start, f.length, f.ref));
         return out;
-    }, py::arg("data"), R"doc(Factorize a text string into noLZSS factors.
+    }, py::arg("data"), py::arg("ref_policy") = "first", R"doc(Factorize a text string into noLZSS factors.
 
 This is the main factorization function for in-memory text processing.
 It accepts any Python bytes-like object and returns a list of (start, length) tuples.
 
 Args:
     data: Python bytes-like object containing text
+    ref_policy: "first" (default) reports the earliest previous occurrence of each factor; "last" reports the closest one (factor boundaries are identical)
 
 Returns:
     List of (start, length, ref) tuples representing the factorization
@@ -93,16 +100,16 @@ Note:
 )doc");
 
     // factorize_file function documentation
-    m.def("factorize_file", [](const std::string& path, size_t reserve_hint) {
+    m.def("factorize_file", [](const std::string& path, size_t reserve_hint, const std::string& ref_policy) {
         // Release GIL while doing heavy C++ work
         py::gil_scoped_release release;
-        auto factors = noLZSS::factorize_file(path, reserve_hint);
+        auto factors = noLZSS::factorize_file(path, reserve_hint, 0, parse_ref_policy(ref_policy));
         py::gil_scoped_acquire acquire;
 
         py::list out;
         for (auto &f : factors) out.append(py::make_tuple(f.start, f.length, f.ref));
         return out;
-    }, py::arg("path"), py::arg("reserve_hint") = 0, R"doc(Factorize text from file into noLZSS factors.
+    }, py::arg("path"), py::arg("reserve_hint") = 0, py::arg("ref_policy") = "first", R"doc(Factorize text from file into noLZSS factors.
 
 Reads text from a file and performs factorization. This is more memory-efficient
 for large files as it avoids loading the entire file into memory.
@@ -110,6 +117,7 @@ for large files as it avoids loading the entire file into memory.
 Args:
     path: Path to input file containing text
     reserve_hint: Optional hint for reserving space in output vector (0 = no hint)
+    ref_policy: "first" (default) reports the earliest previous occurrence of each factor; "last" reports the closest one (factor boundaries are identical)
 
 Returns:
     List of (start, length, ref) tuples representing the factorization
@@ -177,14 +185,14 @@ Note:
 )doc");
 
     // write_factors_binary_file function documentation
-    m.def("write_factors_binary_file", [](const std::string& in_path, const std::string& out_path) {
+    m.def("write_factors_binary_file", [](const std::string& in_path, const std::string& out_path, const std::string& ref_policy) {
         // Release GIL while doing heavy C++ work
         py::gil_scoped_release release;
-        size_t count = noLZSS::write_factors_binary_file(in_path, out_path);
+        size_t count = noLZSS::write_factors_binary_file(in_path, out_path, parse_ref_policy(ref_policy));
         py::gil_scoped_acquire acquire;
 
         return count;
-    }, py::arg("in_path"), py::arg("out_path"), R"doc(Write noLZSS factors from file to binary output file.
+    }, py::arg("in_path"), py::arg("out_path"), py::arg("ref_policy") = "first", R"doc(Write noLZSS factors from file to binary output file.
 
 Reads text from an input file, performs factorization, and writes the factors
 in binary format with metadata header to an output file.
@@ -192,6 +200,7 @@ in binary format with metadata header to an output file.
 Args:
     in_path: Path to input file containing text
     out_path: Path to output file where binary factors will be written
+    ref_policy: "first" (default) reports the earliest previous occurrence of each factor; "last" reports the closest one (factor boundaries are identical)
 
 Returns:
     Number of factors written to the output file
@@ -204,7 +213,7 @@ Note:
     // DNA-aware factorization functions with reverse complement support
 
     // factorize_dna_w_rc function documentation
-    m.def("factorize_dna_w_rc", [](py::buffer b) {
+    m.def("factorize_dna_w_rc", [](py::buffer b, const std::string& ref_policy) {
         // Accept any bytes-like 1-byte-per-item contiguous buffer (e.g. bytes, bytearray, memoryview)
         py::buffer_info info = b.request();
         if (info.itemsize != 1) {
@@ -219,13 +228,13 @@ Note:
 
         // Release GIL while doing heavy C++ work
         py::gil_scoped_release release;
-        auto factors = noLZSS::factorize_dna_w_rc(sv);
+        auto factors = noLZSS::factorize_dna_w_rc(sv, parse_ref_policy(ref_policy));
         py::gil_scoped_acquire acquire;
 
         py::list out;
         for (auto &f : factors) out.append(py::make_tuple(f.start, f.length, f.ref & ~noLZSS::RC_MASK, noLZSS::is_rc(f.ref)));
         return out;
-    }, py::arg("data"), R"doc(Factorize DNA text with reverse complement awareness into noLZSS factors.
+    }, py::arg("data"), py::arg("ref_policy") = "first", R"doc(Factorize DNA text with reverse complement awareness into noLZSS factors.
 
 Performs non-overlapping Lempel-Ziv-Storer-Szymanski factorization on DNA sequences,
 considering both forward and reverse complement matches. This is particularly useful
@@ -233,6 +242,7 @@ for genomic data where reverse complement patterns are biologically significant.
 
 Args:
     data: Python bytes-like object containing DNA text
+    ref_policy: "first" (default) reports the earliest previous occurrence of each factor; "last" reports the closest one (factor boundaries are identical)
 
 Returns:
     List of (start, length, ref, is_rc) tuples representing the factorization
@@ -246,16 +256,16 @@ Note:
 )doc");
 
     // factorize_file_dna_w_rc function documentation
-    m.def("factorize_file_dna_w_rc", [](const std::string& path, size_t reserve_hint) {
+    m.def("factorize_file_dna_w_rc", [](const std::string& path, size_t reserve_hint, const std::string& ref_policy) {
         // Release GIL while doing heavy C++ work
         py::gil_scoped_release release;
-        auto factors = noLZSS::factorize_file_dna_w_rc(path, reserve_hint);
+        auto factors = noLZSS::factorize_file_dna_w_rc(path, reserve_hint, parse_ref_policy(ref_policy));
         py::gil_scoped_acquire acquire;
 
         py::list out;
         for (auto &f : factors) out.append(py::make_tuple(f.start, f.length, f.ref & ~noLZSS::RC_MASK, noLZSS::is_rc(f.ref)));
         return out;
-    }, py::arg("path"), py::arg("reserve_hint") = 0, R"doc(Factorize DNA text from file with reverse complement awareness into noLZSS factors.
+    }, py::arg("path"), py::arg("reserve_hint") = 0, py::arg("ref_policy") = "first", R"doc(Factorize DNA text from file with reverse complement awareness into noLZSS factors.
 
 Reads DNA text from a file and performs factorization considering both forward
 and reverse complement matches. This is more memory-efficient for large genomic files.
@@ -263,6 +273,7 @@ and reverse complement matches. This is more memory-efficient for large genomic 
 Args:
     path: Path to input file containing DNA text
     reserve_hint: Optional hint for reserving space in output vector (0 = no hint)
+    ref_policy: "first" (default) reports the earliest previous occurrence of each factor; "last" reports the closest one (factor boundaries are identical)
 
 Returns:
     List of (start, length, ref, is_rc) tuples representing the factorization
@@ -331,14 +342,14 @@ Note:
 )doc");
 
     // write_factors_binary_file_dna_w_rc function documentation
-    m.def("write_factors_binary_file_dna_w_rc", [](const std::string& in_path, const std::string& out_path) {
+    m.def("write_factors_binary_file_dna_w_rc", [](const std::string& in_path, const std::string& out_path, const std::string& ref_policy) {
         // Release GIL while doing heavy C++ work
         py::gil_scoped_release release;
-        size_t count = noLZSS::write_factors_binary_file_dna_w_rc(in_path, out_path);
+        size_t count = noLZSS::write_factors_binary_file_dna_w_rc(in_path, out_path, parse_ref_policy(ref_policy));
         py::gil_scoped_acquire acquire;
 
         return count;
-    }, py::arg("in_path"), py::arg("out_path"), R"doc(Write noLZSS factors from DNA file with reverse complement awareness to binary output file.
+    }, py::arg("in_path"), py::arg("out_path"), py::arg("ref_policy") = "first", R"doc(Write noLZSS factors from DNA file with reverse complement awareness to binary output file.
 
 Reads DNA text from an input file, performs factorization with reverse complement support,
 and writes the factors in binary format with metadata header to an output file.
@@ -346,6 +357,7 @@ and writes the factors in binary format with metadata header to an output file.
 Args:
     in_path: Path to input file containing DNA text
     out_path: Path to output file where binary factors will be written
+    ref_policy: "first" (default) reports the earliest previous occurrence of each factor; "last" reports the closest one (factor boundaries are identical)
 
 Returns:
     Number of factors written to the output file
@@ -358,7 +370,7 @@ Note:
 
 
     // factorize_multiple_dna_w_rc function documentation
-    m.def("factorize_multiple_dna_w_rc", [](py::buffer b) {
+    m.def("factorize_multiple_dna_w_rc", [](py::buffer b, const std::string& ref_policy) {
         // Accept any bytes-like 1-byte-per-item contiguous buffer
         py::buffer_info info = b.request();
         if (info.itemsize != 1) {
@@ -373,13 +385,13 @@ Note:
 
         // Release GIL while doing heavy C++ work
         py::gil_scoped_release release;
-        auto factors = noLZSS::factorize_multiple_dna_w_rc(sv);
+        auto factors = noLZSS::factorize_multiple_dna_w_rc(sv, 0, parse_ref_policy(ref_policy));
         py::gil_scoped_acquire acquire;
 
         py::list out;
         for (auto &f : factors) out.append(py::make_tuple(f.start, f.length, f.ref & ~noLZSS::RC_MASK, noLZSS::is_rc(f.ref)));
         return out;
-    }, py::arg("data"), R"doc(Factorize DNA text with multiple sequences and reverse complement awareness.
+    }, py::arg("data"), py::arg("ref_policy") = "first", R"doc(Factorize DNA text with multiple sequences and reverse complement awareness.
 
 Performs non-overlapping Lempel-Ziv-Storer-Szymanski factorization on DNA text
 containing multiple sequences separated by sentinels, considering both forward
@@ -387,6 +399,7 @@ and reverse complement matches.
 
 Args:
     data: Python bytes-like object containing DNA text with multiple sequences and sentinels
+    ref_policy: "first" (default) reports the earliest previous occurrence of each factor; "last" reports the closest one (factor boundaries are identical)
 
 Returns:
     List of (start, length, ref, is_rc) tuples representing the factorization
@@ -397,16 +410,16 @@ Note:
 )doc");
 
     // factorize_file_multiple_dna_w_rc function documentation
-    m.def("factorize_file_multiple_dna_w_rc", [](const std::string& path, size_t reserve_hint) {
+    m.def("factorize_file_multiple_dna_w_rc", [](const std::string& path, size_t reserve_hint, const std::string& ref_policy) {
         // Release GIL while doing heavy C++ work
         py::gil_scoped_release release;
-        auto factors = noLZSS::factorize_file_multiple_dna_w_rc(path, reserve_hint);
+        auto factors = noLZSS::factorize_file_multiple_dna_w_rc(path, reserve_hint, 0, parse_ref_policy(ref_policy));
         py::gil_scoped_acquire acquire;
 
         py::list out;
         for (auto &f : factors) out.append(py::make_tuple(f.start, f.length, f.ref & ~noLZSS::RC_MASK, noLZSS::is_rc(f.ref)));
         return out;
-    }, py::arg("path"), py::arg("reserve_hint") = 0, R"doc(Factorize DNA text from file with multiple sequences and reverse complement awareness.
+    }, py::arg("path"), py::arg("reserve_hint") = 0, py::arg("ref_policy") = "first", R"doc(Factorize DNA text from file with multiple sequences and reverse complement awareness.
 
 Reads DNA text from a file and performs factorization with multiple sequences
 and reverse complement matches.
@@ -414,6 +427,7 @@ and reverse complement matches.
 Args:
     path: Path to input file containing DNA text with multiple sequences
     reserve_hint: Optional hint for reserving space in output vector (0 = no hint)
+    ref_policy: "first" (default) reports the earliest previous occurrence of each factor; "last" reports the closest one (factor boundaries are identical)
 
 Returns:
     List of (start, length, ref, is_rc) tuples representing the factorization
@@ -482,14 +496,14 @@ Note:
 )doc");
 
     // write_factors_binary_file_multiple_dna_w_rc function documentation
-    m.def("write_factors_binary_file_multiple_dna_w_rc", [](const std::string& in_path, const std::string& out_path) {
+    m.def("write_factors_binary_file_multiple_dna_w_rc", [](const std::string& in_path, const std::string& out_path, const std::string& ref_policy) {
         // Release GIL while doing heavy C++ work
         py::gil_scoped_release release;
-        size_t count = noLZSS::write_factors_binary_file_multiple_dna_w_rc(in_path, out_path);
+        size_t count = noLZSS::write_factors_binary_file_multiple_dna_w_rc(in_path, out_path, 0, parse_ref_policy(ref_policy));
         py::gil_scoped_acquire acquire;
 
         return count;
-    }, py::arg("in_path"), py::arg("out_path"), R"doc(Write noLZSS factors from DNA file with multiple sequences and reverse complement awareness to binary output file.
+    }, py::arg("in_path"), py::arg("out_path"), py::arg("ref_policy") = "first", R"doc(Write noLZSS factors from DNA file with multiple sequences and reverse complement awareness to binary output file.
 
 Reads DNA text from an input file, performs factorization with multiple sequences and reverse complement support,
 and writes the factors in binary format with metadata header to an output file.
@@ -497,6 +511,7 @@ and writes the factors in binary format with metadata header to an output file.
 Args:
     in_path: Path to input file containing DNA text with multiple sequences
     out_path: Path to output file where binary factors will be written
+    ref_policy: "first" (default) reports the earliest previous occurrence of each factor; "last" reports the closest one (factor boundaries are identical)
 
 Returns:
     Number of factors written to the output file
@@ -508,10 +523,10 @@ Note:
 )doc");
 
 // FASTA factorization function
-m.def("factorize_fasta_multiple_dna_w_rc", [](const std::string& fasta_path, const std::string& sanitize_mode) {
+m.def("factorize_fasta_multiple_dna_w_rc", [](const std::string& fasta_path, const std::string& sanitize_mode, const std::string& ref_policy) {
     // Release GIL while doing heavy C++ work
     py::gil_scoped_release release;
-    auto result = noLZSS::factorize_fasta_multiple_dna_w_rc(fasta_path, parse_fasta_sanitization_mode(sanitize_mode));
+    auto result = noLZSS::factorize_fasta_multiple_dna_w_rc(fasta_path, parse_fasta_sanitization_mode(sanitize_mode), parse_ref_policy(ref_policy));
     py::gil_scoped_acquire acquire;
 
     // Convert factors to Python tuples
@@ -533,7 +548,7 @@ m.def("factorize_fasta_multiple_dna_w_rc", [](const std::string& fasta_path, con
     }
     
     return py::make_tuple(factors_list, sentinel_indices_list, sequence_ids_list);
-}, py::arg("fasta_path"), py::arg("sanitize_mode") = "remove_ambiguous", R"doc(Factorize multiple DNA sequences from a FASTA file with reverse complement awareness.
+}, py::arg("fasta_path"), py::arg("sanitize_mode") = "remove_ambiguous", py::arg("ref_policy") = "first", R"doc(Factorize multiple DNA sequences from a FASTA file with reverse complement awareness.
 
 Reads a FASTA file containing DNA sequences, parses them into individual sequences,
 prepares them for factorization using prepare_multiple_dna_sequences_w_rc(), and then
@@ -541,6 +556,7 @@ performs noLZSS factorization with reverse complement awareness.
 
 Args:
 fasta_path: Path to the FASTA file containing DNA sequences
+    ref_policy: "first" (default) reports the earliest previous occurrence of each factor; "last" reports the closest one (factor boundaries are identical)
 
 Returns:
 Tuple of (factors, sentinel_factor_indices, sequence_ids) where:
@@ -560,10 +576,10 @@ Nucleotide validation is performed by prepare_multiple_dna_sequences_w_rc()
 ref field has RC_MASK cleared. is_rc boolean indicates if this was a reverse complement match.
 )doc");
 
-m.def("factorize_dna_rc_w_ref_fasta_files", [](const std::string& reference_fasta_path, const std::string& target_fasta_path, const std::string& sanitize_mode) {
+m.def("factorize_dna_rc_w_ref_fasta_files", [](const std::string& reference_fasta_path, const std::string& target_fasta_path, const std::string& sanitize_mode, const std::string& ref_policy) {
     py::gil_scoped_release release;
     auto result = noLZSS::factorize_dna_rc_w_ref_fasta_files(
-        reference_fasta_path, target_fasta_path, parse_fasta_sanitization_mode(sanitize_mode));
+        reference_fasta_path, target_fasta_path, parse_fasta_sanitization_mode(sanitize_mode), parse_ref_policy(ref_policy));
     py::gil_scoped_acquire acquire;
 
     py::list factors_list;
@@ -582,7 +598,7 @@ m.def("factorize_dna_rc_w_ref_fasta_files", [](const std::string& reference_fast
     }
 
     return py::make_tuple(factors_list, sentinel_indices_list, sequence_ids_list);
-}, py::arg("reference_fasta_path"), py::arg("target_fasta_path"), py::arg("sanitize_mode") = "remove_ambiguous", R"doc(Factorize DNA sequences from reference and target FASTA files with reverse complement awareness.
+}, py::arg("reference_fasta_path"), py::arg("target_fasta_path"), py::arg("sanitize_mode") = "remove_ambiguous", py::arg("ref_policy") = "first", R"doc(Factorize DNA sequences from reference and target FASTA files with reverse complement awareness.
 
 Reads reference and target FASTA files, concatenates their sequences with sentinels, and performs
 reverse-complement-aware factorization starting from the target region.
@@ -590,6 +606,7 @@ reverse-complement-aware factorization starting from the target region.
 Args:
 reference_fasta_path: Path to reference FASTA file containing DNA sequences
 target_fasta_path: Path to target FASTA file containing DNA sequences to factorize
+    ref_policy: "first" (default) reports the earliest previous occurrence of each factor; "last" reports the closest one (factor boundaries are identical)
 
 Returns:
 Tuple of (factors, sentinel_factor_indices, sequence_ids) where:
@@ -608,10 +625,10 @@ Note:
 )doc");
 
 // FASTA factorization function (no reverse complement)
-m.def("factorize_fasta_multiple_dna_no_rc", [](const std::string& fasta_path, const std::string& sanitize_mode) {
+m.def("factorize_fasta_multiple_dna_no_rc", [](const std::string& fasta_path, const std::string& sanitize_mode, const std::string& ref_policy) {
     // Release GIL while doing heavy C++ work
     py::gil_scoped_release release;
-    auto result = noLZSS::factorize_fasta_multiple_dna_no_rc(fasta_path, parse_fasta_sanitization_mode(sanitize_mode));
+    auto result = noLZSS::factorize_fasta_multiple_dna_no_rc(fasta_path, parse_fasta_sanitization_mode(sanitize_mode), parse_ref_policy(ref_policy));
     py::gil_scoped_acquire acquire;
 
     // Convert factors to Python tuples
@@ -633,7 +650,7 @@ m.def("factorize_fasta_multiple_dna_no_rc", [](const std::string& fasta_path, co
     }
     
     return py::make_tuple(factors_list, sentinel_indices_list, sequence_ids_list);
-}, py::arg("fasta_path"), py::arg("sanitize_mode") = "remove_ambiguous", R"doc(Factorize multiple DNA sequences from a FASTA file without reverse complement awareness.
+}, py::arg("fasta_path"), py::arg("sanitize_mode") = "remove_ambiguous", py::arg("ref_policy") = "first", R"doc(Factorize multiple DNA sequences from a FASTA file without reverse complement awareness.
 
 Reads a FASTA file containing DNA sequences, parses them into individual sequences,
 prepares them for factorization using prepare_multiple_dna_sequences_no_rc(), and then
@@ -641,6 +658,7 @@ performs noLZSS factorization without reverse complement awareness.
 
 Args:
 fasta_path: Path to the FASTA file containing DNA sequences
+    ref_policy: "first" (default) reports the earliest previous occurrence of each factor; "last" reports the closest one (factor boundaries are identical)
 
 Returns:
 Tuple of (factors, sentinel_factor_indices, sequence_ids) where:
@@ -661,14 +679,14 @@ ref field has RC_MASK cleared. is_rc boolean indicates if this was a reverse com
 )doc");
 
 // FASTA binary factorization function (with reverse complement)
-m.def("write_factors_binary_file_fasta_multiple_dna_w_rc", [](const std::string& fasta_path, const std::string& out_path, const std::string& sanitize_mode) {
+m.def("write_factors_binary_file_fasta_multiple_dna_w_rc", [](const std::string& fasta_path, const std::string& out_path, const std::string& sanitize_mode, const std::string& ref_policy) {
     // Release GIL while doing heavy C++ work
     py::gil_scoped_release release;
     size_t count = noLZSS::write_factors_binary_file_fasta_multiple_dna_w_rc(
-        fasta_path, out_path, parse_fasta_sanitization_mode(sanitize_mode));
+        fasta_path, out_path, parse_fasta_sanitization_mode(sanitize_mode), parse_ref_policy(ref_policy));
     py::gil_scoped_acquire acquire;
     return count;
-}, py::arg("fasta_path"), py::arg("out_path"), py::arg("sanitize_mode") = "remove_ambiguous", R"doc(Write noLZSS factors from multiple DNA sequences in a FASTA file with reverse complement awareness to a binary output file.
+}, py::arg("fasta_path"), py::arg("out_path"), py::arg("sanitize_mode") = "remove_ambiguous", py::arg("ref_policy") = "first", R"doc(Write noLZSS factors from multiple DNA sequences in a FASTA file with reverse complement awareness to a binary output file.
 
 This function reads DNA sequences from a FASTA file, parses them into individual sequences,
 prepares them for factorization, performs factorization with reverse complement awareness, 
@@ -678,6 +696,7 @@ sentinel factor indices to an output file.
 Args:
     fasta_path: Path to input FASTA file containing DNA sequences
     out_path: Path to output file where binary factors will be written
+    ref_policy: "first" (default) reports the earliest previous occurrence of each factor; "last" reports the closest one (factor boundaries are identical)
 
 Returns:
     int: Number of factors written to the output file
@@ -695,14 +714,14 @@ Note:
 )doc");
 
 // FASTA binary factorization function (no reverse complement)
-m.def("write_factors_binary_file_fasta_multiple_dna_no_rc", [](const std::string& fasta_path, const std::string& out_path, const std::string& sanitize_mode) {
+m.def("write_factors_binary_file_fasta_multiple_dna_no_rc", [](const std::string& fasta_path, const std::string& out_path, const std::string& sanitize_mode, const std::string& ref_policy) {
     // Release GIL while doing heavy C++ work
     py::gil_scoped_release release;
     size_t count = noLZSS::write_factors_binary_file_fasta_multiple_dna_no_rc(
-        fasta_path, out_path, parse_fasta_sanitization_mode(sanitize_mode));
+        fasta_path, out_path, parse_fasta_sanitization_mode(sanitize_mode), parse_ref_policy(ref_policy));
     py::gil_scoped_acquire acquire;
     return count;
-}, py::arg("fasta_path"), py::arg("out_path"), py::arg("sanitize_mode") = "remove_ambiguous", R"doc(Write noLZSS factors from multiple DNA sequences in a FASTA file without reverse complement awareness to a binary output file.
+}, py::arg("fasta_path"), py::arg("out_path"), py::arg("sanitize_mode") = "remove_ambiguous", py::arg("ref_policy") = "first", R"doc(Write noLZSS factors from multiple DNA sequences in a FASTA file without reverse complement awareness to a binary output file.
 
 This function reads DNA sequences from a FASTA file, parses them into individual sequences,
 prepares them for factorization, performs factorization without reverse complement awareness, 
@@ -712,6 +731,7 @@ sentinel factor indices to an output file.
 Args:
     fasta_path: Path to input FASTA file containing DNA sequences
     out_path: Path to output file where binary factors will be written
+    ref_policy: "first" (default) reports the earliest previous occurrence of each factor; "last" reports the closest one (factor boundaries are identical)
 
 Returns:
     int: Number of factors written to the output file
@@ -797,10 +817,10 @@ Note:
 )doc");
 
     // DNA-specific reference sequence factorization functions
-    m.def("factorize_dna_w_reference_seq", [](const std::string& reference_seq, const std::string& target_seq) {
+    m.def("factorize_dna_w_reference_seq", [](const std::string& reference_seq, const std::string& target_seq, const std::string& ref_policy) {
         // Release GIL while doing heavy C++ work
         py::gil_scoped_release release;
-        auto factors = noLZSS::factorize_dna_w_reference_seq(reference_seq, target_seq);
+        auto factors = noLZSS::factorize_dna_w_reference_seq(reference_seq, target_seq, parse_ref_policy(ref_policy));
         py::gil_scoped_acquire acquire;
 
         // Convert factors to Python tuples
@@ -809,7 +829,7 @@ Note:
             out.append(py::make_tuple(f.start, f.length, f.ref & ~noLZSS::RC_MASK, noLZSS::is_rc(f.ref)));
         }
         return out;
-    }, py::arg("reference_seq"), py::arg("target_seq"), R"doc(Factorize target DNA sequence using a reference sequence with reverse complement awareness.
+    }, py::arg("reference_seq"), py::arg("target_seq"), py::arg("ref_policy") = "first", R"doc(Factorize target DNA sequence using a reference sequence with reverse complement awareness.
 
 Concatenates a reference sequence and target sequence, then performs noLZSS factorization
 with reverse complement awareness starting from where the target sequence begins. This allows
@@ -819,6 +839,7 @@ reference itself.
 Args:
     reference_seq: Reference DNA sequence string (A, C, T, G - case insensitive)
     target_seq: Target DNA sequence string to be factorized (A, C, T, G - case insensitive)
+    ref_policy: "first" (default) reports the earliest previous occurrence of each factor; "last" reports the closest one (factor boundaries are identical)
 
 Returns:
     List of (start, length, ref, is_rc) tuples representing the factorization of target sequence
@@ -834,13 +855,13 @@ Note:
     ref field has RC_MASK cleared. is_rc boolean indicates if this was a reverse complement match.
 )doc");
 
-    m.def("factorize_dna_w_reference_seq_file", [](const std::string& reference_seq, const std::string& target_seq, const std::string& out_path) {
+    m.def("factorize_dna_w_reference_seq_file", [](const std::string& reference_seq, const std::string& target_seq, const std::string& out_path, const std::string& ref_policy) {
         // Release GIL while doing heavy C++ work
         py::gil_scoped_release release;
-        auto num_factors = noLZSS::factorize_dna_w_reference_seq_file(reference_seq, target_seq, out_path);
+        auto num_factors = noLZSS::factorize_dna_w_reference_seq_file(reference_seq, target_seq, out_path, parse_ref_policy(ref_policy));
         py::gil_scoped_acquire acquire;
         return num_factors;
-    }, py::arg("reference_seq"), py::arg("target_seq"), py::arg("out_path"), R"doc(Factorize target DNA sequence using a reference sequence and write factors to binary file.
+    }, py::arg("reference_seq"), py::arg("target_seq"), py::arg("out_path"), py::arg("ref_policy") = "first", R"doc(Factorize target DNA sequence using a reference sequence and write factors to binary file.
 
 Concatenates a reference sequence and target sequence, then performs noLZSS factorization
 with reverse complement awareness starting from where the target sequence begins, and writes
@@ -850,6 +871,7 @@ Args:
     reference_seq: Reference DNA sequence string (A, C, T, G - case insensitive)
     target_seq: Target DNA sequence string to be factorized (A, C, T, G - case insensitive)
     out_path: Path to output file where binary factors will be written
+    ref_policy: "first" (default) reports the earliest previous occurrence of each factor; "last" reports the closest one (factor boundaries are identical)
 
 Returns:
     Number of factors written to the output file
@@ -865,10 +887,10 @@ Note:
 )doc");
 
     // General reference sequence factorization functions (no reverse complement)
-    m.def("factorize_w_reference", [](const std::string& reference_seq, const std::string& target_seq) {
+    m.def("factorize_w_reference", [](const std::string& reference_seq, const std::string& target_seq, const std::string& ref_policy) {
         // Release GIL while doing heavy C++ work
         py::gil_scoped_release release;
-        auto factors = noLZSS::factorize_w_reference(reference_seq, target_seq);
+        auto factors = noLZSS::factorize_w_reference(reference_seq, target_seq, parse_ref_policy(ref_policy));
         py::gil_scoped_acquire acquire;
 
         // Convert factors to Python tuples (no is_rc field for general factorization)
@@ -877,7 +899,7 @@ Note:
             out.append(py::make_tuple(f.start, f.length, f.ref));
         }
         return out;
-    }, py::arg("reference_seq"), py::arg("target_seq"), R"doc(Factorize target sequence using a reference sequence without reverse complement.
+    }, py::arg("reference_seq"), py::arg("target_seq"), py::arg("ref_policy") = "first", R"doc(Factorize target sequence using a reference sequence without reverse complement.
 
 Concatenates a reference sequence and target sequence, then performs noLZSS factorization
 starting from where the target sequence begins. This allows the target sequence to reference
@@ -887,6 +909,7 @@ general text or amino acid sequences.
 Args:
     reference_seq: Reference sequence string (any text)
     target_seq: Target sequence string to be factorized (any text)
+    ref_policy: "first" (default) reports the earliest previous occurrence of each factor; "last" reports the closest one (factor boundaries are identical)
 
 Returns:
     List of (start, length, ref) tuples representing the factorization of target sequence
@@ -904,13 +927,13 @@ Warning:
     as it is used internally to separate the reference and target sequences.
 )doc");
 
-    m.def("factorize_w_reference_file", [](const std::string& reference_seq, const std::string& target_seq, const std::string& out_path) {
+    m.def("factorize_w_reference_file", [](const std::string& reference_seq, const std::string& target_seq, const std::string& out_path, const std::string& ref_policy) {
         // Release GIL while doing heavy C++ work
         py::gil_scoped_release release;
-        auto num_factors = noLZSS::factorize_w_reference_file(reference_seq, target_seq, out_path);
+        auto num_factors = noLZSS::factorize_w_reference_file(reference_seq, target_seq, out_path, parse_ref_policy(ref_policy));
         py::gil_scoped_acquire acquire;
         return num_factors;
-    }, py::arg("reference_seq"), py::arg("target_seq"), py::arg("out_path"), R"doc(Factorize target sequence using a reference sequence and write factors to binary file.
+    }, py::arg("reference_seq"), py::arg("target_seq"), py::arg("out_path"), py::arg("ref_policy") = "first", R"doc(Factorize target sequence using a reference sequence and write factors to binary file.
 
 Concatenates a reference sequence and target sequence, then performs noLZSS factorization
 starting from where the target sequence begins, and writes the resulting factors to a binary file.
@@ -920,6 +943,7 @@ Args:
     reference_seq: Reference sequence string (any text)
     target_seq: Target sequence string to be factorized (any text)
     out_path: Path to output file where binary factors will be written
+    ref_policy: "first" (default) reports the earliest previous occurrence of each factor; "last" reports the closest one (factor boundaries are identical)
 
 Returns:
     Number of factors written to the output file
@@ -938,14 +962,14 @@ Warning:
     as it is used internally to separate the reference and target sequences.
 )doc");
 
-    m.def("write_factors_dna_w_reference_fasta_files_to_binary", [](const std::string& reference_fasta_path, const std::string& target_fasta_path, const std::string& out_path, const std::string& sanitize_mode) {
+    m.def("write_factors_dna_w_reference_fasta_files_to_binary", [](const std::string& reference_fasta_path, const std::string& target_fasta_path, const std::string& out_path, const std::string& sanitize_mode, const std::string& ref_policy) {
         // Release GIL while doing heavy C++ work
         py::gil_scoped_release release;
         auto num_factors = noLZSS::write_factors_dna_w_reference_fasta_files_to_binary(
-            reference_fasta_path, target_fasta_path, out_path, parse_fasta_sanitization_mode(sanitize_mode));
+            reference_fasta_path, target_fasta_path, out_path, parse_fasta_sanitization_mode(sanitize_mode), parse_ref_policy(ref_policy));
         py::gil_scoped_acquire acquire;
         return num_factors;
-    }, py::arg("reference_fasta_path"), py::arg("target_fasta_path"), py::arg("out_path"), py::arg("sanitize_mode") = "remove_ambiguous", R"doc(Factorize DNA sequences from FASTA files with reference and write factors to binary file.
+    }, py::arg("reference_fasta_path"), py::arg("target_fasta_path"), py::arg("out_path"), py::arg("sanitize_mode") = "remove_ambiguous", py::arg("ref_policy") = "first", R"doc(Factorize DNA sequences from FASTA files with reference and write factors to binary file.
 
 Reads DNA sequences from reference and target FASTA files, performs noLZSS factorization
 of the target using the reference, and writes the resulting factors to a binary file.
@@ -955,6 +979,7 @@ Args:
     reference_fasta_path: Path to reference FASTA file containing DNA sequences
     target_fasta_path: Path to target FASTA file containing DNA sequences to factorize
     out_path: Path to output file where binary factors will be written
+    ref_policy: "first" (default) reports the earliest previous occurrence of each factor; "last" reports the closest one (factor boundaries are identical)
 
 Returns:
     Number of factors written to the output file
@@ -975,8 +1000,12 @@ Warning:
 )doc");
 
     // Parallel factorization bindings
-    m.def("parallel_factorize_to_file", &noLZSS::parallel_factorize_to_file,
-          py::arg("text"), py::arg("output_path"), py::arg("num_threads") = 0, py::arg("start_pos") = 0,
+    m.def("parallel_factorize_to_file",
+          [](const std::string& text, const std::string& output_path, size_t num_threads, size_t start_pos, const std::string& ref_policy) {
+              py::gil_scoped_release release;
+              return noLZSS::parallel_factorize_to_file(text, output_path, num_threads, start_pos, parse_ref_policy(ref_policy));
+          },
+          py::arg("text"), py::arg("output_path"), py::arg("num_threads") = 0, py::arg("start_pos") = 0, py::arg("ref_policy") = "first",
           R"doc(
 Factorizes text in parallel and writes results to a binary file.
 
@@ -989,6 +1018,7 @@ Args:
     output_path: Path to output binary file
     num_threads: Number of threads (0 for auto-detection based on CPU cores)
     start_pos: Starting position in the text for factorization (default: 0)
+    ref_policy: "first" (default) reports the earliest previous occurrence of each factor; "last" reports the closest one (factor boundaries are identical)
 
 Returns:
     Number of factors produced
@@ -1002,8 +1032,12 @@ Note:
     - Temporary files are created and cleaned up automatically
 )doc");
 
-    m.def("parallel_factorize_file_to_file", &noLZSS::parallel_factorize_file_to_file,
-          py::arg("input_path"), py::arg("output_path"), py::arg("num_threads") = 0, py::arg("start_pos") = 0,
+    m.def("parallel_factorize_file_to_file",
+          [](const std::string& input_path, const std::string& output_path, size_t num_threads, size_t start_pos, const std::string& ref_policy) {
+              py::gil_scoped_release release;
+              return noLZSS::parallel_factorize_file_to_file(input_path, output_path, num_threads, start_pos, parse_ref_policy(ref_policy));
+          },
+          py::arg("input_path"), py::arg("output_path"), py::arg("num_threads") = 0, py::arg("start_pos") = 0, py::arg("ref_policy") = "first",
           R"doc(
 Factorizes text from file in parallel and writes results to a binary file.
 
@@ -1015,6 +1049,7 @@ Args:
     output_path: Path to output binary file
     num_threads: Number of threads (0 for auto-detection)
     start_pos: Starting position in the text for factorization (default: 0)
+    ref_policy: "first" (default) reports the earliest previous occurrence of each factor; "last" reports the closest one (factor boundaries are identical)
 
 Returns:
     Number of factors produced
@@ -1028,8 +1063,12 @@ Note:
     - Memory usage scales with input size but is optimized for large files
 )doc");
 
-    m.def("parallel_factorize_dna_w_rc_to_file", &noLZSS::parallel_factorize_dna_w_rc_to_file,
-          py::arg("text"), py::arg("output_path"), py::arg("num_threads") = 0,
+    m.def("parallel_factorize_dna_w_rc_to_file",
+          [](const std::string& text, const std::string& output_path, size_t num_threads, const std::string& ref_policy) {
+              py::gil_scoped_release release;
+              return noLZSS::parallel_factorize_dna_w_rc_to_file(text, output_path, num_threads, parse_ref_policy(ref_policy));
+          },
+          py::arg("text"), py::arg("output_path"), py::arg("num_threads") = 0, py::arg("ref_policy") = "first",
           R"doc(
 Factorizes DNA text in parallel with reverse complement and writes results to a binary file.
 
@@ -1041,6 +1080,7 @@ Args:
     text: Input DNA text (should contain only A, C, T, G)
     output_path: Path to output binary file
     num_threads: Number of threads (0 for auto-detection)
+    ref_policy: "first" (default) reports the earliest previous occurrence of each factor; "last" reports the closest one (factor boundaries are identical)
 
 Returns:
     Number of factors produced
@@ -1054,8 +1094,12 @@ Note:
     - Currently under development - may not be fully implemented
 )doc");
 
-    m.def("parallel_factorize_file_dna_w_rc_to_file", &noLZSS::parallel_factorize_file_dna_w_rc_to_file,
-          py::arg("input_path"), py::arg("output_path"), py::arg("num_threads") = 0,
+    m.def("parallel_factorize_file_dna_w_rc_to_file",
+          [](const std::string& input_path, const std::string& output_path, size_t num_threads, const std::string& ref_policy) {
+              py::gil_scoped_release release;
+              return noLZSS::parallel_factorize_file_dna_w_rc_to_file(input_path, output_path, num_threads, parse_ref_policy(ref_policy));
+          },
+          py::arg("input_path"), py::arg("output_path"), py::arg("num_threads") = 0, py::arg("ref_policy") = "first",
           R"doc(
 Factorizes DNA text from file in parallel with reverse complement and writes results to a binary file.
 
@@ -1066,6 +1110,7 @@ Args:
     input_path: Path to input DNA text file
     output_path: Path to output binary file
     num_threads: Number of threads (0 for auto-detection)
+    ref_policy: "first" (default) reports the earliest previous occurrence of each factor; "last" reports the closest one (factor boundaries are identical)
 
 Returns:
     Number of factors produced
@@ -1085,17 +1130,17 @@ Note:
     // =========================================================================
 
     m.def("parallel_write_factors_binary_file_fasta_multiple_dna_w_rc",
-          [](const std::string& fasta_path, const std::string& out_path, size_t num_threads, const std::string& sanitize_mode) {
+          [](const std::string& fasta_path, const std::string& out_path, size_t num_threads, const std::string& sanitize_mode, const std::string& ref_policy) {
               py::gil_scoped_release release;
               size_t count = noLZSS::parallel_write_factors_binary_file_fasta_multiple_dna_w_rc(
-                  fasta_path, out_path, num_threads, parse_fasta_sanitization_mode(sanitize_mode));
+                  fasta_path, out_path, num_threads, parse_fasta_sanitization_mode(sanitize_mode), parse_ref_policy(ref_policy));
               py::gil_scoped_acquire acquire;
               return count;
           },
           py::arg("fasta_path"),
           py::arg("out_path"),
           py::arg("num_threads") = 0,
-          py::arg("sanitize_mode") = "remove_ambiguous",
+          py::arg("sanitize_mode") = "remove_ambiguous", py::arg("ref_policy") = "first",
           R"doc(Parallel version of write_factors_binary_file_fasta_multiple_dna_w_rc.
 
 Reads a FASTA file containing DNA sequences, prepares them for factorization with
@@ -1106,6 +1151,7 @@ Args:
     fasta_path: Path to input FASTA file containing DNA sequences
     out_path: Path to output file where binary factors will be written
     num_threads: Number of threads to use (0 = auto-detect based on input size, default)
+    ref_policy: "first" (default) reports the earliest previous occurrence of each factor; "last" reports the closest one (factor boundaries are identical)
 
 Returns:
     Number of factors written to the output file
@@ -1124,17 +1170,17 @@ Note:
 )doc");
 
     m.def("parallel_write_factors_binary_file_fasta_multiple_dna_no_rc",
-          [](const std::string& fasta_path, const std::string& out_path, size_t num_threads, const std::string& sanitize_mode) {
+          [](const std::string& fasta_path, const std::string& out_path, size_t num_threads, const std::string& sanitize_mode, const std::string& ref_policy) {
               py::gil_scoped_release release;
               size_t count = noLZSS::parallel_write_factors_binary_file_fasta_multiple_dna_no_rc(
-                  fasta_path, out_path, num_threads, parse_fasta_sanitization_mode(sanitize_mode));
+                  fasta_path, out_path, num_threads, parse_fasta_sanitization_mode(sanitize_mode), parse_ref_policy(ref_policy));
               py::gil_scoped_acquire acquire;
               return count;
           },
           py::arg("fasta_path"),
           py::arg("out_path"),
           py::arg("num_threads") = 0,
-          py::arg("sanitize_mode") = "remove_ambiguous",
+          py::arg("sanitize_mode") = "remove_ambiguous", py::arg("ref_policy") = "first",
           R"doc(Parallel version of write_factors_binary_file_fasta_multiple_dna_no_rc.
 
 Reads a FASTA file containing DNA sequences, prepares them for factorization without
@@ -1145,6 +1191,7 @@ Args:
     fasta_path: Path to input FASTA file containing DNA sequences
     out_path: Path to output file where binary factors will be written
     num_threads: Number of threads to use (0 = auto-detect based on input size, default)
+    ref_policy: "first" (default) reports the earliest previous occurrence of each factor; "last" reports the closest one (factor boundaries are identical)
 
 Returns:
     Number of factors written to the output file
@@ -1163,10 +1210,10 @@ Note:
 )doc");
 
     m.def("parallel_write_factors_dna_w_reference_fasta_files_to_binary",
-          [](const std::string& reference_fasta_path, const std::string& target_fasta_path, const std::string& out_path, size_t num_threads, const std::string& sanitize_mode) {
+          [](const std::string& reference_fasta_path, const std::string& target_fasta_path, const std::string& out_path, size_t num_threads, const std::string& sanitize_mode, const std::string& ref_policy) {
               py::gil_scoped_release release;
               size_t count = noLZSS::parallel_write_factors_dna_w_reference_fasta_files_to_binary(
-                  reference_fasta_path, target_fasta_path, out_path, num_threads, parse_fasta_sanitization_mode(sanitize_mode));
+                  reference_fasta_path, target_fasta_path, out_path, num_threads, parse_fasta_sanitization_mode(sanitize_mode), parse_ref_policy(ref_policy));
               py::gil_scoped_acquire acquire;
               return count;
           },
@@ -1174,7 +1221,7 @@ Note:
           py::arg("target_fasta_path"),
           py::arg("out_path"),
           py::arg("num_threads") = 0,
-          py::arg("sanitize_mode") = "remove_ambiguous",
+          py::arg("sanitize_mode") = "remove_ambiguous", py::arg("ref_policy") = "first",
           R"doc(Parallel version of write_factors_dna_w_reference_fasta_files_to_binary.
 
 Reads DNA sequences from reference and target FASTA files, concatenates them with
@@ -1186,6 +1233,7 @@ Args:
     target_fasta_path: Path to FASTA file containing target DNA sequences
     out_path: Path to output file where binary factors will be written
     num_threads: Number of threads to use (0 = auto-detect based on input size, default)
+    ref_policy: "first" (default) reports the earliest previous occurrence of each factor; "last" reports the closest one (factor boundaries are identical)
 
 Returns:
     Number of factors written to the output file
@@ -1212,9 +1260,9 @@ Note:
         .def_readonly("sequence_ids", &noLZSS::FastaPerSequenceFactorizationResult::sequence_ids, 
             "List of sequence identifiers from FASTA headers");
 
-    m.def("factorize_fasta_dna_w_rc_per_sequence", [](const std::string& fasta_path, const std::string& sanitize_mode) {
+    m.def("factorize_fasta_dna_w_rc_per_sequence", [](const std::string& fasta_path, const std::string& sanitize_mode, const std::string& ref_policy) {
         py::gil_scoped_release release;
-        auto result = noLZSS::factorize_fasta_dna_w_rc_per_sequence(fasta_path, parse_fasta_sanitization_mode(sanitize_mode));
+        auto result = noLZSS::factorize_fasta_dna_w_rc_per_sequence(fasta_path, parse_fasta_sanitization_mode(sanitize_mode), parse_ref_policy(ref_policy));
         py::gil_scoped_acquire acquire;
 
         // Convert per-sequence factors to Python lists
@@ -1234,7 +1282,7 @@ Note:
         }
 
         return py::make_tuple(per_seq_factors_list, sequence_ids_list);
-    }, py::arg("fasta_path"), py::arg("sanitize_mode") = "remove_ambiguous", R"doc(Factorize each DNA sequence in a FASTA file separately with reverse complement awareness.
+    }, py::arg("fasta_path"), py::arg("sanitize_mode") = "remove_ambiguous", py::arg("ref_policy") = "first", R"doc(Factorize each DNA sequence in a FASTA file separately with reverse complement awareness.
 
 Unlike factorize_fasta_multiple_dna_w_rc which concatenates sequences with sentinels,
 this function factorizes each sequence independently. Each sequence gets its own
@@ -1243,6 +1291,7 @@ produces cleaner per-sequence results.
 
 Args:
     fasta_path: Path to the FASTA file containing DNA sequences
+    ref_policy: "first" (default) reports the earliest previous occurrence of each factor; "last" reports the closest one (factor boundaries are identical)
 
 Returns:
     Tuple of (per_sequence_factors, sequence_ids) where:
@@ -1261,9 +1310,9 @@ Note:
     - ref field has RC_MASK cleared. is_rc boolean indicates if this was a reverse complement match
 )doc");
 
-    m.def("factorize_fasta_dna_no_rc_per_sequence", [](const std::string& fasta_path, const std::string& sanitize_mode) {
+    m.def("factorize_fasta_dna_no_rc_per_sequence", [](const std::string& fasta_path, const std::string& sanitize_mode, const std::string& ref_policy) {
         py::gil_scoped_release release;
-        auto result = noLZSS::factorize_fasta_dna_no_rc_per_sequence(fasta_path, parse_fasta_sanitization_mode(sanitize_mode));
+        auto result = noLZSS::factorize_fasta_dna_no_rc_per_sequence(fasta_path, parse_fasta_sanitization_mode(sanitize_mode), parse_ref_policy(ref_policy));
         py::gil_scoped_acquire acquire;
 
         // Convert per-sequence factors to Python lists
@@ -1283,7 +1332,7 @@ Note:
         }
 
         return py::make_tuple(per_seq_factors_list, sequence_ids_list);
-    }, py::arg("fasta_path"), py::arg("sanitize_mode") = "remove_ambiguous", R"doc(Factorize each DNA sequence in a FASTA file separately without reverse complement awareness.
+    }, py::arg("fasta_path"), py::arg("sanitize_mode") = "remove_ambiguous", py::arg("ref_policy") = "first", R"doc(Factorize each DNA sequence in a FASTA file separately without reverse complement awareness.
 
 Unlike factorize_fasta_multiple_dna_no_rc which concatenates sequences with sentinels,
 this function factorizes each sequence independently. Each sequence gets its own
@@ -1292,6 +1341,7 @@ produces cleaner per-sequence results.
 
 Args:
     fasta_path: Path to the FASTA file containing DNA sequences
+    ref_policy: "first" (default) reports the earliest previous occurrence of each factor; "last" reports the closest one (factor boundaries are identical)
 
 Returns:
     Tuple of (per_sequence_factors, sequence_ids) where:
@@ -1310,13 +1360,13 @@ Note:
 )doc");
 
     m.def("write_factors_binary_file_fasta_dna_w_rc_per_sequence", 
-        [](const std::string& fasta_path, const std::string& out_dir, const std::string& sanitize_mode) {
+        [](const std::string& fasta_path, const std::string& out_dir, const std::string& sanitize_mode, const std::string& ref_policy) {
         py::gil_scoped_release release;
         size_t count = noLZSS::write_factors_binary_file_fasta_dna_w_rc_per_sequence(
-            fasta_path, out_dir, parse_fasta_sanitization_mode(sanitize_mode));
+            fasta_path, out_dir, parse_fasta_sanitization_mode(sanitize_mode), parse_ref_policy(ref_policy));
         py::gil_scoped_acquire acquire;
         return count;
-    }, py::arg("fasta_path"), py::arg("out_dir"), py::arg("sanitize_mode") = "remove_ambiguous", R"doc(Write factors from per-sequence DNA factorization with reverse complement to separate binary files.
+    }, py::arg("fasta_path"), py::arg("out_dir"), py::arg("sanitize_mode") = "remove_ambiguous", py::arg("ref_policy") = "first", R"doc(Write factors from per-sequence DNA factorization with reverse complement to separate binary files.
 
 Reads a FASTA file, factorizes each sequence independently with reverse complement awareness,
 and writes each sequence's factors to a separate binary file. File names include the sequence ID.
@@ -1324,6 +1374,7 @@ and writes each sequence's factors to a separate binary file. File names include
 Args:
     fasta_path: Path to input FASTA file containing DNA sequences
     out_dir: Path to output directory where binary factor files will be written
+    ref_policy: "first" (default) reports the earliest previous occurrence of each factor; "last" reports the closest one (factor boundaries are identical)
 
 Returns:
     int: Total number of factors written across all sequences
@@ -1340,13 +1391,13 @@ Note:
 )doc");
 
     m.def("write_factors_binary_file_fasta_dna_no_rc_per_sequence", 
-        [](const std::string& fasta_path, const std::string& out_dir, const std::string& sanitize_mode) {
+        [](const std::string& fasta_path, const std::string& out_dir, const std::string& sanitize_mode, const std::string& ref_policy) {
         py::gil_scoped_release release;
         size_t count = noLZSS::write_factors_binary_file_fasta_dna_no_rc_per_sequence(
-            fasta_path, out_dir, parse_fasta_sanitization_mode(sanitize_mode));
+            fasta_path, out_dir, parse_fasta_sanitization_mode(sanitize_mode), parse_ref_policy(ref_policy));
         py::gil_scoped_acquire acquire;
         return count;
-    }, py::arg("fasta_path"), py::arg("out_dir"), py::arg("sanitize_mode") = "remove_ambiguous", R"doc(Write factors from per-sequence DNA factorization without reverse complement to separate binary files.
+    }, py::arg("fasta_path"), py::arg("out_dir"), py::arg("sanitize_mode") = "remove_ambiguous", py::arg("ref_policy") = "first", R"doc(Write factors from per-sequence DNA factorization without reverse complement to separate binary files.
 
 Reads a FASTA file, factorizes each sequence independently without reverse complement awareness,
 and writes each sequence's factors to a separate binary file. File names include the sequence ID.
@@ -1354,6 +1405,7 @@ and writes each sequence's factors to a separate binary file. File names include
 Args:
     fasta_path: Path to input FASTA file containing DNA sequences
     out_dir: Path to output directory where binary factor files will be written
+    ref_policy: "first" (default) reports the earliest previous occurrence of each factor; "last" reports the closest one (factor boundaries are identical)
 
 Returns:
     int: Total number of factors written across all sequences
@@ -1444,13 +1496,13 @@ Note:
 )doc");
 
     m.def("parallel_write_factors_binary_file_fasta_dna_w_rc_per_sequence", 
-        [](const std::string& fasta_path, const std::string& out_dir, size_t num_threads, const std::string& sanitize_mode) {
+        [](const std::string& fasta_path, const std::string& out_dir, size_t num_threads, const std::string& sanitize_mode, const std::string& ref_policy) {
         py::gil_scoped_release release;
         size_t count = noLZSS::parallel_write_factors_binary_file_fasta_dna_w_rc_per_sequence(
-            fasta_path, out_dir, num_threads, parse_fasta_sanitization_mode(sanitize_mode));
+            fasta_path, out_dir, num_threads, parse_fasta_sanitization_mode(sanitize_mode), parse_ref_policy(ref_policy));
         py::gil_scoped_acquire acquire;
         return count;
-    }, py::arg("fasta_path"), py::arg("out_dir"), py::arg("num_threads") = 0, py::arg("sanitize_mode") = "remove_ambiguous", R"doc(Parallel version of write_factors_binary_file_fasta_dna_w_rc_per_sequence.
+    }, py::arg("fasta_path"), py::arg("out_dir"), py::arg("num_threads") = 0, py::arg("sanitize_mode") = "remove_ambiguous", py::arg("ref_policy") = "first", R"doc(Parallel version of write_factors_binary_file_fasta_dna_w_rc_per_sequence.
 
 Reads a FASTA file, factorizes each sequence independently with reverse complement
 awareness using parallel processing, and writes each sequence to a separate binary file.
@@ -1459,6 +1511,7 @@ Args:
     fasta_path: Path to input FASTA file containing DNA sequences
     out_dir: Path to output directory where binary factor files will be written
     num_threads: Number of threads to use (0 = auto-detect based on sequence count)
+    ref_policy: "first" (default) reports the earliest previous occurrence of each factor; "last" reports the closest one (factor boundaries are identical)
 
 Returns:
     int: Total number of factors written across all sequences
@@ -1477,13 +1530,13 @@ Note:
 )doc");
 
     m.def("parallel_write_factors_binary_file_fasta_dna_no_rc_per_sequence", 
-        [](const std::string& fasta_path, const std::string& out_dir, size_t num_threads, const std::string& sanitize_mode) {
+        [](const std::string& fasta_path, const std::string& out_dir, size_t num_threads, const std::string& sanitize_mode, const std::string& ref_policy) {
         py::gil_scoped_release release;
         size_t count = noLZSS::parallel_write_factors_binary_file_fasta_dna_no_rc_per_sequence(
-            fasta_path, out_dir, num_threads, parse_fasta_sanitization_mode(sanitize_mode));
+            fasta_path, out_dir, num_threads, parse_fasta_sanitization_mode(sanitize_mode), parse_ref_policy(ref_policy));
         py::gil_scoped_acquire acquire;
         return count;
-    }, py::arg("fasta_path"), py::arg("out_dir"), py::arg("num_threads") = 0, py::arg("sanitize_mode") = "remove_ambiguous", R"doc(Parallel version of write_factors_binary_file_fasta_dna_no_rc_per_sequence.
+    }, py::arg("fasta_path"), py::arg("out_dir"), py::arg("num_threads") = 0, py::arg("sanitize_mode") = "remove_ambiguous", py::arg("ref_policy") = "first", R"doc(Parallel version of write_factors_binary_file_fasta_dna_no_rc_per_sequence.
 
 Reads a FASTA file, factorizes each sequence independently without reverse complement
 awareness using parallel processing, and writes each sequence to a separate binary file.
@@ -1492,6 +1545,7 @@ Args:
     fasta_path: Path to input FASTA file containing DNA sequences
     out_dir: Path to output directory where binary factor files will be written
     num_threads: Number of threads to use (0 = auto-detect based on sequence count)
+    ref_policy: "first" (default) reports the earliest previous occurrence of each factor; "last" reports the closest one (factor boundaries are identical)
 
 Returns:
     int: Total number of factors written across all sequences

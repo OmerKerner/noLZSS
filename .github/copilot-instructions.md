@@ -19,6 +19,7 @@ Important coupling points:
 - Python wrappers validate inputs, then call `_noLZSS` C++ bindings.
 - Reverse-complement flag uses MSB in `ref` (`RC_MASK`).
 - Binary factor file metadata is parsed in Python utilities and must stay consistent with C++ struct layout.
+- `ref_policy` (`"first"`/`"last"`, C++ `RefPolicy`) is a trailing parameter of every factor-producing function in every layer (core templates → parallel → FASTA processors → bindings → Python wrappers → batch/LSF tools). `count_*` functions deliberately omit it (counts are policy-invariant). Match selection lives in `detail::find_longest_plain_match` / `detail::find_longest_rc_match` (`factorizer_core.hpp`), shared by sequential and parallel paths.
 
 ## Build & Setup (always run from repo root)
 

@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import List, Dict, Union, Optional, Tuple
 from urllib.error import URLError, HTTPError
 
-from ..utils import NoLZSSError
+from ..utils import NoLZSSError, validate_ref_policy
 from .._noLZSS import (
     write_factors_binary_file_fasta_multiple_dna_w_rc,
     write_factors_binary_file_fasta_multiple_dna_no_rc,
@@ -562,7 +562,8 @@ def get_output_paths_from_source(file_path: str, output_dir: Path, mode: str) ->
 
 def factorize_single_file(input_path: Path, output_paths: Dict[str, Path],
                          skip_existing: bool = True, 
-                         logger: Optional[logging.Logger] = None) -> Dict[str, bool]:
+                         logger: Optional[logging.Logger] = None,
+                         ref_policy: str = "first") -> Dict[str, bool]:
     """
     Factorize a single FASTA file with specified modes using optimized C++ functions.
     
@@ -571,12 +572,14 @@ def factorize_single_file(input_path: Path, output_paths: Dict[str, Path],
         output_paths: Dictionary mapping mode names to output paths
         skip_existing: Whether to skip if output already exists
         logger: Logger instance
+        ref_policy: "first" (default, earliest previous occurrence) or "last" (closest occurrence)
         
     Returns:
         Dictionary mapping mode names to success status
     """
     if logger is None:
         logger = logging.getLogger(__name__)
+    ref_policy = validate_ref_policy(ref_policy)
     
     # Pre-validation: Check if file exists and is readable
     if not input_path.exists():
@@ -612,12 +615,12 @@ def factorize_single_file(input_path: Path, output_paths: Dict[str, Path],
             if mode == "without_reverse_complement":
                 # Factorization without reverse complement
                 factor_count = write_factors_binary_file_fasta_multiple_dna_no_rc(
-                    str(input_path), str(output_path)
+                    str(input_path), str(output_path), ref_policy=ref_policy
                 )
             elif mode == "with_reverse_complement":
                 # Factorization with reverse complement awareness
                 factor_count = write_factors_binary_file_fasta_multiple_dna_w_rc(
-                    str(input_path), str(output_path)
+                    str(input_path), str(output_path), ref_policy=ref_policy
                 )
             
             logger.info(f"Successfully completed {mode} factorization for {input_path.name} "
@@ -736,18 +739,20 @@ def factorize_file_worker(job_info: Tuple[str, Path, Dict[str, Path], bool, str]
     
     Args:
         job_info: Tuple of (original_path, input_path, output_paths, skip_existing, logger_name)
+            with an optional trailing ref_policy ("first" or "last")
         
     Returns:
         Tuple of (original_path, factorization_results)
     """
-    original_path, input_path, output_paths, skip_existing, logger_name = job_info
+    original_path, input_path, output_paths, skip_existing, logger_name = job_info[:5]
+    ref_policy = job_info[5] if len(job_info) > 5 else "first"
     
     # Create a logger for this process
     logger = logging.getLogger(logger_name)
     
     # Factorize the file
     factorization_results = factorize_single_file(
-        input_path, output_paths, skip_existing=skip_existing, logger=logger
+        input_path, output_paths, skip_existing=skip_existing, logger=logger, ref_policy=ref_policy
     )
     
     return original_path, factorization_results
@@ -762,11 +767,13 @@ def process_single_file_complete(file_info: Tuple[str, Path, Path, str, bool, in
     
     Args:
         file_info: Tuple of (file_path, output_dir, download_dir, mode, skip_existing, max_retries, logger_name)
+            with an optional trailing ref_policy ("first" or "last")
         
     Returns:
         Tuple of (original_file_path, factorization_results)
     """
-    file_path, output_dir, download_dir, mode, skip_existing, max_retries, logger_name = file_info
+    file_path, output_dir, download_dir, mode, skip_existing, max_retries, logger_name = file_info[:7]
+    ref_policy = file_info[7] if len(file_info) > 7 else "first"
     
     # Create a logger for this process
     # NOTE: We recreate the logger in each worker process using the logger name.
@@ -858,7 +865,8 @@ def process_single_file_complete(file_info: Tuple[str, Path, Path, str, bool, in
         
         try:
             factorization_results = factorize_single_file(
-                local_path, output_paths, skip_existing=False, logger=logger  # skip_existing=False because validity check was done above via validate_output_binary()
+                local_path, output_paths, skip_existing=False, logger=logger,  # skip_existing=False because validity check was done above via validate_output_binary()
+                ref_policy=ref_policy
             )
         finally:
             # Step 6: Cleanup temporary files for this file
@@ -895,7 +903,8 @@ def process_single_file_complete(file_info: Tuple[str, Path, Path, str, bool, in
 def process_file_list(file_list: List[str], output_dir: Path, mode: str,
                      download_dir: Optional[Path] = None, skip_existing: bool = True,
                      max_retries: int = 3, max_workers: Optional[int] = None, 
-                     logger: Optional[logging.Logger] = None) -> Dict[str, Dict[str, bool]]:
+                     logger: Optional[logging.Logger] = None,
+                     ref_policy: str = "first") -> Dict[str, Dict[str, bool]]:
     """
     Process a list of FASTA files (local or remote) with per-file parallel pipeline.
     
@@ -911,12 +920,14 @@ def process_file_list(file_list: List[str], output_dir: Path, mode: str,
         max_retries: Maximum download retry attempts
         max_workers: Maximum number of worker processes (None = auto)
         logger: Logger instance
+        ref_policy: "first" (default, earliest previous occurrence) or "last" (closest occurrence)
         
     Returns:
         Dictionary mapping file names to their processing results
     """
     if logger is None:
         logger = logging.getLogger(__name__)
+    ref_policy = validate_ref_policy(ref_policy)
     
     results = {}
     
@@ -936,7 +947,7 @@ def process_file_list(file_list: List[str], output_dir: Path, mode: str,
         # Prepare job information for each file
         processing_jobs = []
         for file_path in file_list:
-            processing_jobs.append((file_path, output_dir, download_dir, mode, skip_existing, max_retries, logger.name))
+            processing_jobs.append((file_path, output_dir, download_dir, mode, skip_existing, max_retries, logger.name, ref_policy))
         
         # Use ProcessPoolExecutor for complete per-file processing
         # NOTE: We use a single ProcessPoolExecutor to handle the complete per-file pipeline
@@ -1076,7 +1087,8 @@ def process_with_shuffle_analysis(file_list: List[str], output_dir: Path, mode: 
                                   download_dir: Optional[Path] = None, skip_existing: bool = True,
                                   max_retries: int = 3, max_workers: Optional[int] = None,
                                   shuffle_seed: Optional[int] = None,
-                                  logger: Optional[logging.Logger] = None) -> Dict[str, Dict[str, any]]:
+                                  logger: Optional[logging.Logger] = None,
+                                  ref_policy: str = "first") -> Dict[str, Dict[str, any]]:
     """
     Process files with shuffle analysis: create shuffled versions, factorize both, and prepare for plotting.
     
@@ -1090,6 +1102,7 @@ def process_with_shuffle_analysis(file_list: List[str], output_dir: Path, mode: 
         max_workers: Maximum number of worker threads/processes (None = auto)
         shuffle_seed: Random seed for shuffling (for reproducibility)
         logger: Logger instance
+        ref_policy: "first" (default, earliest previous occurrence) or "last" (closest occurrence)
         
     Returns:
         Dictionary with original and shuffled factorization results
@@ -1107,6 +1120,7 @@ def process_with_shuffle_analysis(file_list: List[str], output_dir: Path, mode: 
         file_list=file_list,
         output_dir=output_dir,
         mode=mode,
+        ref_policy=ref_policy,
         download_dir=download_dir,
         skip_existing=skip_existing,
         max_retries=max_retries,
@@ -1190,6 +1204,7 @@ def process_with_shuffle_analysis(file_list: List[str], output_dir: Path, mode: 
                 file_list=shuffled_file_list,
                 output_dir=shuffled_output_dir,
                 mode=mode,
+                ref_policy=ref_policy,
                 download_dir=None,  # Files are already local
                 skip_existing=skip_existing,
                 max_retries=max_retries,
@@ -1478,6 +1493,11 @@ Examples:
         default=FactorizationMode.BOTH,
         help="Factorization mode (default: both)"
     )
+    parser.add_argument(
+        "--ref-policy", choices=["first", "last"], default="first",
+        help="Which previous occurrence each factor refers to when several of the longest length exist: "
+             "'first' (default, earliest occurrence) or 'last' (closest occurrence). Factor boundaries are identical."
+    )
     
     # Download configuration
     parser.add_argument(
@@ -1599,6 +1619,7 @@ Examples:
                 file_list=file_list,
                 output_dir=args.output_dir,
                 mode=args.mode,
+                ref_policy=args.ref_policy,
                 download_dir=args.download_dir,
                 skip_existing=not args.force,
                 max_retries=args.max_retries,
@@ -1631,10 +1652,12 @@ Examples:
         
         else:
             logger.info(f"Mode: Factorization ({args.mode})")
+            logger.info(f"Reference policy: {args.ref_policy}")
             results = process_file_list(
                 file_list=file_list,
                 output_dir=args.output_dir,
                 mode=args.mode,
+                ref_policy=args.ref_policy,
                 download_dir=args.download_dir,
                 skip_existing=not args.force,
                 max_retries=args.max_retries,

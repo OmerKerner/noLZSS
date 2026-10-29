@@ -58,6 +58,32 @@ def validate_input(data: Union[str, bytes]) -> bytes:
     return data
 
 
+REF_POLICIES = ("first", "last")
+
+
+def validate_ref_policy(ref_policy: str) -> str:
+    """
+    Validate a reference-selection policy name.
+
+    Args:
+        ref_policy: "first" (earliest previous occurrence, the default) or "last"
+            (closest previous occurrence). Case-insensitive.
+
+    Returns:
+        The normalized policy name
+
+    Raises:
+        ValueError: If the policy is not one of the supported names
+        TypeError: If the policy is not a string
+    """
+    if not isinstance(ref_policy, str):
+        raise TypeError(f"ref_policy must be a str, got {type(ref_policy).__name__}")
+    normalized = ref_policy.strip().lower()
+    if normalized not in REF_POLICIES:
+        raise ValueError(f"ref_policy must be one of {REF_POLICIES}, got {ref_policy!r}")
+    return normalized
+
+
 def analyze_alphabet(data: Union[str, bytes]) -> Dict[str, Any]:
     """
     Analyze the alphabet of input data.

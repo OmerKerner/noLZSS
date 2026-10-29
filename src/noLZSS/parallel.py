@@ -17,14 +17,15 @@ from ._noLZSS import (
     parallel_factorize_file_dna_w_rc_to_file as _parallel_factorize_file_dna_w_rc_to_file,
     Factor,
 )
-from .utils import validate_input, read_factors_binary_file_with_metadata
+from .utils import validate_input, read_factors_binary_file_with_metadata, validate_ref_policy
 
 
 def parallel_factorize_to_file(text: Union[str, bytes], 
                               output_path: Union[str, Path], 
                               num_threads: int = 0,
                               start_pos: int = 0,
-                              validate: bool = True) -> int:
+                              validate: bool = True,
+                              ref_policy: str = "first") -> int:
     """
     Factorize text in parallel and write factors to a binary file.
     
@@ -34,6 +35,7 @@ def parallel_factorize_to_file(text: Union[str, bytes],
         num_threads: Number of threads to use (0 = auto-detect)
         start_pos: Starting position in the text for factorization (default: 0)
         validate: Whether to validate input
+        ref_policy: "first" (default, earliest previous occurrence) or "last" (closest occurrence)
         
     Returns:
         Number of factors produced
@@ -51,13 +53,15 @@ def parallel_factorize_to_file(text: Union[str, bytes],
         text = validate_input(text)
     
     output_path = Path(output_path)
-    return _parallel_factorize_to_file(text, str(output_path), num_threads, start_pos)
+    return _parallel_factorize_to_file(text, str(output_path), num_threads, start_pos,
+                                       ref_policy=validate_ref_policy(ref_policy))
 
 
 def parallel_factorize_file_to_file(input_path: Union[str, Path], 
                                    output_path: Union[str, Path], 
                                    num_threads: int = 0,
-                                   start_pos: int = 0) -> int:
+                                   start_pos: int = 0,
+                                   ref_policy: str = "first") -> int:
     """
     Factorize text from file in parallel and write factors to a binary file.
     
@@ -66,6 +70,7 @@ def parallel_factorize_file_to_file(input_path: Union[str, Path],
         output_path: Path to output binary file
         num_threads: Number of threads to use (0 = auto-detect)
         start_pos: Starting position in the text for factorization (default: 0)
+        ref_policy: "first" (default, earliest previous occurrence) or "last" (closest occurrence)
         
     Returns:
         Number of factors produced
@@ -83,10 +88,12 @@ def parallel_factorize_file_to_file(input_path: Union[str, Path],
         raise FileNotFoundError(f"Input file not found: {input_path}")
     
     output_path = Path(output_path)
-    return _parallel_factorize_file_to_file(str(input_path), str(output_path), num_threads, start_pos)
+    return _parallel_factorize_file_to_file(str(input_path), str(output_path), num_threads, start_pos,
+                                            ref_policy=validate_ref_policy(ref_policy))
 
 
-def parallel_factorize(text: Union[str, bytes], num_threads: int = 0, start_pos: int = 0, validate: bool = True) -> List[Factor]:
+def parallel_factorize(text: Union[str, bytes], num_threads: int = 0, start_pos: int = 0, validate: bool = True,
+                       ref_policy: str = "first") -> List[Factor]:
     """
     Factorize text in parallel and return the factors.
     
@@ -97,6 +104,7 @@ def parallel_factorize(text: Union[str, bytes], num_threads: int = 0, start_pos:
         num_threads: Number of threads to use (0 = auto-detect)
         start_pos: Starting position in the text for factorization (default: 0)
         validate: Whether to validate input
+        ref_policy: "first" (default, earliest previous occurrence) or "last" (closest occurrence)
         
     Returns:
         List of Factor objects
@@ -116,7 +124,7 @@ def parallel_factorize(text: Union[str, bytes], num_threads: int = 0, start_pos:
     
     try:
         # Factorize to temporary file
-        parallel_factorize_to_file(text, temp_path, num_threads, start_pos, validate)
+        parallel_factorize_to_file(text, temp_path, num_threads, start_pos, validate, ref_policy=ref_policy)
         # Read factors back using the footer format
         import struct
         from collections import namedtuple
@@ -162,7 +170,8 @@ def parallel_factorize(text: Union[str, bytes], num_threads: int = 0, start_pos:
 def parallel_factorize_dna_w_rc_to_file(text: Union[str, bytes], 
                                        output_path: Union[str, Path], 
                                        num_threads: int = 0,
-                                       validate: bool = True) -> int:
+                                       validate: bool = True,
+                                       ref_policy: str = "first") -> int:
     """
     Factorize DNA text in parallel with reverse complement and write factors to a binary file.
     
@@ -171,6 +180,8 @@ def parallel_factorize_dna_w_rc_to_file(text: Union[str, bytes],
         output_path: Path to output binary file
         num_threads: Number of threads to use (0 = auto-detect)
         validate: Whether to validate input as DNA sequence
+        ref_policy: "first" (default, earliest previous occurrence) or "last" (closest occurrence,
+            regardless of strand at equal length)
         
     Returns:
         Number of factors produced
@@ -190,12 +201,14 @@ def parallel_factorize_dna_w_rc_to_file(text: Union[str, bytes],
         text = validate_input(text)
     
     output_path = Path(output_path)
-    return _parallel_factorize_dna_w_rc_to_file(text, str(output_path), num_threads)
+    return _parallel_factorize_dna_w_rc_to_file(text, str(output_path), num_threads,
+                                                ref_policy=validate_ref_policy(ref_policy))
 
 
 def parallel_factorize_file_dna_w_rc_to_file(input_path: Union[str, Path], 
                                             output_path: Union[str, Path], 
-                                            num_threads: int = 0) -> int:
+                                            num_threads: int = 0,
+                                            ref_policy: str = "first") -> int:
     """
     Factorize DNA text from file in parallel with reverse complement and write factors to a binary file.
     
@@ -203,6 +216,8 @@ def parallel_factorize_file_dna_w_rc_to_file(input_path: Union[str, Path],
         input_path: Path to input DNA text file
         output_path: Path to output binary file
         num_threads: Number of threads to use (0 = auto-detection)
+        ref_policy: "first" (default, earliest previous occurrence) or "last" (closest occurrence,
+            regardless of strand at equal length)
         
     Returns:
         Number of factors produced
@@ -223,4 +238,5 @@ def parallel_factorize_file_dna_w_rc_to_file(input_path: Union[str, Path],
         raise FileNotFoundError(f"Input file not found: {input_path}")
     
     output_path = Path(output_path)
-    return _parallel_factorize_file_dna_w_rc_to_file(str(input_path), str(output_path), num_threads)
+    return _parallel_factorize_file_dna_w_rc_to_file(str(input_path), str(output_path), num_threads,
+                                                     ref_policy=validate_ref_policy(ref_policy))

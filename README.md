@@ -134,9 +134,23 @@ The library implements the **Non-overlapping Lempel-Ziv-Storer-Szymanski (LZSS)*
 - **Range Minimum Queries**: For efficient lowest common ancestor computations
 - **Sink-based Processing**: Memory-efficient processing using callback functions
 
-### Tie-Breaking for DNA Factorization
+### Reference Selection (`ref_policy`)
 
-When factorizing DNA sequences with reverse complement awareness, if both a forward match and a reverse complement match have the same length, the **forward match is preferred**. Among candidates of the same type, the one with the earliest position wins.
+At each position the factor length is the maximum over all earlier non-overlapping occurrences, so the factor boundaries are fixed by the text. When several occurrences of that longest length exist, the `ref_policy` option chooses which one the `ref` field points to. Every factor-producing function (in-memory, file, FASTA, reference-guided, parallel, and the batch tools) accepts it:
+
+| `ref_policy` | Reported reference | Equal-length forward vs. reverse complement |
+|---|---|---|
+| `"first"` (default) | Earliest occurrence (smallest start; for RC matches, smallest end) | Forward match preferred |
+| `"last"` | Closest occurrence (largest start/end that still does not overlap the factor) | Whichever occurrence ends closest to the factor; forward on an exact tie |
+
+```python
+import noLZSS
+
+noLZSS.factorize("abcabcabc")                    # [(0,1,0), (1,1,1), (2,1,2), (3,3,0), (6,3,0)]
+noLZSS.factorize("abcabcabc", ref_policy="last") # [(0,1,0), (1,1,1), (2,1,2), (3,3,0), (6,3,3)]
+```
+
+Under both policies a strictly longer match always wins and a reverse-complement match must have length ≥ 2. Factor counts, starts and lengths are identical under both policies, so count-based analyses are unaffected; `count_*` functions therefore take no `ref_policy`. The `"last"` policy builds an additional wavelet tree over the suffix array (about `n log n` extra bits) and performs one extra `O(log n)` query per factor; the overall `O(n log n)` bound is unchanged.
 
 ## Performance
 

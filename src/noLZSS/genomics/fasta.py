@@ -9,7 +9,7 @@ from typing import Union, List, Tuple, Dict
 import re
 from pathlib import Path
 
-from ..utils import NoLZSSError
+from ..utils import NoLZSSError, validate_ref_policy
 from ..core import factorize
 
 try:
@@ -76,7 +76,7 @@ def _parse_fasta_content(content: str) -> Dict[str, str]:
     return sequences
 
 
-def read_nucleotide_fasta(filepath: Union[str, Path]) -> List[Tuple[str, List[Tuple[int, int, int]]]]:
+def read_nucleotide_fasta(filepath: Union[str, Path], ref_policy: str = "first") -> List[Tuple[str, List[Tuple[int, int, int]]]]:
     """
     Read and factorize nucleotide sequences from a FASTA file.
     
@@ -85,6 +85,7 @@ def read_nucleotide_fasta(filepath: Union[str, Path]) -> List[Tuple[str, List[Tu
     
     Args:
         filepath: Path to FASTA file
+        ref_policy: "first" (default, earliest previous occurrence) or "last" (closest occurrence)
         
     Returns:
         List of (sequence_id, factors) tuples where factors is the LZSS factorization
@@ -118,7 +119,7 @@ def read_nucleotide_fasta(filepath: Union[str, Path]) -> List[Tuple[str, List[Tu
         
         # Factorize the sequence
         try:
-            factors = factorize(sequence.encode('ascii'))
+            factors = factorize(sequence.encode('ascii'), ref_policy=ref_policy)
             results.append((seq_id, factors))
         except Exception as e:
             raise FASTAError(f"Failed to factorize sequence '{seq_id}': {e}")
@@ -174,7 +175,7 @@ def read_protein_fasta(filepath: Union[str, Path]) -> List[Tuple[str, str]]:
     return results
 
 
-def read_fasta_auto(filepath: Union[str, Path]) -> Union[
+def read_fasta_auto(filepath: Union[str, Path], ref_policy: str = "first") -> Union[
     List[Tuple[str, List[Tuple[int, int, int]]]],  # For nucleotide
     List[Tuple[str, str]]  # For protein
 ]:
@@ -186,6 +187,7 @@ def read_fasta_auto(filepath: Union[str, Path]) -> Union[
     
     Args:
         filepath: Path to FASTA file
+        ref_policy: "first" (default) or "last"; only used for nucleotide FASTA (see factorize)
         
     Returns:
         For nucleotide FASTA: List of (sequence_id, factors) tuples
@@ -219,7 +221,7 @@ def read_fasta_auto(filepath: Union[str, Path]) -> Union[
     
     if seq_type == 'dna':
         # Process as nucleotide
-        return read_nucleotide_fasta(filepath)
+        return read_nucleotide_fasta(filepath, ref_policy=ref_policy)
     elif seq_type == 'protein':
         # Process as protein
         return read_protein_fasta(filepath)
@@ -231,7 +233,8 @@ def read_fasta_auto(filepath: Union[str, Path]) -> Union[
 def write_factors_dna_w_reference_fasta_files_to_binary(reference_fasta_path: Union[str, Path], 
                                                         target_fasta_path: Union[str, Path],
                                                         output_path: Union[str, Path],
-                                                        sanitize_mode: str = "remove_ambiguous") -> int:
+                                                        sanitize_mode: str = "remove_ambiguous",
+                                                        ref_policy: str = "first") -> int:
     """
     Factorize DNA sequences from FASTA files with reference and write factors to binary file.
     
@@ -246,6 +249,8 @@ def write_factors_dna_w_reference_fasta_files_to_binary(reference_fasta_path: Un
         sanitize_mode: FASTA DNA sanitization mode:
             - "remove_ambiguous" (default): remove non-ACGT characters before factorization
             - "strict": raise an error if non-ACGT characters are present
+        ref_policy: "first" (default, earliest previous occurrence) or "last" (closest occurrence,
+            regardless of strand at equal length)
         
     Returns:
         Number of factors written to the output file
@@ -288,5 +293,6 @@ def write_factors_dna_w_reference_fasta_files_to_binary(reference_fasta_path: Un
         raise ValueError("sanitize_mode must be 'remove_ambiguous' or 'strict'")
     
     return _write_factors_dna_w_reference_fasta_files_to_binary(
-        str(reference_path), str(target_path), str(output_path), sanitize_mode
+        str(reference_path), str(target_path), str(output_path), sanitize_mode,
+        ref_policy=validate_ref_policy(ref_policy)
     )

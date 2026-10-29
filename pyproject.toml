@@ -4,7 +4,7 @@ build-backend = "scikit_build_core.build"
 
 [project]
 name = "noLZSS"
-version = "1.2.0"
+version = "1.2.1"
 description = "Non-overlapping Lempel-Ziv-Storer-Szymanski factorization (high-performance C++ core with Python bindings)"
 authors = [ { name = "Omer Kerner" } ]
 readme = "README.md"
@@ -53,7 +53,7 @@ panel = [
 [tool.scikit-build]
 wheel.expand-macos-universal-tags = true
 build-dir = "_skbuild"
-cmake.minimum-version = "3.20"
+cmake.version = ">=3.20"
 
 [tool.scikit-build.cmake.define]
 CMAKE_CXX_STANDARD = "17"

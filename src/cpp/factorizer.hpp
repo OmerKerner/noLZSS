@@ -7,6 +7,28 @@
 
 namespace noLZSS {
 
+/**
+ * @brief Selects which previous occurrence a factor refers to when several occurrences of the
+ *        longest possible length exist.
+ *
+ * The factor boundaries (start, length) do not depend on this choice: the length is the maximum
+ * over all earlier non-overlapping occurrences, so only the reported reference changes.
+ *
+ * - First: the earliest occurrence (leftmost start for forward matches, leftmost end for
+ *   reverse-complement matches). At equal length a forward match is preferred over a
+ *   reverse-complement match. This is the historical default.
+ * - Last: the occurrence closest to the factor (largest start/end that still does not overlap
+ *   the factor). At equal length the strand whose occurrence ends closest to the factor is
+ *   chosen; if both strands end at the same position the forward match is preferred.
+ *
+ * In both policies a strictly longer match always wins, and a reverse-complement match must have
+ * length >= 2.
+ */
+enum class RefPolicy : uint8_t {
+    First = 0,
+    Last  = 1
+};
+
 // Constants and utility functions for reverse complement handling
 
 /**
@@ -19,10 +41,11 @@ namespace noLZSS {
  * @param path Path to input file containing text
  * @param sink Callable that receives each computed factor
  * @param start_pos Position in the text to start factorization from (default: 0)
+ * @param ref_policy Which previous occurrence to report when several of the longest length exist (default: RefPolicy::First)
  * @return Number of factors emitted
  */
 template<class Sink>
-size_t factorize_file_stream(const std::string& path, Sink&& sink, size_t start_pos = 0);
+size_t factorize_file_stream(const std::string& path, Sink&& sink, size_t start_pos = 0, RefPolicy ref_policy = RefPolicy::First);
 
 /**
  * @brief Advanced factorization function for in-memory text.
@@ -34,11 +57,13 @@ size_t factorize_file_stream(const std::string& path, Sink&& sink, size_t start_
  * @param text Input text string
  * @param sink Callable that receives each computed factor
  * @param start_pos Position in the text to start factorization from (default: 0)
+ * @param ref_policy Which previous occurrence to report when several of the longest length exist (default: RefPolicy::First)
  * @return Number of factors emitted
  */
 template<class Sink>
-size_t factorize_stream(std::string_view text, Sink&& sink, size_t start_pos = 0);
+size_t factorize_stream(std::string_view text, Sink&& sink, size_t start_pos = 0, RefPolicy ref_policy = RefPolicy::First);
 constexpr uint64_t RC_MASK = (1ULL << 63);
+
 
 /**
  * @brief Result of preparing sequences with sentinel position tracking.
@@ -160,12 +185,13 @@ struct Factor {
  *
  * @param text Input text string
  * @param start_pos Position in the text to start factorization from (default: 0)
+ * @param ref_policy Which previous occurrence to report when several of the longest length exist (default: RefPolicy::First)
  * @return Vector of Factor objects representing the factorization
  *
  * @note Factors are non-overlapping and cover the text from start_pos onwards
  * @see factorize_file() for file-based factorization
  */
-std::vector<Factor> factorize(std::string_view text, size_t start_pos = 0);
+std::vector<Factor> factorize(std::string_view text, size_t start_pos = 0, RefPolicy ref_policy = RefPolicy::First);
 
 /**
  * @brief Factorizes text from a file into noLZSS factors.
@@ -176,13 +202,14 @@ std::vector<Factor> factorize(std::string_view text, size_t start_pos = 0);
  * @param path Path to the input file containing text
  * @param reserve_hint Optional hint for reserving space in the output vector (0 = no hint)
  * @param start_pos Position in the text to start factorization from (default: 0)
+ * @param ref_policy Which previous occurrence to report when several of the longest length exist (default: RefPolicy::First)
  * @return Vector of Factor objects representing the factorization
  *
  * @note Use reserve_hint for better performance when you know approximate factor count
  * @note Factors are non-overlapping and cover the text from start_pos onwards
  * @see factorize() for in-memory factorization
  */
-std::vector<Factor> factorize_file(const std::string& path, size_t reserve_hint = 0, size_t start_pos = 0);
+std::vector<Factor> factorize_file(const std::string& path, size_t reserve_hint = 0, size_t start_pos = 0, RefPolicy ref_policy = RefPolicy::First);
 
 // Counting functions
 
@@ -225,12 +252,13 @@ size_t count_factors_file(const std::string& path, size_t start_pos = 0);
  *
  * @param in_path Path to input file containing text
  * @param out_path Path to output file where binary factors will be written
+ * @param ref_policy Which previous occurrence to report when several of the longest length exist (default: RefPolicy::First)
  * @return Number of factors written to the output file
  *
  * @note Binary format: each factor is written as two uint64_t values (start, length)
  * @warning This function overwrites the output file if it exists
  */
-size_t write_factors_binary_file(const std::string& in_path, const std::string& out_path);
+size_t write_factors_binary_file(const std::string& in_path, const std::string& out_path, RefPolicy ref_policy = RefPolicy::First);
 
 // DNA-aware factorization functions with reverse complement support
 
@@ -242,13 +270,14 @@ size_t write_factors_binary_file(const std::string& in_path, const std::string& 
  * for genomic data where reverse complement patterns are biologically significant.
  *
  * @param text Input DNA text string
+ * @param ref_policy Which previous occurrence to report when several of the longest length exist (default: RefPolicy::First)
  * @return Vector of Factor objects representing the factorization
  *
  * @note Reverse complement matches are encoded with RC_MASK in the ref field
  * @note Factors are non-overlapping and cover the entire input
  * @see factorize_file_dna_w_rc() for file-based factorization
  */
-std::vector<Factor> factorize_dna_w_rc(std::string_view text);
+std::vector<Factor> factorize_dna_w_rc(std::string_view text, RefPolicy ref_policy = RefPolicy::First);
 
 /**
  * @brief Factorizes DNA text from a file with reverse complement awareness into noLZSS factors.
@@ -258,12 +287,13 @@ std::vector<Factor> factorize_dna_w_rc(std::string_view text);
  *
  * @param path Path to the input file containing DNA text
  * @param reserve_hint Optional hint for reserving space in the output vector (0 = no hint)
+ * @param ref_policy Which previous occurrence to report when several of the longest length exist (default: RefPolicy::First)
  * @return Vector of Factor objects representing the factorization
  *
  * @note Use reserve_hint for better performance when you know approximate factor count
  * @see factorize_dna_w_rc() for in-memory factorization
  */
-std::vector<Factor> factorize_file_dna_w_rc(const std::string& path, size_t reserve_hint = 0);
+std::vector<Factor> factorize_file_dna_w_rc(const std::string& path, size_t reserve_hint = 0, RefPolicy ref_policy = RefPolicy::First);
 
 /**
  * @brief Counts the number of noLZSS factors in a DNA text string with reverse complement awareness.
@@ -299,13 +329,14 @@ size_t count_factors_file_dna_w_rc(const std::string& path);
  *
  * @param in_path Path to input file containing DNA text
  * @param out_path Path to output file where binary factors will be written
+ * @param ref_policy Which previous occurrence to report when several of the longest length exist (default: RefPolicy::First)
  * @return Number of factors written to the output file
  *
  * @note Binary format: each factor is written as three uint64_t values (start, length, ref)
  * @note Reverse complement factors have RC_MASK set in the ref field
  * @warning This function overwrites the output file if it exists
  */
-size_t write_factors_binary_file_dna_w_rc(const std::string& in_path, const std::string& out_path);
+size_t write_factors_binary_file_dna_w_rc(const std::string& in_path, const std::string& out_path, RefPolicy ref_policy = RefPolicy::First);
 
 // Template functions for advanced usage
 
@@ -318,10 +349,11 @@ size_t write_factors_binary_file_dna_w_rc(const std::string& in_path, const std:
  * @tparam Sink Callable type that accepts Factor objects
  * @param text Input DNA text string
  * @param sink Callable that receives each computed factor
+ * @param ref_policy Which previous occurrence to report when several of the longest length exist (default: RefPolicy::First)
  * @return Number of factors emitted
  */
 template<class Sink>
-size_t factorize_stream_dna_w_rc(std::string_view text, Sink&& sink);
+size_t factorize_stream_dna_w_rc(std::string_view text, Sink&& sink, RefPolicy ref_policy = RefPolicy::First);
 
 /**
  * @brief Advanced factorization function for DNA files with reverse complement awareness.
@@ -332,10 +364,11 @@ size_t factorize_stream_dna_w_rc(std::string_view text, Sink&& sink);
  * @tparam Sink Callable type that accepts Factor objects
  * @param path Path to input file containing DNA text
  * @param sink Callable that receives each computed factor
+ * @param ref_policy Which previous occurrence to report when several of the longest length exist (default: RefPolicy::First)
  * @return Number of factors emitted
  */
 template<class Sink>
-size_t factorize_file_stream_dna_w_rc(const std::string& path, Sink&& sink);
+size_t factorize_file_stream_dna_w_rc(const std::string& path, Sink&& sink, RefPolicy ref_policy = RefPolicy::First);
 
 // Multiple DNA sequences factorization functions with reverse complement support
 
@@ -349,13 +382,14 @@ size_t factorize_file_stream_dna_w_rc(const std::string& path, Sink&& sink);
  *
  * @param text Input DNA text string with multiple sequences and sentinels
  * @param start_pos Starting position for factorization (default: 0)
+ * @param ref_policy Which previous occurrence to report when several of the longest length exist (default: RefPolicy::First)
  * @return Vector of Factor objects representing the factorization
  *
  * @note Reverse complement matches are encoded with RC_MASK in the ref field
  * @note Factors are non-overlapping and cover the entire input
  * @see factorize_file_multiple_dna_w_rc() for file-based factorization
  */
-std::vector<Factor> factorize_multiple_dna_w_rc(std::string_view text, size_t start_pos = 0);
+std::vector<Factor> factorize_multiple_dna_w_rc(std::string_view text, size_t start_pos = 0, RefPolicy ref_policy = RefPolicy::First);
 
 /**
  * @brief Factorizes DNA text from a file with reverse complement awareness for multiple sequences into noLZSS factors.
@@ -367,12 +401,13 @@ std::vector<Factor> factorize_multiple_dna_w_rc(std::string_view text, size_t st
  * @param path Path to the input file containing DNA text with multiple sequences
  * @param reserve_hint Optional hint for reserving space in the output vector (0 = no hint)
  * @param start_pos Starting position for factorization (default: 0)
+ * @param ref_policy Which previous occurrence to report when several of the longest length exist (default: RefPolicy::First)
  * @return Vector of Factor objects representing the factorization
  *
  * @note Use reserve_hint for better performance when you know approximate factor count
  * @see factorize_multiple_dna_w_rc() for in-memory factorization
  */
-std::vector<Factor> factorize_file_multiple_dna_w_rc(const std::string& path, size_t reserve_hint = 0, size_t start_pos = 0);
+std::vector<Factor> factorize_file_multiple_dna_w_rc(const std::string& path, size_t reserve_hint = 0, size_t start_pos = 0, RefPolicy ref_policy = RefPolicy::First);
 
 /**
  * @brief Counts the number of noLZSS factors in a DNA text string with reverse complement awareness for multiple sequences.
@@ -412,13 +447,14 @@ size_t count_factors_file_multiple_dna_w_rc(const std::string& path, size_t star
  * @param in_path Path to input file containing DNA text with multiple sequences
  * @param out_path Path to output file where binary factors will be written
  * @param start_pos Starting position for factorization (default: 0)
+ * @param ref_policy Which previous occurrence to report when several of the longest length exist (default: RefPolicy::First)
  * @return Number of factors written to the output file
  *
  * @note Binary format: each factor is written as three uint64_t values (start, length, ref)
  * @note Reverse complement factors have RC_MASK set in the ref field
  * @warning This function overwrites the output file if it exists
  */
-size_t write_factors_binary_file_multiple_dna_w_rc(const std::string& in_path, const std::string& out_path, size_t start_pos = 0);
+size_t write_factors_binary_file_multiple_dna_w_rc(const std::string& in_path, const std::string& out_path, size_t start_pos = 0, RefPolicy ref_policy = RefPolicy::First);
 
 // Template functions for advanced usage with multiple sequences
 
@@ -432,10 +468,11 @@ size_t write_factors_binary_file_multiple_dna_w_rc(const std::string& in_path, c
  * @param text Input DNA text string with multiple sequences and sentinels
  * @param sink Callable that receives each computed factor
  * @param start_pos Starting position for factorization (default: 0)
+ * @param ref_policy Which previous occurrence to report when several of the longest length exist (default: RefPolicy::First)
  * @return Number of factors emitted
  */
 template<class Sink>
-size_t factorize_stream_multiple_dna_w_rc(std::string_view text, Sink&& sink, size_t start_pos = 0);
+size_t factorize_stream_multiple_dna_w_rc(std::string_view text, Sink&& sink, size_t start_pos = 0, RefPolicy ref_policy = RefPolicy::First);
 
 /**
  * @brief Advanced factorization function for DNA files with reverse complement awareness for multiple sequences.
@@ -447,10 +484,11 @@ size_t factorize_stream_multiple_dna_w_rc(std::string_view text, Sink&& sink, si
  * @param path Path to input file containing DNA text with multiple sequences
  * @param sink Callable that receives each computed factor
  * @param start_pos Starting position for factorization (default: 0)
+ * @param ref_policy Which previous occurrence to report when several of the longest length exist (default: RefPolicy::First)
  * @return Number of factors emitted
  */
 template<class Sink>
-size_t factorize_file_stream_multiple_dna_w_rc(const std::string& path, Sink&& sink, size_t start_pos = 0);
+size_t factorize_file_stream_multiple_dna_w_rc(const std::string& path, Sink&& sink, size_t start_pos = 0, RefPolicy ref_policy = RefPolicy::First);
 
 // Reference sequence factorization functions
 
@@ -464,6 +502,7 @@ size_t factorize_file_stream_multiple_dna_w_rc(const std::string& path, Sink&& s
  *
  * @param reference_seq Reference DNA sequence string
  * @param target_seq Target DNA sequence string to be factorized
+ * @param ref_policy Which previous occurrence to report when several of the longest length exist (default: RefPolicy::First)
  * @return Vector of Factor objects representing the factorization of the target sequence
  *
  * @note Factors start positions are absolute positions in the combined reference+target string
@@ -471,7 +510,7 @@ size_t factorize_file_stream_multiple_dna_w_rc(const std::string& path, Sink&& s
  * @note Reverse complement matches are encoded with RC_MASK in the ref field
  * @throws std::invalid_argument If sequences contain invalid nucleotides
  */
-std::vector<Factor> factorize_dna_w_reference_seq(const std::string& reference_seq, const std::string& target_seq);
+std::vector<Factor> factorize_dna_w_reference_seq(const std::string& reference_seq, const std::string& target_seq, RefPolicy ref_policy = RefPolicy::First);
 
 /**
  * @brief Factorizes a target DNA sequence using a reference sequence and writes factors to a binary file.
@@ -483,6 +522,7 @@ std::vector<Factor> factorize_dna_w_reference_seq(const std::string& reference_s
  * @param reference_seq Reference DNA sequence string
  * @param target_seq Target DNA sequence string to be factorized
  * @param out_path Path to output file where binary factors will be written
+ * @param ref_policy Which previous occurrence to report when several of the longest length exist (default: RefPolicy::First)
  * @return Number of factors written to the output file
  *
  * @note Factors start positions are absolute positions in the combined reference+target string
@@ -491,7 +531,7 @@ std::vector<Factor> factorize_dna_w_reference_seq(const std::string& reference_s
  * @throws std::invalid_argument If sequences contain invalid nucleotides
  * @warning This function overwrites the output file if it exists
  */
-size_t factorize_dna_w_reference_seq_file(const std::string& reference_seq, const std::string& target_seq, const std::string& out_path);
+size_t factorize_dna_w_reference_seq_file(const std::string& reference_seq, const std::string& target_seq, const std::string& out_path, RefPolicy ref_policy = RefPolicy::First);
 
 // General reference sequence factorization functions (no reverse complement)
 
@@ -505,6 +545,7 @@ size_t factorize_dna_w_reference_seq_file(const std::string& reference_seq, cons
  *
  * @param reference_seq Reference sequence string (any text)
  * @param target_seq Target sequence string to be factorized (any text)
+ * @param ref_policy Which previous occurrence to report when several of the longest length exist (default: RefPolicy::First)
  * @return Vector of Factor objects representing the factorization of the target sequence
  *
  * @note Factors start positions are absolute positions in the combined reference+target string
@@ -513,7 +554,7 @@ size_t factorize_dna_w_reference_seq_file(const std::string& reference_seq, cons
  * @warning The sentinel character '\x01' (ASCII 1) must not appear in either input sequence,
  *          as it is used internally to separate the reference and target sequences
  */
-std::vector<Factor> factorize_w_reference(const std::string& reference_seq, const std::string& target_seq);
+std::vector<Factor> factorize_w_reference(const std::string& reference_seq, const std::string& target_seq, RefPolicy ref_policy = RefPolicy::First);
 
 /**
  * @brief Factorizes a target sequence using a reference sequence and writes factors to a binary file.
@@ -525,6 +566,7 @@ std::vector<Factor> factorize_w_reference(const std::string& reference_seq, cons
  * @param reference_seq Reference sequence string (any text)
  * @param target_seq Target sequence string to be factorized (any text)
  * @param out_path Path to output file where binary factors will be written
+ * @param ref_policy Which previous occurrence to report when several of the longest length exist (default: RefPolicy::First)
  * @return Number of factors written to the output file
  *
  * @note Factors start positions are absolute positions in the combined reference+target string
@@ -534,7 +576,7 @@ std::vector<Factor> factorize_w_reference(const std::string& reference_seq, cons
  *          as it is used internally to separate the reference and target sequences
  * @warning This function overwrites the output file if it exists
  */
-size_t factorize_w_reference_file(const std::string& reference_seq, const std::string& target_seq, const std::string& out_path);
+size_t factorize_w_reference_file(const std::string& reference_seq, const std::string& target_seq, const std::string& out_path, RefPolicy ref_policy = RefPolicy::First);
 
 // Parallel factorization functions
 
@@ -549,9 +591,10 @@ size_t factorize_w_reference_file(const std::string& reference_seq, const std::s
  * @param output_path Path to output binary file
  * @param num_threads Number of threads (0 for auto-detection)
  * @param start_pos Starting position in the text for factorization (default: 0)
+ * @param ref_policy Which previous occurrence to report when several of the longest length exist (default: RefPolicy::First)
  * @return Number of factors produced
  */
-size_t parallel_factorize_to_file(std::string_view text, const std::string& output_path, size_t num_threads = 0, size_t start_pos = 0);
+size_t parallel_factorize_to_file(std::string_view text, const std::string& output_path, size_t num_threads = 0, size_t start_pos = 0, RefPolicy ref_policy = RefPolicy::First);
 
 /**
  * @brief Factorizes text from file in parallel and writes results to a binary file
@@ -563,9 +606,10 @@ size_t parallel_factorize_to_file(std::string_view text, const std::string& outp
  * @param output_path Path to output binary file
  * @param num_threads Number of threads (0 for auto-detection)
  * @param start_pos Starting position in the text for factorization (default: 0)
+ * @param ref_policy Which previous occurrence to report when several of the longest length exist (default: RefPolicy::First)
  * @return Number of factors produced
  */
-size_t parallel_factorize_file_to_file(const std::string& input_path, const std::string& output_path, size_t num_threads = 0, size_t start_pos = 0);
+size_t parallel_factorize_file_to_file(const std::string& input_path, const std::string& output_path, size_t num_threads = 0, size_t start_pos = 0, RefPolicy ref_policy = RefPolicy::First);
 
 /**
  * @brief Factorizes DNA text in parallel with reverse complement and writes results to a binary file
@@ -575,9 +619,10 @@ size_t parallel_factorize_file_to_file(const std::string& input_path, const std:
  * @param text Input DNA text
  * @param output_path Path to output binary file
  * @param num_threads Number of threads (0 for auto-detection)
+ * @param ref_policy Which previous occurrence to report when several of the longest length exist (default: RefPolicy::First)
  * @return Number of factors produced
  */
-size_t parallel_factorize_dna_w_rc_to_file(std::string_view text, const std::string& output_path, size_t num_threads = 0);
+size_t parallel_factorize_dna_w_rc_to_file(std::string_view text, const std::string& output_path, size_t num_threads = 0, RefPolicy ref_policy = RefPolicy::First);
 
 /**
  * @brief Factorizes DNA text from file in parallel with reverse complement and writes results to a binary file
@@ -588,8 +633,9 @@ size_t parallel_factorize_dna_w_rc_to_file(std::string_view text, const std::str
  * @param input_path Path to input DNA text file
  * @param output_path Path to output binary file
  * @param num_threads Number of threads (0 for auto-detection)
+ * @param ref_policy Which previous occurrence to report when several of the longest length exist (default: RefPolicy::First)
  * @return Number of factors produced
  */
-size_t parallel_factorize_file_dna_w_rc_to_file(const std::string& input_path, const std::string& output_path, size_t num_threads = 0);
+size_t parallel_factorize_file_dna_w_rc_to_file(const std::string& input_path, const std::string& output_path, size_t num_threads = 0, RefPolicy ref_policy = RefPolicy::First);
 
 } // namespace noLZSS
