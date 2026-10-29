@@ -210,6 +210,19 @@ When both a forward and an RC candidate exist:
 3. **Among same-type candidates**: The candidate with the earliest non-overlapping position wins (smallest `start` for forward, smallest `end` for RC). In particular, when the partial-edge candidate ties with the node-aligned forward candidate, the node-aligned one is kept because its start is never later.
 4. **RC needs length ≥ 2**: a single-nucleotide RC "match" is never used; a literal is emitted instead.
 
+These are the `RefPolicy::First` rules (the default). The alternative policy is described next.
+
+### Reference Policy: Closest Occurrence (`RefPolicy::Last`)
+
+The walk above determines the factor **length** `L` as the maximum over all earlier non-overlapping occurrences; which occurrence is reported cannot change `L` or the next factor start. `RefPolicy::Last` keeps the walk unchanged and replaces only the reported reference by the occurrence closest to `i`:
+
+- **Forward, node-aligned factor** (`fwd_len = depth(vF)` for the deepest usable forward node `vF`): every occurrence of length `L` is a suffix in `vF`'s SA interval, so the closest one is the **largest `fwd_starts` value `≤ i - L`** in `[lb(vF), rb(vF)]`.
+- **Forward, partial-edge factor**: the reference `jF` is the only valid one (every other suffix of that node starts later and would overlap), so no query is needed.
+- **RC factor**: `rc_len` always equals `depth(vR)` for the deepest usable RC node `vR` (its minimum-end leaf cannot belong to a deeper usable node), so the closest RC occurrence is the **largest `rc_ends` value `≤ i - 1`** in `[lb(vR), rb(vR)]`.
+- **Equal lengths**: the strand whose occurrence **ends closest** to `i` wins (`fwd_start + L - 1` vs. the RC end); on an exact tie, which only happens when the occurrence equals its own reverse complement, the forward match wins. A partial-edge forward candidate ends at `i - 1` and therefore always wins ties.
+
+The two-sided query "largest value `≤ limit` inside an SA interval" is a **range-predecessor** query. An RMQ cannot answer it (the interval also contains occurrences at or after `i`), so the implementation builds a wavelet tree (`sdsl::wt_int`) over `fwd_starts` and one over `rc_ends` (`∞` entries clamped to `N` so the tree has `⌈log₂(N+1)⌉` levels) and answers each query with a count (`lex_count`) followed by a quantile (`quantile_freq`), `O(log N)` each. The base algorithm uses the same scheme with a single wavelet tree over the suffix array. The trees are built only when the policy is `Last`, cost `O(n log n)` bits, and add one `O(log n)` query per factor, which keeps the loop within its `O(n log n)` bound. Queries are read-only, so the parallel implementation shares one set of trees across threads.
+
 ## Complexity Analysis
 
 ### Base Algorithm Complexity
@@ -263,6 +276,7 @@ For a genome of total length `n` bases with `k` sequences:
 | `fwd_starts` array (64-bit) | `(2n + 2k + 1) × 8` bytes |
 | `rc_ends` array (64-bit) | `(2n + 2k + 1) × 8` bytes |
 | RMQ structures (×2) | `O(n)` each |
+| Wavelet trees (×2, `RefPolicy::Last` only) | `≈ (2n + 2k) × ⌈log₂(n+1)⌉` bits each, plus rank support |
 | Output factors | `24` bytes per factor |
 
 ## Algorithm Flow Diagram
@@ -353,7 +367,8 @@ The forward match at position 4 covers `ATCG` which matches `T[0..3]`, and the n
 | Candidate tracking | Single best | Two independent bests |
 | True LCP computation | `min(LCP(i,j), i-j)` | FWD: `min(LCP(i,j), i-j)`; RC: `LCP(i, posS)` |
 | Factor reference | Start position in `T` | FWD: start in `T`; RC: `RC_MASK \| start` |
-| Tie-breaking | N/A | Forward preferred when lengths are equal |
+| Tie-breaking | N/A | Forward preferred when lengths are equal (`First`); closest end wins (`Last`) |
+| Reference policy | `First`: RMQ minimum; `Last`: range predecessor over SA | `First`: RMQ minima; `Last`: range predecessors over `fwd_starts` / `rc_ends` |
 
 ## Constraints and Limitations
 

@@ -54,7 +54,7 @@ std::string ParallelFactorizer::create_temp_file_path(size_t thread_id) {
  * @throws std::runtime_error If file I/O operations fail
  */
 size_t ParallelFactorizer::parallel_factorize(std::string_view text, const std::string& output_path, 
-                                           size_t num_threads, size_t start_pos) {
+                                           size_t num_threads, size_t start_pos, RefPolicy ref_policy) {
     if (text.empty()) return 0;
     
     // Ensure start_pos is within bounds
@@ -83,6 +83,14 @@ size_t ParallelFactorizer::parallel_factorize(std::string_view text, const std::
     
     // Create RMQ support once for all threads
     sdsl::rmq_succinct_sct<> rmq(&cst.csa);
+
+    // Range-predecessor index over the suffix array, only for RefPolicy::Last (shared, read-only)
+    RangePredecessor pred;
+    const RangePredecessor* pred_ptr = nullptr;
+    if (ref_policy == RefPolicy::Last) {
+        pred = detail::build_sa_predecessor(cst);
+        pred_ptr = &pred;
+    }
     
     // Create contexts for each thread
     std::vector<ThreadContext> contexts(num_threads);
@@ -110,9 +118,9 @@ size_t ParallelFactorizer::parallel_factorize(std::string_view text, const std::
     // Create and start worker threads with exception handling
     std::vector<std::thread> threads;
     for (size_t i = 0; i < num_threads; ++i) {
-        threads.emplace_back([this, &cst, &rmq, &contexts, &file_mutexes, &thread_exceptions, &exception_mutex, i]() {
+        threads.emplace_back([this, &cst, &rmq, pred_ptr, ref_policy, &contexts, &file_mutexes, &thread_exceptions, &exception_mutex, i]() {
             try {
-                factorize_thread(cst, rmq, contexts[i], contexts, file_mutexes);
+                factorize_thread(cst, rmq, pred_ptr, ref_policy, contexts[i], contexts, file_mutexes);
             } catch (...) {
                 // Capture exception for the main thread to handle
                 std::lock_guard<std::mutex> lock(exception_mutex);
@@ -171,6 +179,7 @@ size_t ParallelFactorizer::parallel_factorize(std::string_view text, const std::
  * @param file_mutexes Mutexes protecting file access for each thread
  */
 void ParallelFactorizer::factorize_thread(const cst_t& cst, const sdsl::rmq_succinct_sct<>& rmq,
+                                        const RangePredecessor* pred, RefPolicy ref_policy,
                                         ThreadContext& ctx,
                                         std::vector<ThreadContext>& all_contexts,
                                         std::vector<std::mutex>& file_mutexes) {
@@ -191,59 +200,12 @@ void ParallelFactorizer::factorize_thread(const cst_t& cst, const sdsl::rmq_succ
         next_ctx = &all_contexts[ctx.thread_id + 1];
     }
     
-    // Main factorization loop
+    // Main factorization loop (same per-position search as the sequential nolzss())
     while (lambda_sufnum < ctx.text_length) {
-        // Compute current factor
-        size_t d = 1;
-        size_t l = 1;
-        cst_t::node_type v;
-        size_t v_min_leaf_sufnum = 0;
-        size_t u_min_leaf_sufnum = 0;
-        Factor current_factor;
-        
-        // Factor computation logic (similar to original nolzss)
-        while (true) {
-            v = cst.bp_support.level_anc(lambda, lambda_node_depth - d);
-            v_min_leaf_sufnum = cst.csa[rmq(cst.lb(v), cst.rb(v))];
-            l = cst.depth(v);
-            
-            if (v_min_leaf_sufnum + l - 1 < lambda_sufnum) {
-                u_min_leaf_sufnum = v_min_leaf_sufnum;
-                ++d;
-                continue;
-            }
-            
-            auto u = cst.parent(v);
-            auto u_depth = cst.depth(u);
-            
-            if (v_min_leaf_sufnum == lambda_sufnum) {
-                if (u == cst.root()) {
-                    l = 1;
-                    current_factor = Factor{static_cast<uint64_t>(lambda_sufnum), 
-                                         static_cast<uint64_t>(l), 
-                                         static_cast<uint64_t>(lambda_sufnum)};
-                } else {
-                    l = u_depth;
-                    current_factor = Factor{static_cast<uint64_t>(lambda_sufnum), 
-                                         static_cast<uint64_t>(l), 
-                                         static_cast<uint64_t>(u_min_leaf_sufnum)};
-                }
-            } else {
-                l = std::min(lcp(cst, lambda_sufnum, v_min_leaf_sufnum),
-                           (lambda_sufnum - v_min_leaf_sufnum));
-                if (l <= u_depth) {
-                    l = u_depth;
-                    current_factor = Factor{static_cast<uint64_t>(lambda_sufnum), 
-                                         static_cast<uint64_t>(l), 
-                                         static_cast<uint64_t>(u_min_leaf_sufnum)};
-                } else {
-                    current_factor = Factor{static_cast<uint64_t>(lambda_sufnum), 
-                                         static_cast<uint64_t>(l), 
-                                         static_cast<uint64_t>(v_min_leaf_sufnum)};
-                }
-            }
-            break;
-        }
+        detail::PlainMatchResult m = detail::find_longest_plain_match(cst, rmq, pred, ref_policy,
+                                                                      lambda, lambda_node_depth, lambda_sufnum);
+        size_t l = m.len;
+        Factor current_factor{static_cast<uint64_t>(lambda_sufnum), static_cast<uint64_t>(l), m.ref};
         
         // Write the factor to temporary file
         write_factor(current_factor, ctx.temp_file_path, file_mutexes[ctx.thread_id]);
@@ -295,6 +257,9 @@ void ParallelFactorizer::factorize_dna_w_rc_thread(const cst_t& cst,
                                                   const sdsl::int_vector<64>& rc_ends,
                                                   uint64_t INF,
                                                   size_t N,
+                                                  const RangePredecessor* predF,
+                                                  const RangePredecessor* predR,
+                                                  RefPolicy ref_policy,
                                                   ThreadContext& ctx,
                                                   std::vector<ThreadContext>& all_contexts,
                                                   std::vector<std::mutex>& file_mutexes) {
@@ -318,6 +283,7 @@ void ParallelFactorizer::factorize_dna_w_rc_thread(const cst_t& cst,
     // Main factorization loop - only process the original sequence (0 to N)
     while (i < N) {
         detail::RcMatchResult m = detail::find_longest_rc_match(cst, rmqF, rmqRcEnd, fwd_starts, rc_ends, INF,
+                                                                predF, predR, ref_policy,
                                                                 lambda, lambda_node_depth, i);
         size_t emit_len = m.len;
 
@@ -694,7 +660,8 @@ void ParallelFactorizer::cleanup_temp_files(const std::vector<ThreadContext>& co
 size_t ParallelFactorizer::parallel_factorize_file(const std::string& input_path, 
                                                 const std::string& output_path,
                                                 size_t num_threads,
-                                                size_t start_pos) {
+                                                size_t start_pos,
+                                                RefPolicy ref_policy) {
     // Read the file content
     std::ifstream is(input_path, std::ios::binary);
     if (!is) {
@@ -702,7 +669,7 @@ size_t ParallelFactorizer::parallel_factorize_file(const std::string& input_path
     }
     
     std::string data((std::istreambuf_iterator<char>(is)), std::istreambuf_iterator<char>());
-    return parallel_factorize(data, output_path, num_threads, start_pos);
+    return parallel_factorize(data, output_path, num_threads, start_pos, ref_policy);
 }
 
 /**
@@ -731,7 +698,8 @@ size_t ParallelFactorizer::parallel_factorize_multiple_dna_w_rc(const std::strin
                                                                 size_t original_length,
                                                                 const std::string& output_path,
                                                                 size_t num_threads,
-                                                                size_t start_pos) {
+                                                                size_t start_pos,
+                                                                RefPolicy ref_policy) {
     if (prepared_string.empty() || original_length == 0) return 0;
     
     const std::string& S = prepared_string;
@@ -801,6 +769,17 @@ size_t ParallelFactorizer::parallel_factorize_multiple_dna_w_rc(const std::strin
     
     sdsl::rmq_succinct_sct<> rmqF(&fwd_starts);
     sdsl::rmq_succinct_sct<> rmqRcEnd(&rc_ends);
+
+    // Range-predecessor indexes for RefPolicy::Last (shared, read-only)
+    RangePredecessor predF, predR;
+    const RangePredecessor* predF_ptr = nullptr;
+    const RangePredecessor* predR_ptr = nullptr;
+    if (ref_policy == RefPolicy::Last) {
+        predF = RangePredecessor(fwd_starts, N);
+        predR = RangePredecessor(rc_ends, N);
+        predF_ptr = &predF;
+        predR_ptr = &predR;
+    }
     
     // Create contexts for each thread - divide only from start_pos to N
     std::vector<ThreadContext> contexts(num_threads);
@@ -827,6 +806,7 @@ size_t ParallelFactorizer::parallel_factorize_multiple_dna_w_rc(const std::strin
     auto factorize_dna_thread = [&](ThreadContext& ctx) {
         try {
             factorize_dna_w_rc_thread(cst, rmqF, rmqRcEnd, fwd_starts, rc_ends, INF, N,
+                                     predF_ptr, predR_ptr, ref_policy,
                                      ctx, contexts, file_mutexes);
         } catch (...) {
             // Capture exception for the main thread to handle
@@ -882,7 +862,8 @@ size_t ParallelFactorizer::parallel_factorize_multiple_dna_w_rc(const std::strin
 size_t ParallelFactorizer::parallel_factorize_dna_w_rc(std::string_view text, 
                                                     const std::string& output_path,
                                                     size_t num_threads,
-                                                    size_t start_pos) {
+                                                    size_t start_pos,
+                                                    RefPolicy ref_policy) {
     if (text.empty()) return 0;
     
     // Prepare the DNA sequence with reverse complement
@@ -894,7 +875,8 @@ size_t ParallelFactorizer::parallel_factorize_dna_w_rc(std::string_view text,
                                                prep_result.original_length,
                                                output_path,
                                                num_threads,
-                                               start_pos);
+                                               start_pos,
+                                               ref_policy);
 }
 
 /**
@@ -911,14 +893,15 @@ size_t ParallelFactorizer::parallel_factorize_dna_w_rc(std::string_view text,
  */
 size_t ParallelFactorizer::parallel_factorize_file_dna_w_rc(const std::string& input_path, 
                                                          const std::string& output_path,
-                                                         size_t num_threads) {
+                                                         size_t num_threads,
+                                                         RefPolicy ref_policy) {
     std::ifstream is(input_path, std::ios::binary);
     if (!is) {
         throw std::runtime_error("Cannot open input file: " + input_path);
     }
     
     std::string data((std::istreambuf_iterator<char>(is)), std::istreambuf_iterator<char>());
-    return parallel_factorize_dna_w_rc(data, output_path, num_threads);
+    return parallel_factorize_dna_w_rc(data, output_path, num_threads, 0, ref_policy);
 }
 
 } // namespace noLZSS

@@ -17,6 +17,7 @@ namespace noLZSS {
  * @param text Input text string
  * @param sink Callable that receives each computed factor
  * @param start_pos Starting position for factorization (default 0)
+ * @param ref_policy Reference selection policy (default RefPolicy::First)
  * @return Number of factors emitted
  *
  * @note This function copies the input string for suffix tree construction
@@ -24,10 +25,10 @@ namespace noLZSS {
  * @see factorize() for the non-template version that returns a vector
  */
 template<class Sink>
-size_t factorize_stream(std::string_view text, Sink&& sink, size_t start_pos) {
+size_t factorize_stream(std::string_view text, Sink&& sink, size_t start_pos, RefPolicy ref_policy) {
     std::string tmp(text);
     cst_t cst; construct_im(cst, tmp, 1);
-    return nolzss(cst, std::forward<Sink>(sink), start_pos);
+    return nolzss(cst, std::forward<Sink>(sink), start_pos, ref_policy);
 }
 
 /**
@@ -42,6 +43,7 @@ size_t factorize_stream(std::string_view text, Sink&& sink, size_t start_pos) {
  * @param sentinel_positions Positions where sentinels were inserted
  * @param sink Callable that receives each computed factor
  * @param start_pos Starting position for factor positions (default 0)
+ * @param ref_policy Reference selection policy (default RefPolicy::First)
  * @return Total number of factors emitted
  *
  * @note Memory-efficient for large genomic datasets
@@ -51,10 +53,11 @@ template<class Sink>
 size_t factorize_stream_multiple_dna_w_rc(
     std::string_view text,
     Sink&& sink,
-    size_t start_pos
+    size_t start_pos,
+    RefPolicy ref_policy
 ) {
     std::string tmp(text);
-    return nolzss_multiple_dna_w_rc(tmp, std::forward<Sink>(sink), start_pos);
+    return nolzss_multiple_dna_w_rc(tmp, std::forward<Sink>(sink), start_pos, ref_policy);
 }
 
 /**
@@ -68,6 +71,7 @@ size_t factorize_stream_multiple_dna_w_rc(
  * @param sentinel_positions Positions where sentinels were inserted
  * @param sink Callable that receives each computed factor
  * @param start_pos Starting position for factor positions (default 0)
+ * @param ref_policy Reference selection policy (default RefPolicy::First)
  * @return Total number of factors emitted
  *
  * @note Uses cache-efficient file reading for large files
@@ -77,7 +81,8 @@ template<class Sink>
 size_t factorize_file_stream_multiple_dna_w_rc(
     const std::string& filepath,
     Sink&& sink,
-    size_t start_pos
+    size_t start_pos,
+    RefPolicy ref_policy
 ) {
     // Read file into string first
     std::ifstream file(filepath, std::ios::binary);
@@ -86,7 +91,7 @@ size_t factorize_file_stream_multiple_dna_w_rc(
     }
     std::string text((std::istreambuf_iterator<char>(file)),
                       std::istreambuf_iterator<char>());
-    return nolzss_multiple_dna_w_rc(text, std::forward<Sink>(sink), start_pos);
+    return nolzss_multiple_dna_w_rc(text, std::forward<Sink>(sink), start_pos, ref_policy);
 }
 
 } // namespace noLZSS

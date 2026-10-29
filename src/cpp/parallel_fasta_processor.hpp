@@ -14,6 +14,7 @@ namespace noLZSS {
  * @param fasta_path Path to input FASTA file containing DNA sequences
  * @param out_path Path to output file where binary factors will be written
  * @param num_threads Number of threads to use (0 = auto-detect based on input size)
+ * @param ref_policy Reference selection policy: First (default, earliest occurrence) or Last (closest occurrence)
  * @return Number of factors written to the output file
  * 
  * @throws std::runtime_error If FASTA file cannot be opened or contains no valid sequences
@@ -30,7 +31,8 @@ size_t parallel_write_factors_binary_file_fasta_multiple_dna_w_rc(
     const std::string& fasta_path, 
     const std::string& out_path,
     size_t num_threads = 0,
-    FastaDnaSanitizationMode sanitization_mode = FastaDnaSanitizationMode::RemoveAmbiguous
+    FastaDnaSanitizationMode sanitization_mode = FastaDnaSanitizationMode::RemoveAmbiguous,
+    RefPolicy ref_policy = RefPolicy::First
 );
 
 /**
@@ -43,6 +45,7 @@ size_t parallel_write_factors_binary_file_fasta_multiple_dna_w_rc(
  * @param fasta_path Path to input FASTA file containing DNA sequences
  * @param out_path Path to output file where binary factors will be written
  * @param num_threads Number of threads to use (0 = auto-detect based on input size)
+ * @param ref_policy Reference selection policy: First (default, earliest occurrence) or Last (closest occurrence)
  * @return Number of factors written to the output file
  * 
  * @throws std::runtime_error If FASTA file cannot be opened or contains no valid sequences
@@ -59,7 +62,8 @@ size_t parallel_write_factors_binary_file_fasta_multiple_dna_no_rc(
     const std::string& fasta_path,
     const std::string& out_path,
     size_t num_threads = 0,
-    FastaDnaSanitizationMode sanitization_mode = FastaDnaSanitizationMode::RemoveAmbiguous
+    FastaDnaSanitizationMode sanitization_mode = FastaDnaSanitizationMode::RemoveAmbiguous,
+    RefPolicy ref_policy = RefPolicy::First
 );
 
 /**
@@ -73,6 +77,7 @@ size_t parallel_write_factors_binary_file_fasta_multiple_dna_no_rc(
  * @param target_fasta_path Path to FASTA file containing target DNA sequences
  * @param out_path Path to output file where binary factors will be written
  * @param num_threads Number of threads to use (0 = auto-detect based on input size)
+ * @param ref_policy Reference selection policy: First (default, earliest occurrence) or Last (closest occurrence)
  * @return Number of factors written to the output file
  * 
  * @throws std::runtime_error If FASTA files cannot be opened or contain no valid sequences
@@ -91,7 +96,8 @@ size_t parallel_write_factors_dna_w_reference_fasta_files_to_binary(
     const std::string& target_fasta_path,
     const std::string& out_path,
     size_t num_threads = 0,
-    FastaDnaSanitizationMode sanitization_mode = FastaDnaSanitizationMode::RemoveAmbiguous
+    FastaDnaSanitizationMode sanitization_mode = FastaDnaSanitizationMode::RemoveAmbiguous,
+    RefPolicy ref_policy = RefPolicy::First
 );
 
 /**
@@ -103,6 +109,7 @@ size_t parallel_write_factors_dna_w_reference_fasta_files_to_binary(
  * @param fasta_path Path to input FASTA file containing DNA sequences
  * @param out_dir Path to output directory where binary factor files will be written
  * @param num_threads Number of threads to use (0 = auto-detect based on sequence count)
+ * @param ref_policy Reference selection policy: First (default, earliest occurrence) or Last (closest occurrence)
  * @return Total number of factors written across all sequences
  * 
  * @throws std::runtime_error If FASTA file cannot be opened or contains no valid sequences
@@ -119,7 +126,8 @@ size_t parallel_write_factors_binary_file_fasta_dna_w_rc_per_sequence(
     const std::string& fasta_path,
     const std::string& out_dir,
     size_t num_threads = 0,
-    FastaDnaSanitizationMode sanitization_mode = FastaDnaSanitizationMode::RemoveAmbiguous
+    FastaDnaSanitizationMode sanitization_mode = FastaDnaSanitizationMode::RemoveAmbiguous,
+    RefPolicy ref_policy = RefPolicy::First
 );
 
 /**
@@ -131,6 +139,7 @@ size_t parallel_write_factors_binary_file_fasta_dna_w_rc_per_sequence(
  * @param fasta_path Path to input FASTA file containing DNA sequences
  * @param out_dir Path to output directory where binary factor files will be written
  * @param num_threads Number of threads to use (0 = auto-detect based on sequence count)
+ * @param ref_policy Reference selection policy: First (default, earliest occurrence) or Last (closest occurrence)
  * @return Total number of factors written across all sequences
  * 
  * @throws std::runtime_error If FASTA file cannot be opened or contains no valid sequences
@@ -147,7 +156,8 @@ size_t parallel_write_factors_binary_file_fasta_dna_no_rc_per_sequence(
     const std::string& fasta_path,
     const std::string& out_dir,
     size_t num_threads = 0,
-    FastaDnaSanitizationMode sanitization_mode = FastaDnaSanitizationMode::RemoveAmbiguous
+    FastaDnaSanitizationMode sanitization_mode = FastaDnaSanitizationMode::RemoveAmbiguous,
+    RefPolicy ref_policy = RefPolicy::First
 );
 
 } // namespace noLZSS

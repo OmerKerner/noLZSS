@@ -315,10 +315,10 @@ PreparedSequenceResult prepare_multiple_dna_sequences_no_rc(const std::vector<st
  * @see factorize_file() for the non-template version that returns a vector
  */
 template<class Sink>
-size_t factorize_file_stream(const std::string& path, Sink&& sink, size_t start_pos) {
+size_t factorize_file_stream(const std::string& path, Sink&& sink, size_t start_pos, RefPolicy ref_policy) {
     // sdsl-lite will automatically add the sentinel when needed
     cst_t cst; construct(cst, path, 1);
-    return detail::nolzss(cst, std::forward<Sink>(sink), start_pos);
+    return detail::nolzss(cst, std::forward<Sink>(sink), start_pos, ref_policy);
 }
 
 /**
@@ -375,11 +375,11 @@ size_t count_factors_file(const std::string& path, size_t start_pos) {
  * @note The returned factors are non-overlapping and cover the entire input
  * @see factorize_file() for file-based factorization
  */
-std::vector<Factor> factorize(std::string_view text, size_t start_pos) {
+std::vector<Factor> factorize(std::string_view text, size_t start_pos, RefPolicy ref_policy) {
     std::vector<Factor> out;
     std::string tmp(text);
     cst_t cst; construct_im(cst, tmp, 1);
-    detail::nolzss(cst, [&](const Factor& f){ out.push_back(f); }, start_pos);
+    detail::nolzss(cst, [&](const Factor& f){ out.push_back(f); }, start_pos, ref_policy);
     return out;
 }
 
@@ -398,10 +398,10 @@ std::vector<Factor> factorize(std::string_view text, size_t start_pos) {
  * @note This is more memory-efficient than factorize() for large files
  * @see factorize() for in-memory factorization
  */
-std::vector<Factor> factorize_file(const std::string& path, size_t reserve_hint, size_t start_pos) {
+std::vector<Factor> factorize_file(const std::string& path, size_t reserve_hint, size_t start_pos, RefPolicy ref_policy) {
     std::vector<Factor> out;
     if (reserve_hint) out.reserve(reserve_hint);
-    factorize_file_stream(path, [&](const Factor& f){ out.push_back(f); }, start_pos);
+    factorize_file_stream(path, [&](const Factor& f){ out.push_back(f); }, start_pos, ref_policy);
     return out;
 }
 
@@ -421,7 +421,7 @@ std::vector<Factor> factorize_file(const std::string& path, size_t reserve_hint,
  * @note This function overwrites the output file if it exists
  * @warning Ensure sufficient disk space for the output file
  */
-size_t write_factors_binary_file(const std::string& in_path, const std::string& out_path) {
+size_t write_factors_binary_file(const std::string& in_path, const std::string& out_path, RefPolicy ref_policy) {
     // Get input file size for total_length
     std::ifstream infile(in_path, std::ios::binary | std::ios::ate);
     if (!infile) {
@@ -442,7 +442,7 @@ size_t write_factors_binary_file(const std::string& in_path, const std::string& 
     // Stream factors directly to file without collecting in memory
     size_t n = factorize_file_stream(in_path, [&](const Factor& f){
         os.write(reinterpret_cast<const char*>(&f), sizeof(Factor));
-    });
+    }, 0, ref_policy);
     
     // For non-FASTA files, create minimal footer with no sequence names or sentinels
     FactorFileFooter footer;
@@ -475,9 +475,9 @@ size_t write_factors_binary_file(const std::string& in_path, const std::string& 
  * @see factorize_dna_w_rc() for the non-template version that returns a vector
  */
 template<class Sink>
-size_t factorize_stream_dna_w_rc(std::string_view text, Sink&& sink) {
+size_t factorize_stream_dna_w_rc(std::string_view text, Sink&& sink, RefPolicy ref_policy) {
     std::string tmp(text);
-    return detail::nolzss_dna_w_rc(tmp, std::forward<Sink>(sink));
+    return detail::nolzss_dna_w_rc(tmp, std::forward<Sink>(sink), ref_policy);
 }
 
 /**
@@ -496,11 +496,11 @@ size_t factorize_stream_dna_w_rc(std::string_view text, Sink&& sink) {
  * @see factorize_file_dna_w_rc() for the non-template version that returns a vector
  */
 template<class Sink>
-size_t factorize_file_stream_dna_w_rc(const std::string& path, Sink&& sink) {
+size_t factorize_file_stream_dna_w_rc(const std::string& path, Sink&& sink, RefPolicy ref_policy) {
     std::ifstream is(path, std::ios::binary);
     if (!is) throw std::runtime_error("Cannot open input file: " + path);
     std::string data((std::istreambuf_iterator<char>(is)), std::istreambuf_iterator<char>());
-    return detail::nolzss_dna_w_rc(data, std::forward<Sink>(sink));
+    return detail::nolzss_dna_w_rc(data, std::forward<Sink>(sink), ref_policy);
 }
 
 /**
@@ -516,9 +516,9 @@ size_t factorize_file_stream_dna_w_rc(const std::string& path, Sink&& sink) {
  * @note The returned factors are non-overlapping and cover the entire input
  * @see factorize_file_dna_w_rc() for file-based factorization
  */
-std::vector<Factor> factorize_dna_w_rc(std::string_view text) {
+std::vector<Factor> factorize_dna_w_rc(std::string_view text, RefPolicy ref_policy) {
     std::vector<Factor> out;
-    factorize_stream_dna_w_rc(text, [&](const Factor& f){ out.push_back(f); });
+    factorize_stream_dna_w_rc(text, [&](const Factor& f){ out.push_back(f); }, ref_policy);
     return out;
 }
 
@@ -537,9 +537,9 @@ std::vector<Factor> factorize_dna_w_rc(std::string_view text) {
  * @note This is more memory-efficient than factorize_dna_w_rc() for large files
  * @see factorize_dna_w_rc() for in-memory factorization
  */
-std::vector<Factor> factorize_file_dna_w_rc(const std::string& path, size_t reserve_hint) {
+std::vector<Factor> factorize_file_dna_w_rc(const std::string& path, size_t reserve_hint, RefPolicy ref_policy) {
     std::vector<Factor> out; if (reserve_hint) out.reserve(reserve_hint);
-    factorize_file_stream_dna_w_rc(path, [&](const Factor& f){ out.push_back(f); });
+    factorize_file_stream_dna_w_rc(path, [&](const Factor& f){ out.push_back(f); }, ref_policy);
     return out;
 }
 
@@ -594,7 +594,7 @@ size_t count_factors_file_dna_w_rc(const std::string& path) {
  * @note This function overwrites the output file if it exists
  * @warning Ensure sufficient disk space for the output file
  */
-size_t write_factors_binary_file_dna_w_rc(const std::string& in_path, const std::string& out_path) {
+size_t write_factors_binary_file_dna_w_rc(const std::string& in_path, const std::string& out_path, RefPolicy ref_policy) {
     // Get input file size for total_length
     std::ifstream infile(in_path, std::ios::binary | std::ios::ate);
     if (!infile) {
@@ -615,7 +615,7 @@ size_t write_factors_binary_file_dna_w_rc(const std::string& in_path, const std:
     // Stream factors directly to file without collecting in memory
     size_t n = factorize_file_stream_dna_w_rc(in_path, [&](const Factor& f){
         os.write(reinterpret_cast<const char*>(&f), sizeof(Factor));
-    });
+    }, ref_policy);
     
     // Write empty sequence name (single null terminator)
     os.write("\0", 1);
@@ -648,10 +648,10 @@ size_t write_factors_binary_file_dna_w_rc(const std::string& in_path, const std:
  * @note The returned factors are non-overlapping and cover the entire input
  * @see factorize_file_multiple_dna_w_rc() for file-based factorization
  */
-std::vector<Factor> factorize_multiple_dna_w_rc(std::string_view text, size_t start_pos) {
+std::vector<Factor> factorize_multiple_dna_w_rc(std::string_view text, size_t start_pos, RefPolicy ref_policy) {
     std::vector<Factor> out;
     std::string tmp(text);
-    detail::nolzss_multiple_dna_w_rc(tmp, [&](const Factor& f){ out.push_back(f); }, start_pos);
+    detail::nolzss_multiple_dna_w_rc(tmp, [&](const Factor& f){ out.push_back(f); }, start_pos, ref_policy);
     return out;
 }
 
@@ -671,7 +671,7 @@ std::vector<Factor> factorize_multiple_dna_w_rc(std::string_view text, size_t st
  * @note This is more memory-efficient than factorize_multiple_dna_w_rc() for large files
  * @see factorize_multiple_dna_w_rc() for in-memory factorization
  */
-std::vector<Factor> factorize_file_multiple_dna_w_rc(const std::string& path, size_t reserve_hint, size_t start_pos) {
+std::vector<Factor> factorize_file_multiple_dna_w_rc(const std::string& path, size_t reserve_hint, size_t start_pos, RefPolicy ref_policy) {
     std::ifstream file(path, std::ios::binary);
     if (!file) {
         throw std::runtime_error("Cannot open file: " + path);
@@ -679,7 +679,7 @@ std::vector<Factor> factorize_file_multiple_dna_w_rc(const std::string& path, si
     std::string text((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
     
     std::vector<Factor> out; if (reserve_hint) out.reserve(reserve_hint);
-    detail::nolzss_multiple_dna_w_rc(text, [&](const Factor& f){ out.push_back(f); }, start_pos);
+    detail::nolzss_multiple_dna_w_rc(text, [&](const Factor& f){ out.push_back(f); }, start_pos, ref_policy);
     return out;
 }
 
@@ -748,7 +748,7 @@ size_t count_factors_file_multiple_dna_w_rc(const std::string& path, size_t star
  * @note This function overwrites the output file if it exists
  * @warning Ensure sufficient disk space for the output file
  */
-size_t write_factors_binary_file_multiple_dna_w_rc(const std::string& in_path, const std::string& out_path, size_t start_pos) {
+size_t write_factors_binary_file_multiple_dna_w_rc(const std::string& in_path, const std::string& out_path, size_t start_pos, RefPolicy ref_policy) {
     // Read input file
     std::ifstream infile(in_path, std::ios::binary);
     if (!infile) {
@@ -773,7 +773,7 @@ size_t write_factors_binary_file_multiple_dna_w_rc(const std::string& in_path, c
     detail::nolzss_multiple_dna_w_rc(text, [&](const Factor& f){
         os.write(reinterpret_cast<const char*>(&f), sizeof(Factor));
         ++n;
-    }, start_pos);
+    }, start_pos, ref_policy);
     
     // For multiple DNA sequences from text file, we don't know sequence names or sentinels
     FactorFileFooter footer;
@@ -822,7 +822,7 @@ size_t write_factors_binary_file_multiple_dna_w_rc(const std::string& in_path, c
  * @see factorize_dna_w_reference_seq_file() for file output version
  * @see factorize_w_reference() for general (non-DNA) reference factorization
  */
-std::vector<Factor> factorize_dna_w_reference_seq(const std::string& reference_seq, const std::string& target_seq) {
+std::vector<Factor> factorize_dna_w_reference_seq(const std::string& reference_seq, const std::string& target_seq, RefPolicy ref_policy) {
     // Prepare reference and target sequences together
     std::vector<std::string> sequences = {reference_seq, target_seq};
     PreparedSequenceResult prep_result = prepare_multiple_dna_sequences_w_rc(sequences);
@@ -836,7 +836,7 @@ std::vector<Factor> factorize_dna_w_reference_seq(const std::string& reference_s
     std::vector<Factor> factors;
     detail::nolzss_multiple_dna_w_rc(prep_result.prepared_string, [&](const Factor& f) {
         factors.push_back(f);
-    }, target_start_pos);
+    }, target_start_pos, ref_policy);
     
     return factors;
 }
@@ -872,7 +872,7 @@ std::vector<Factor> factorize_dna_w_reference_seq(const std::string& reference_s
  * @see factorize_dna_w_reference_seq() for in-memory version
  * @see factorize_w_reference_file() for general (non-DNA) reference factorization to file
  */
-size_t factorize_dna_w_reference_seq_file(const std::string& reference_seq, const std::string& target_seq, const std::string& out_path) {
+size_t factorize_dna_w_reference_seq_file(const std::string& reference_seq, const std::string& target_seq, const std::string& out_path, RefPolicy ref_policy) {
     // Set up binary output file with buffering
     std::ofstream os(out_path, std::ios::binary);
     if (!os) {
@@ -883,7 +883,7 @@ size_t factorize_dna_w_reference_seq_file(const std::string& reference_seq, cons
     os.rdbuf()->pubsetbuf(buf.data(), static_cast<std::streamsize>(buf.size()));
     
     // Get factors using the in-memory function
-    std::vector<Factor> factors = factorize_dna_w_reference_seq(reference_seq, target_seq);
+    std::vector<Factor> factors = factorize_dna_w_reference_seq(reference_seq, target_seq, ref_policy);
     
     // Calculate total_length from target sequence length (what we're factorizing)
     uint64_t total_length = target_seq.length();
@@ -937,7 +937,7 @@ size_t factorize_dna_w_reference_seq_file(const std::string& reference_seq, cons
  * @see factorize_w_reference_file() for file output version
  * @see factorize_dna_w_reference_seq() for DNA-specific version with reverse complement
  */
-std::vector<Factor> factorize_w_reference(const std::string& reference_seq, const std::string& target_seq) {
+std::vector<Factor> factorize_w_reference(const std::string& reference_seq, const std::string& target_seq, RefPolicy ref_policy) {
     // Concatenate reference and target with a sentinel (use ASCII character 1)
     std::string combined = reference_seq + '\x01' + target_seq;
     
@@ -949,7 +949,7 @@ std::vector<Factor> factorize_w_reference(const std::string& reference_seq, cons
     cst_t cst; construct_im(cst, combined, 1);
     detail::nolzss(cst, [&](const Factor& f) {
         factors.push_back(f);
-    }, target_start_pos);
+    }, target_start_pos, ref_policy);
     
     return factors;
 }
@@ -985,7 +985,7 @@ std::vector<Factor> factorize_w_reference(const std::string& reference_seq, cons
  * @see factorize_w_reference() for in-memory version
  * @see factorize_dna_w_reference_seq_file() for DNA-specific version with reverse complement
  */
-size_t factorize_w_reference_file(const std::string& reference_seq, const std::string& target_seq, const std::string& out_path) {
+size_t factorize_w_reference_file(const std::string& reference_seq, const std::string& target_seq, const std::string& out_path, RefPolicy ref_policy) {
     // Set up binary output file with buffering
     std::ofstream os(out_path, std::ios::binary);
     if (!os) {
@@ -996,7 +996,7 @@ size_t factorize_w_reference_file(const std::string& reference_seq, const std::s
     os.rdbuf()->pubsetbuf(buf.data(), static_cast<std::streamsize>(buf.size()));
     
     // Get factors using the in-memory function
-    std::vector<Factor> factors = factorize_w_reference(reference_seq, target_seq);
+    std::vector<Factor> factors = factorize_w_reference(reference_seq, target_seq, ref_policy);
     
     // Calculate total_length from target sequence length (what we're factorizing)
     uint64_t total_length = target_seq.length();
@@ -1022,24 +1022,24 @@ size_t factorize_w_reference_file(const std::string& reference_seq, const std::s
 
 // Parallel factorization implementations
 
-size_t parallel_factorize_to_file(::std::string_view text, const ::std::string& output_path, size_t num_threads, size_t start_pos) {
+size_t parallel_factorize_to_file(::std::string_view text, const ::std::string& output_path, size_t num_threads, size_t start_pos, RefPolicy ref_policy) {
     ParallelFactorizer factorizer;
-    return factorizer.parallel_factorize(text, output_path, num_threads, start_pos);
+    return factorizer.parallel_factorize(text, output_path, num_threads, start_pos, ref_policy);
 }
 
-size_t parallel_factorize_file_to_file(const ::std::string& input_path, const ::std::string& output_path, size_t num_threads, size_t start_pos) {
+size_t parallel_factorize_file_to_file(const ::std::string& input_path, const ::std::string& output_path, size_t num_threads, size_t start_pos, RefPolicy ref_policy) {
     ParallelFactorizer factorizer;
-    return factorizer.parallel_factorize_file(input_path, output_path, num_threads, start_pos);
+    return factorizer.parallel_factorize_file(input_path, output_path, num_threads, start_pos, ref_policy);
 }
 
-size_t parallel_factorize_dna_w_rc_to_file(::std::string_view text, const ::std::string& output_path, size_t num_threads) {
+size_t parallel_factorize_dna_w_rc_to_file(::std::string_view text, const ::std::string& output_path, size_t num_threads, RefPolicy ref_policy) {
     ParallelFactorizer factorizer;
-    return factorizer.parallel_factorize_dna_w_rc(text, output_path, num_threads);
+    return factorizer.parallel_factorize_dna_w_rc(text, output_path, num_threads, 0, ref_policy);
 }
 
-size_t parallel_factorize_file_dna_w_rc_to_file(const ::std::string& input_path, const ::std::string& output_path, size_t num_threads) {
+size_t parallel_factorize_file_dna_w_rc_to_file(const ::std::string& input_path, const ::std::string& output_path, size_t num_threads, RefPolicy ref_policy) {
     ParallelFactorizer factorizer;
-    return factorizer.parallel_factorize_file_dna_w_rc(input_path, output_path, num_threads);
+    return factorizer.parallel_factorize_file_dna_w_rc(input_path, output_path, num_threads, ref_policy);
 }
 
 } // namespace noLZSS

@@ -109,6 +109,7 @@ Use this skill for repository-aware implementation and review tasks in `noLZSS`.
 4. Preserve binary format compatibility (footer layout, metadata encoding).
 5. When adding Python module files, ensure packaging/install logic includes them.
 6. Update tests and docs for behavior changes.
+7. `ref_policy="first"|"last"` is a trailing keyword on every factor-producing API (not on `count_*`); when adding a factorization entry point, thread it through C++ (`RefPolicy`), bindings (`parse_ref_policy`), wrappers (`validate_ref_policy`) and tests (`tests/test_ref_policy.py` oracles define the semantics).
 
 ## Build and test workflow
 

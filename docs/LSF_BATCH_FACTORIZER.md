@@ -71,6 +71,7 @@ python -m noLZSS.genomics.lsf_batch_factorize \
 - `--mode MODE`: Factorization mode (default: `with_reverse_complement`)
   - `with_reverse_complement`: DNA factorization with reverse complement awareness
   - `without_reverse_complement`: DNA factorization without reverse complement
+- `--ref-policy {first,last}`: Which previous occurrence each factor refers to when several of the longest length exist: `first` (default, earliest occurrence) or `last` (closest occurrence). Factor boundaries and counts are identical; only the `ref` field changes.
 
 **Note**: The `both` mode is not supported as it would require submitting separate jobs for each mode.
 

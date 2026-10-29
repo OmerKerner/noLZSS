@@ -122,6 +122,7 @@ FastaReferenceTargetResult prepare_ref_target_dna_w_rc_from_fasta(
  * performs noLZSS factorization with reverse complement awareness.
  *
  * @param fasta_path Path to the FASTA file containing DNA sequences
+ * @param ref_policy Reference selection policy: First (default, earliest occurrence) or Last (closest occurrence)
  * @return FastaFactorizationResult containing factors and sentinel factor indices
  *
  * @throws std::runtime_error If FASTA file cannot be opened or contains no valid sequences
@@ -134,7 +135,8 @@ FastaReferenceTargetResult prepare_ref_target_dna_w_rc_from_fasta(
  */
 FastaFactorizationResult factorize_fasta_multiple_dna_w_rc(
     const std::string& fasta_path,
-    FastaDnaSanitizationMode sanitization_mode = FastaDnaSanitizationMode::RemoveAmbiguous
+    FastaDnaSanitizationMode sanitization_mode = FastaDnaSanitizationMode::RemoveAmbiguous,
+    RefPolicy ref_policy = RefPolicy::First
 );
 
 /**
@@ -145,6 +147,7 @@ FastaFactorizationResult factorize_fasta_multiple_dna_w_rc(
  * performs noLZSS factorization without reverse complement awareness.
  *
  * @param fasta_path Path to the FASTA file containing DNA sequences
+ * @param ref_policy Reference selection policy: First (default, earliest occurrence) or Last (closest occurrence)
  * @return FastaFactorizationResult containing factors and sentinel factor indices
  *
  * @throws std::runtime_error If FASTA file cannot be opened or contains no valid sequences
@@ -157,7 +160,8 @@ FastaFactorizationResult factorize_fasta_multiple_dna_w_rc(
  */
 FastaFactorizationResult factorize_fasta_multiple_dna_no_rc(
     const std::string& fasta_path,
-    FastaDnaSanitizationMode sanitization_mode = FastaDnaSanitizationMode::RemoveAmbiguous
+    FastaDnaSanitizationMode sanitization_mode = FastaDnaSanitizationMode::RemoveAmbiguous,
+    RefPolicy ref_policy = RefPolicy::First
 );
 
 /**
@@ -169,12 +173,14 @@ FastaFactorizationResult factorize_fasta_multiple_dna_no_rc(
  *
  * @param reference_fasta_path Path to the reference FASTA file
  * @param target_fasta_path Path to the target FASTA file
+ * @param ref_policy Reference selection policy: First (default, earliest occurrence) or Last (closest occurrence)
  * @return FastaFactorizationResult containing factors, sentinel indices, and sequence IDs
  */
 FastaFactorizationResult factorize_dna_rc_w_ref_fasta_files(
     const std::string& reference_fasta_path,
     const std::string& target_fasta_path,
-    FastaDnaSanitizationMode sanitization_mode = FastaDnaSanitizationMode::RemoveAmbiguous
+    FastaDnaSanitizationMode sanitization_mode = FastaDnaSanitizationMode::RemoveAmbiguous,
+    RefPolicy ref_policy = RefPolicy::First
 );
 
 /**
@@ -187,6 +193,7 @@ FastaFactorizationResult factorize_dna_rc_w_ref_fasta_files(
  *
  * @param fasta_path Path to input FASTA file containing DNA sequences
  * @param out_path Path to output file where binary factors will be written
+ * @param ref_policy Reference selection policy: First (default, earliest occurrence) or Last (closest occurrence)
  * @return Number of factors written to the output file
  *
  * @throws std::runtime_error If FASTA file cannot be opened or contains no valid sequences
@@ -201,7 +208,8 @@ FastaFactorizationResult factorize_dna_rc_w_ref_fasta_files(
 size_t write_factors_binary_file_fasta_multiple_dna_w_rc(
     const std::string& fasta_path,
     const std::string& out_path,
-    FastaDnaSanitizationMode sanitization_mode = FastaDnaSanitizationMode::RemoveAmbiguous
+    FastaDnaSanitizationMode sanitization_mode = FastaDnaSanitizationMode::RemoveAmbiguous,
+    RefPolicy ref_policy = RefPolicy::First
 );
 
 /**
@@ -214,6 +222,7 @@ size_t write_factors_binary_file_fasta_multiple_dna_w_rc(
  *
  * @param fasta_path Path to input FASTA file containing DNA sequences
  * @param out_path Path to output file where binary factors will be written
+ * @param ref_policy Reference selection policy: First (default, earliest occurrence) or Last (closest occurrence)
  * @return Number of factors written to the output file
  *
  * @throws std::runtime_error If FASTA file cannot be opened or contains no valid sequences
@@ -228,7 +237,8 @@ size_t write_factors_binary_file_fasta_multiple_dna_w_rc(
 size_t write_factors_binary_file_fasta_multiple_dna_no_rc(
     const std::string& fasta_path,
     const std::string& out_path,
-    FastaDnaSanitizationMode sanitization_mode = FastaDnaSanitizationMode::RemoveAmbiguous
+    FastaDnaSanitizationMode sanitization_mode = FastaDnaSanitizationMode::RemoveAmbiguous,
+    RefPolicy ref_policy = RefPolicy::First
 );
 
 /**
@@ -256,7 +266,8 @@ size_t write_factors_binary_file_fasta_multiple_dna_no_rc(
 size_t write_factors_dna_w_reference_fasta_files_to_binary(const std::string& reference_fasta_path, 
                                                           const std::string& target_fasta_path,
                                                           const std::string& out_path,
-                                                          FastaDnaSanitizationMode sanitization_mode = FastaDnaSanitizationMode::RemoveAmbiguous);
+                                                          FastaDnaSanitizationMode sanitization_mode = FastaDnaSanitizationMode::RemoveAmbiguous,
+    RefPolicy ref_policy = RefPolicy::First);
 
 /**
  * @brief Factorizes each DNA sequence in a FASTA file separately with reverse complement awareness.
@@ -267,6 +278,7 @@ size_t write_factors_dna_w_reference_fasta_files_to_binary(const std::string& re
  * produces cleaner per-sequence results.
  *
  * @param fasta_path Path to the FASTA file containing DNA sequences
+ * @param ref_policy Reference selection policy: First (default, earliest occurrence) or Last (closest occurrence)
  * @return FastaPerSequenceFactorizationResult containing per-sequence factors and sequence IDs
  *
  * @throws std::runtime_error If FASTA file cannot be opened or contains no valid sequences
@@ -279,7 +291,8 @@ size_t write_factors_dna_w_reference_fasta_files_to_binary(const std::string& re
  */
 FastaPerSequenceFactorizationResult factorize_fasta_dna_w_rc_per_sequence(
     const std::string& fasta_path,
-    FastaDnaSanitizationMode sanitization_mode = FastaDnaSanitizationMode::RemoveAmbiguous
+    FastaDnaSanitizationMode sanitization_mode = FastaDnaSanitizationMode::RemoveAmbiguous,
+    RefPolicy ref_policy = RefPolicy::First
 );
 
 /**
@@ -291,6 +304,7 @@ FastaPerSequenceFactorizationResult factorize_fasta_dna_w_rc_per_sequence(
  * produces cleaner per-sequence results.
  *
  * @param fasta_path Path to the FASTA file containing DNA sequences
+ * @param ref_policy Reference selection policy: First (default, earliest occurrence) or Last (closest occurrence)
  * @return FastaPerSequenceFactorizationResult containing per-sequence factors and sequence IDs
  *
  * @throws std::runtime_error If FASTA file cannot be opened or contains no valid sequences
@@ -303,7 +317,8 @@ FastaPerSequenceFactorizationResult factorize_fasta_dna_w_rc_per_sequence(
  */
 FastaPerSequenceFactorizationResult factorize_fasta_dna_no_rc_per_sequence(
     const std::string& fasta_path,
-    FastaDnaSanitizationMode sanitization_mode = FastaDnaSanitizationMode::RemoveAmbiguous
+    FastaDnaSanitizationMode sanitization_mode = FastaDnaSanitizationMode::RemoveAmbiguous,
+    RefPolicy ref_policy = RefPolicy::First
 );
 
 /**
@@ -314,6 +329,7 @@ FastaPerSequenceFactorizationResult factorize_fasta_dna_no_rc_per_sequence(
  *
  * @param fasta_path Path to input FASTA file containing DNA sequences
  * @param out_dir Path to output directory where binary factor files will be written
+ * @param ref_policy Reference selection policy: First (default, earliest occurrence) or Last (closest occurrence)
  * @return Total number of factors written across all sequences
  *
  * @throws std::runtime_error If FASTA file cannot be opened or contains no valid sequences
@@ -328,7 +344,8 @@ FastaPerSequenceFactorizationResult factorize_fasta_dna_no_rc_per_sequence(
 size_t write_factors_binary_file_fasta_dna_w_rc_per_sequence(
     const std::string& fasta_path,
     const std::string& out_dir,
-    FastaDnaSanitizationMode sanitization_mode = FastaDnaSanitizationMode::RemoveAmbiguous
+    FastaDnaSanitizationMode sanitization_mode = FastaDnaSanitizationMode::RemoveAmbiguous,
+    RefPolicy ref_policy = RefPolicy::First
 );
 
 /**
@@ -339,6 +356,7 @@ size_t write_factors_binary_file_fasta_dna_w_rc_per_sequence(
  *
  * @param fasta_path Path to input FASTA file containing DNA sequences
  * @param out_dir Path to output directory where binary factor files will be written
+ * @param ref_policy Reference selection policy: First (default, earliest occurrence) or Last (closest occurrence)
  * @return Total number of factors written across all sequences
  *
  * @throws std::runtime_error If FASTA file cannot be opened or contains no valid sequences
@@ -353,7 +371,8 @@ size_t write_factors_binary_file_fasta_dna_w_rc_per_sequence(
 size_t write_factors_binary_file_fasta_dna_no_rc_per_sequence(
     const std::string& fasta_path,
     const std::string& out_dir,
-    FastaDnaSanitizationMode sanitization_mode = FastaDnaSanitizationMode::RemoveAmbiguous
+    FastaDnaSanitizationMode sanitization_mode = FastaDnaSanitizationMode::RemoveAmbiguous,
+    RefPolicy ref_policy = RefPolicy::First
 );
 
 /**

@@ -15,6 +15,22 @@ namespace fs = std::filesystem;
 namespace noLZSS {
 
 /**
+ * @brief Removes a trailing sentinel from a prepared no-RC string, if there is one.
+ *
+ * prepare_multiple_dna_sequences_no_rc() only inserts sentinels *between* sequences, so a single
+ * prepared sequence has no trailing sentinel and must not lose its last nucleotide.
+ */
+static inline std::string strip_trailing_sentinel(const std::string& prepared) {
+    if (!prepared.empty()) {
+        char c = prepared.back();
+        if (c != 'A' && c != 'C' && c != 'G' && c != 'T') {
+            return prepared.substr(0, prepared.size() - 1);
+        }
+    }
+    return prepared;
+}
+
+/**
  * @brief Helper function to write metadata (sequence IDs and sentinel indices) to binary file
  * 
  * This is called after all factors have been written to the file.
@@ -65,7 +81,8 @@ size_t parallel_write_factors_binary_file_fasta_multiple_dna_w_rc(
     const std::string& fasta_path, 
     const std::string& out_path,
     size_t num_threads,
-    FastaDnaSanitizationMode sanitization_mode) {
+    FastaDnaSanitizationMode sanitization_mode,
+    RefPolicy ref_policy) {
     
     // Parse FASTA file into individual sequences with IDs
     FastaParseResult parse_result = parse_fasta_sequences_and_ids(fasta_path, sanitization_mode);
@@ -79,7 +96,9 @@ size_t parallel_write_factors_binary_file_fasta_multiple_dna_w_rc(
         prep_result.prepared_string,
         prep_result.original_length,
         out_path,
-        num_threads);
+        num_threads,
+        0,
+        ref_policy);
     
     // Now identify sentinel factors by reading back the factors
     std::vector<uint64_t> sentinel_factor_indices;
@@ -131,7 +150,8 @@ size_t parallel_write_factors_binary_file_fasta_multiple_dna_no_rc(
     const std::string& fasta_path,
     const std::string& out_path,
     size_t num_threads,
-    FastaDnaSanitizationMode sanitization_mode) {
+    FastaDnaSanitizationMode sanitization_mode,
+    RefPolicy ref_policy) {
     
     // Parse FASTA file into individual sequences with IDs
     FastaParseResult parse_result = parse_fasta_sequences_and_ids(fasta_path, sanitization_mode);
@@ -141,7 +161,7 @@ size_t parallel_write_factors_binary_file_fasta_multiple_dna_no_rc(
     
     // Use ParallelFactorizer for the actual work
     ParallelFactorizer factorizer;
-    size_t factor_count = factorizer.parallel_factorize(prep_result.prepared_string, out_path, num_threads);
+    size_t factor_count = factorizer.parallel_factorize(prep_result.prepared_string, out_path, num_threads, 0, ref_policy);
     
     // Now we need to identify sentinel factors by reading back the factors
     std::vector<uint64_t> sentinel_factor_indices;
@@ -195,7 +215,8 @@ size_t parallel_write_factors_dna_w_reference_fasta_files_to_binary(
     const std::string& target_fasta_path,
     const std::string& out_path,
     size_t num_threads,
-    FastaDnaSanitizationMode sanitization_mode) {
+    FastaDnaSanitizationMode sanitization_mode,
+    RefPolicy ref_policy) {
     
     // Process both FASTA files and get prepared sequence with reverse complement
     FastaReferenceTargetResult ref_target_concat_w_rc = 
@@ -208,7 +229,8 @@ size_t parallel_write_factors_dna_w_reference_fasta_files_to_binary(
         ref_target_concat_w_rc.concatinated_sequences.original_length,
         out_path,
         num_threads,
-        ref_target_concat_w_rc.target_start_index);
+        ref_target_concat_w_rc.target_start_index,
+        ref_policy);
     
     // Now identify sentinel factors by reading back the factors
     std::vector<uint64_t> sentinel_factor_indices;
@@ -320,7 +342,8 @@ size_t parallel_write_factors_binary_file_fasta_dna_w_rc_per_sequence(
     const std::string& fasta_path,
     const std::string& out_dir,
     size_t num_threads,
-    FastaDnaSanitizationMode sanitization_mode) {
+    FastaDnaSanitizationMode sanitization_mode,
+    RefPolicy ref_policy) {
     
     // Parse FASTA file into individual sequences with IDs
     FastaParseResult parse_result = parse_fasta_sequences_and_ids(fasta_path, sanitization_mode);
@@ -346,7 +369,7 @@ size_t parallel_write_factors_binary_file_fasta_dna_w_rc_per_sequence(
         for (size_t i = 0; i < num_sequences; ++i) {
             std::vector<std::string> single_seq = {parse_result.sequences[i]};
             PreparedSequenceResult prep_result = prepare_multiple_dna_sequences_w_rc(single_seq);
-            all_factors[i] = factorize_multiple_dna_w_rc(prep_result.prepared_string);
+            all_factors[i] = factorize_multiple_dna_w_rc(prep_result.prepared_string, 0, ref_policy);
             
             // Write to separate file
             std::string safe_id = sanitize_filename(parse_result.sequence_ids[i]);
@@ -368,7 +391,7 @@ size_t parallel_write_factors_binary_file_fasta_dna_w_rc_per_sequence(
                     
                     std::vector<std::string> single_seq = {parse_result.sequences[seq_idx]};
                     PreparedSequenceResult prep_result = prepare_multiple_dna_sequences_w_rc(single_seq);
-                    std::vector<Factor> factors = factorize_multiple_dna_w_rc(prep_result.prepared_string);
+                    std::vector<Factor> factors = factorize_multiple_dna_w_rc(prep_result.prepared_string, 0, ref_policy);
                     
                     // Write to separate file
                     std::string safe_id = sanitize_filename(parse_result.sequence_ids[seq_idx]);
@@ -392,7 +415,8 @@ size_t parallel_write_factors_binary_file_fasta_dna_no_rc_per_sequence(
     const std::string& fasta_path,
     const std::string& out_dir,
     size_t num_threads,
-    FastaDnaSanitizationMode sanitization_mode) {
+    FastaDnaSanitizationMode sanitization_mode,
+    RefPolicy ref_policy) {
     
     // Parse FASTA file into individual sequences with IDs
     FastaParseResult parse_result = parse_fasta_sequences_and_ids(fasta_path, sanitization_mode);
@@ -419,8 +443,8 @@ size_t parallel_write_factors_binary_file_fasta_dna_no_rc_per_sequence(
             std::vector<std::string> single_seq = {parse_result.sequences[i]};
             PreparedSequenceResult prep_result = prepare_multiple_dna_sequences_no_rc(single_seq);
             // Remove the sentinel at the end
-            std::string seq_without_sentinel = prep_result.prepared_string.substr(0, prep_result.prepared_string.length() - 1);
-            all_factors[i] = factorize(seq_without_sentinel);
+            std::string seq_without_sentinel = strip_trailing_sentinel(prep_result.prepared_string);
+            all_factors[i] = factorize(seq_without_sentinel, 0, ref_policy);
             
             // Write to separate file
             std::string safe_id = sanitize_filename(parse_result.sequence_ids[i]);
@@ -443,8 +467,8 @@ size_t parallel_write_factors_binary_file_fasta_dna_no_rc_per_sequence(
                     std::vector<std::string> single_seq = {parse_result.sequences[seq_idx]};
                     PreparedSequenceResult prep_result = prepare_multiple_dna_sequences_no_rc(single_seq);
                     // Remove the sentinel at the end
-                    std::string seq_without_sentinel = prep_result.prepared_string.substr(0, prep_result.prepared_string.length() - 1);
-                    std::vector<Factor> factors = factorize(seq_without_sentinel);
+                    std::string seq_without_sentinel = strip_trailing_sentinel(prep_result.prepared_string);
+                    std::vector<Factor> factors = factorize(seq_without_sentinel, 0, ref_policy);
                     
                     // Write to separate file
                     std::string safe_id = sanitize_filename(parse_result.sequence_ids[seq_idx]);

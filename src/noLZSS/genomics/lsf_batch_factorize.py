@@ -466,7 +466,8 @@ def create_job_script(
     mode: str,
     num_threads: int,
     script_path: Path,
-    python_executable: Optional[str] = None
+    python_executable: Optional[str] = None,
+    ref_policy: str = "first"
 ) -> bool:
     """
     Create a bash script for the LSF job.
@@ -478,12 +479,15 @@ def create_job_script(
         num_threads: Number of threads to use
         script_path: Path where to save the script
         python_executable: Optional Python executable path (default: sys.executable)
+        ref_policy: "first" (default, earliest previous occurrence) or "last" (closest occurrence)
         
     Returns:
         True if script created successfully
     """
     if python_executable is None:
         python_executable = sys.executable
+    if ref_policy not in ("first", "last"):
+        return False
     
     # Determine which function to call
     if mode == FactorizationMode.WITH_REVERSE_COMPLEMENT:
@@ -501,9 +505,10 @@ from noLZSS._noLZSS import {function_name}
 input_file = "{input_file}"
 output_file = "{output_file}"
 num_threads = {num_threads}
+ref_policy = "{ref_policy}"
 
 try:
-    factor_count = {function_name}(input_file, output_file, num_threads)
+    factor_count = {function_name}(input_file, output_file, num_threads, ref_policy=ref_policy)
     print(f"Successfully factorized {{input_file}}: {{factor_count}} factors")
     sys.exit(0)
 except Exception as e:
@@ -966,7 +971,8 @@ def process_files_on_cluster(
     check_interval: int = 60,
     extra_bsub_args: Optional[List[str]] = None,
     skip_existing: bool = True,
-    logger: Optional[logging.Logger] = None
+    logger: Optional[logging.Logger] = None,
+    ref_policy: str = "first"
 ) -> Dict[str, Dict[str, Any]]:
     """
     Process files on LSF cluster by submitting jobs with optimal resource allocation.
@@ -984,12 +990,15 @@ def process_files_on_cluster(
         extra_bsub_args: Additional bsub arguments
         skip_existing: Skip files with existing output
         logger: Logger instance
+        ref_policy: "first" (default, earliest previous occurrence) or "last" (closest occurrence)
         
     Returns:
         Dictionary with job results and statistics
     """
     if logger is None:
         logger = logging.getLogger(__name__)
+    if ref_policy not in ("first", "last"):
+        raise LSFBatchFactorizeError(f"ref_policy must be 'first' or 'last', got {ref_policy!r}")
     
     # Create directories
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -1060,7 +1069,7 @@ def process_files_on_cluster(
         job_name = f"factorize_{base_name}"
         script_path = scripts_dir / f"{job_name}.sh"
         
-        if not create_job_script(file_path, output_file, mode, num_threads, script_path):
+        if not create_job_script(file_path, output_file, mode, num_threads, script_path, ref_policy=ref_policy):
             logger.error(f"Failed to create script for {file_path}")
             continue
         
@@ -1301,6 +1310,11 @@ Remote URLs are not supported in this script (download them first using batch_fa
         default=FactorizationMode.WITH_REVERSE_COMPLEMENT,
         help="Factorization mode (default: with_reverse_complement). Note: 'both' mode not supported."
     )
+    parser.add_argument(
+        "--ref-policy", choices=["first", "last"], default="first",
+        help="Which previous occurrence each factor refers to when several of the longest length exist: "
+             "'first' (default, earliest occurrence) or 'last' (closest occurrence). Factor boundaries are identical."
+    )
     
     # Resource configuration
     parser.add_argument(
@@ -1382,6 +1396,7 @@ Remote URLs are not supported in this script (download them first using batch_fa
         
         logger.info(f"Starting LSF batch factorization of {len(file_list)} files")
         logger.info(f"Mode: {args.mode}")
+        logger.info(f"Reference policy: {args.ref_policy}")
         logger.info(f"Output directory: {args.output_dir}")
         logger.info(f"Max threads per job: {args.max_threads}")
         logger.info(f"Safety factor: {args.safety_factor}")
@@ -1405,7 +1420,8 @@ Remote URLs are not supported in this script (download them first using batch_fa
             check_interval=args.check_interval,
             extra_bsub_args=args.bsub_args,
             skip_existing=not args.force,
-            logger=logger
+            logger=logger,
+            ref_policy=args.ref_policy
         )
         
         # Save results

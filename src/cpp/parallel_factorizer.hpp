@@ -1,5 +1,6 @@
 #pragma once
 #include "factorizer.hpp"
+#include "factorizer_helpers.hpp"
 #include <sdsl/suffix_trees.hpp>
 #include <sdsl/rmq_succinct_sct.hpp>
 #include <vector>
@@ -76,7 +77,8 @@ public:
      * @return Number of factors produced
      */
     size_t parallel_factorize(std::string_view text, const std::string& output_path, 
-                             size_t num_threads = 0, size_t start_pos = 0);
+                             size_t num_threads = 0, size_t start_pos = 0,
+                             RefPolicy ref_policy = RefPolicy::First);
     
     /**
      * @brief File-based parallel factorization
@@ -90,7 +92,8 @@ public:
      * @return Number of factors produced
      */
     size_t parallel_factorize_file(const std::string& input_path, const std::string& output_path,
-                                  size_t num_threads = 0, size_t start_pos = 0);
+                                  size_t num_threads = 0, size_t start_pos = 0,
+                                  RefPolicy ref_policy = RefPolicy::First);
     
     /**
      * @brief DNA-specific parallel factorization with reverse complement support
@@ -105,7 +108,8 @@ public:
      * @return Number of factors produced
      */
     size_t parallel_factorize_dna_w_rc(std::string_view text, const std::string& output_path,
-                                      size_t num_threads = 0, size_t start_pos = 0);
+                                      size_t num_threads = 0, size_t start_pos = 0,
+                                      RefPolicy ref_policy = RefPolicy::First);
     
     /**
      * @brief Core parallel DNA factorization with reverse complement for prepared strings
@@ -129,7 +133,8 @@ public:
                                                 size_t original_length,
                                                 const std::string& output_path,
                                                 size_t num_threads = 0,
-                                                size_t start_pos = 0);
+                                                size_t start_pos = 0,
+                                                RefPolicy ref_policy = RefPolicy::First);
     
     /**
      * @brief File-based DNA-specific parallel factorization with reverse complement support
@@ -140,7 +145,8 @@ public:
      * @return Number of factors produced
      */
     size_t parallel_factorize_file_dna_w_rc(const std::string& input_path, const std::string& output_path,
-                                           size_t num_threads = 0);
+                                           size_t num_threads = 0,
+                                           RefPolicy ref_policy = RefPolicy::First);
     
     /**
      * @brief Create temporary file path (public for use by fasta processor)
@@ -191,6 +197,9 @@ public:
                                    const sdsl::int_vector<64>& rc_ends,
                                    uint64_t INF,
                                    size_t N,
+                                   const RangePredecessor* predF,
+                                   const RangePredecessor* predR,
+                                   RefPolicy ref_policy,
                                    ThreadContext& ctx,
                                    std::vector<ThreadContext>& all_contexts,
                                    std::vector<std::mutex>& file_mutexes);
@@ -206,6 +215,7 @@ private:
      * @param file_mutexes Mutexes for protecting file access
      */
     void factorize_thread(const cst_t& cst, const sdsl::rmq_succinct_sct<>& rmq,
+                         const RangePredecessor* pred, RefPolicy ref_policy,
                          ThreadContext& ctx, 
                          std::vector<ThreadContext>& all_contexts,
                          std::vector<std::mutex>& file_mutexes);

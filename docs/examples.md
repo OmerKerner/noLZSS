@@ -32,6 +32,27 @@ for i, (pos, length, ref) in enumerate(factors):
         print(f"Factor {i}: '{substring}' at pos {pos}, references pos {ref} ('{ref_substring}')")
 ```
 
+### Choosing the Reported Reference (`ref_policy`)
+
+```python
+import noLZSS
+
+text = "abcabcabc"
+noLZSS.factorize(text)                     # [(0, 1, 0), (1, 1, 1), (2, 1, 2), (3, 3, 0), (6, 3, 0)]
+noLZSS.factorize(text, ref_policy="last")  # [(0, 1, 0), (1, 1, 1), (2, 1, 2), (3, 3, 0), (6, 3, 3)]
+
+# The factor at position 6 ("abc") occurs earlier at 0 and at 3. "first" (the default)
+# reports the earliest occurrence, "last" the closest one. Starts and lengths never change.
+
+from noLZSS.genomics import factorize_dna_w_rc
+factorize_dna_w_rc(b"TTTTCGAACTCGT")                    # ... (9, 3, 3, False) ...
+factorize_dna_w_rc(b"TTTTCGAACTCGT", ref_policy="last") # ... (9, 3, 4, True) ...
+# "TCG" at 9 matches forward at 3 and as a reverse complement ending at 6 (CGA at 4..6).
+# "first" prefers the forward strand; "last" picks whichever occurrence ends closest.
+```
+
+`ref_policy` is accepted by every factor-producing function, including the file, FASTA, reference-guided and parallel variants, and by the batch tools (`--ref-policy last`). Count functions do not take it because factor counts are identical under both policies.
+
 ### Enhanced Factorization with Metadata
 
 ```python
