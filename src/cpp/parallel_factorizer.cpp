@@ -1,4 +1,5 @@
 #include "parallel_factorizer.hpp"
+#include "factorizer_core.hpp"     // detail::find_longest_rc_match shared with the sequential path
 #include "factorizer_helpers.hpp"
 #include <algorithm>
 #include <iostream>
@@ -267,15 +268,14 @@ void ParallelFactorizer::factorize_thread(const cst_t& cst, const sdsl::rmq_succ
  * @brief Worker thread function for DNA factorization with reverse complement
  * 
  * This function implements the DNA-specific factorization algorithm with reverse
- * complement support for parallel execution. It's based on nolzss_multiple_dna_w_rc
- * but adapted to work on a chunk of the original sequence.
+ * complement support for parallel execution. It uses the same per-position match
+ * search as nolzss_multiple_dna_w_rc (detail::find_longest_rc_match), applied to a
+ * chunk of the original sequence.
  * 
  * The algorithm:
  * 1. Initializes at the thread's start position
- * 2. For each position, walks up the CST to find the best match (forward or RC)
- * 3. Checks both forward matches (using rmqF) and RC matches (using rmqRcEnd)
- * 4. Selects the longest non-overlapping match
- * 5. Writes factors and checks for convergence with the next thread
+ * 2. For each position, finds the longest non-overlapping match (forward or RC)
+ * 3. Writes factors and checks for convergence with the next thread
  * 
  * @param cst Compressed suffix tree built from T + sentinel + RC(T) + sentinel
  * @param rmqF RMQ structure for finding minimum forward starts
@@ -317,132 +317,13 @@ void ParallelFactorizer::factorize_dna_w_rc_thread(const cst_t& cst,
     
     // Main factorization loop - only process the original sequence (0 to N)
     while (i < N) {
-        // At factor start i (0-based in T), walk up ancestors and track best FWD and RC candidates independently
-        
-        // Track best FWD candidate
-        bool   have_fwd       = false;
-        size_t best_fwd_start = 0;  // start in T (for FWD)
-        size_t best_fwd_depth = 0;  // tree depth of best FWD candidate
-        
-        // Track best RC candidate
-        bool   have_rc        = false;
-        size_t best_rc_end    = 0;  // end in T (for RC)
-        size_t best_rc_posS   = 0;  // pos in S where RC candidate suffix starts (for LCP)
-        size_t best_rc_depth  = 0;  // tree depth of best RC candidate
+        detail::RcMatchResult m = detail::find_longest_rc_match(cst, rmqF, rmqRcEnd, fwd_starts, rc_ends, INF,
+                                                                lambda, lambda_node_depth, i);
+        size_t emit_len = m.len;
 
-        // Walk from leaf to root via level_anc
-        for (size_t step = 1; step <= lambda_node_depth; ++step) {
-            auto v = cst.bp_support.level_anc(lambda, lambda_node_depth - step);
-            size_t ell = cst.depth(v);
-            if (ell == 0) break; // reached root
+        Factor f{static_cast<uint64_t>(i), static_cast<uint64_t>(emit_len), m.ref};
+        write_factor(f, ctx.temp_file_path, file_mutexes[ctx.thread_id]);
 
-            auto lb = cst.lb(v), rb = cst.rb(v);
-
-            // Forward candidate (min start in T within v's interval)
-            size_t kF = rmqF(lb, rb);
-            uint64_t jF = fwd_starts[kF];
-            bool okF = (jF != INF) && (jF + ell - 1 < i); // non-overlap: endF <= i-1
-
-            // RC candidate (min END in T within v's interval; monotone with depth)
-            size_t kR = rmqRcEnd(lb, rb);
-            uint64_t endRC = rc_ends[kR];
-            bool okR = (endRC != INF) && (endRC < i); // endRC <= i-1
-
-            if (!okF && !okR) {
-                // deeper nodes can only increase jF and the minimal RC end
-                // -> non-overlap won't become true again for either; stop
-                break;
-            }
-
-            // Update best FWD candidate independently
-            if (okF) {
-                if (ell > best_fwd_depth ||
-                    (ell == best_fwd_depth && (jF + ell - 1) < (best_fwd_start + best_fwd_depth - 1))) {
-                    have_fwd = true;
-                    best_fwd_start = jF;
-                    best_fwd_depth = ell;
-                }
-            }
-            
-            // Update best RC candidate independently
-            if (okR) {
-                size_t posS_R = cst.csa[kR]; // suffix position in S for LCP
-                if (ell > best_rc_depth ||
-                    (ell == best_rc_depth && (endRC < best_rc_end))) {
-                    have_rc = true;
-                    best_rc_end = endRC;
-                    best_rc_posS = posS_R;
-                    best_rc_depth = ell;
-                }
-            }
-        }
-
-        size_t emit_len = 1;
-        uint64_t emit_ref = i; // default for literal
-        
-        if (!have_fwd && !have_rc) {
-            // No previous occurrence (FWD nor RC) — literal of length 1
-            Factor f{static_cast<uint64_t>(i), static_cast<uint64_t>(emit_len), static_cast<uint64_t>(emit_ref)};
-            write_factor(f, ctx.temp_file_path, file_mutexes[ctx.thread_id]);
-        } else {
-            // Compute true lengths for both candidates
-            size_t fwd_true_len = 0;
-            size_t rc_true_len = 0;
-            
-            if (have_fwd) {
-                size_t cap = i - best_fwd_start; // non-overlap cap
-                size_t L = lcp(cst, i, best_fwd_start);
-                fwd_true_len = std::min(L, cap);
-            }
-            
-            if (have_rc) {
-                rc_true_len = lcp(cst, i, best_rc_posS);
-            }
-            
-            // Choose based on TRUE length, with FWD preference at equal length.
-            // A literal (self-reference, length 1) is always available as a fallback.
-            // Only use RC if it provides strictly longer match than both FWD and literal.
-            bool use_fwd = false;
-            bool use_literal = false;
-            
-            if (have_fwd && fwd_true_len >= 1) {
-                // Have a real forward match
-                if (have_rc && rc_true_len > fwd_true_len) {
-                    use_fwd = false;  // RC is strictly longer
-                } else {
-                    use_fwd = true;   // FWD wins (including ties)
-                }
-            } else {
-                // No real forward match; compare RC against literal (length 1)
-                if (have_rc && rc_true_len > 1) {
-                    use_fwd = false;  // RC is strictly longer than literal
-                } else {
-                    use_literal = true;  // Use literal (self-reference)
-                }
-            }
-            
-            if (use_literal) {
-                // Emit literal
-                emit_len = 1;
-                emit_ref = static_cast<uint64_t>(i);
-            } else if (use_fwd) {
-                emit_len = fwd_true_len;
-                emit_ref = static_cast<uint64_t>(best_fwd_start);
-            } else {
-                emit_len = rc_true_len;
-                size_t start_pos_val = best_rc_end - emit_len + 1;  // start = end - len + 1
-                emit_ref = RC_MASK | static_cast<uint64_t>(start_pos_val); // start-anchored + RC flag
-            }
-            
-            // Safety: ensure progress
-            if (emit_len == 0) {
-                throw std::runtime_error("emit_len must be positive to ensure factorization progress");
-            }
-
-            Factor f{static_cast<uint64_t>(i), static_cast<uint64_t>(emit_len), emit_ref};
-            write_factor(f, ctx.temp_file_path, file_mutexes[ctx.thread_id]);
-        }
-        
         // Check for convergence
         if (next_ctx && i + emit_len >= next_ctx->start_pos) {
             size_t current_end = i + emit_len;
@@ -450,7 +331,7 @@ void ParallelFactorizer::factorize_dna_w_rc_thread(const cst_t& cst,
                 break; // Convergence detected
             }
         }
-        
+
         // Advance to next position
         lambda = next_leaf(cst, lambda, emit_len);
         lambda_node_depth = cst.node_depth(lambda);

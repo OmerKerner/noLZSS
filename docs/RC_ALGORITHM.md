@@ -38,7 +38,7 @@ The RC-aware algorithm extends the base algorithm in three key ways:
 
 1. **String Construction**: Concatenates the original sequences with their reverse complements, separated by unique sentinel characters, into a single string `S`.
 2. **Dual RMQ Structures**: Maintains two independent range-minimum-query structures — one for forward matches and one for RC matches — each with a different non-overlap criterion.
-3. **Independent Candidate Tracking**: During the tree walk, tracks the best forward and best RC candidate independently, then selects the winner based on true LCP lengths.
+3. **Independent Candidate Tracking**: During the tree walk, tracks the best forward and best RC candidate independently (including the forward "partial-edge" candidate described below), then selects the winner based on true LCP lengths.
 
 ### Phase 1: String Preparation
 
@@ -129,26 +129,34 @@ RC-noLZSS(S, start_pos):
       endRC ← rc_ends[kR]
       okR ← (endRC ≠ ∞) and (endRC < i)       // non-overlap check
 
+      // Forward partial-edge candidate: recorded once, at the first
+      // node whose earliest occurrence overlaps i
+      if not okF and partial = ∅ and jF ≠ ∞ and jF < i:
+        partial ← (start=jF, len=i - jF)
+
       if not okF and not okR:
         break                                  // monotonicity: no deeper
                                                // node can satisfy either
 
-      if okF and (ℓ > best_fwd.depth
-                  or (ℓ = best_fwd.depth and jF earlier)):
+      if okF and ℓ > best_fwd.depth:
         best_fwd ← (start=jF, depth=ℓ)
 
-      if okR and (ℓ > best_rc.depth
-                  or (ℓ = best_rc.depth and endRC earlier)):
+      if okR and ℓ > best_rc.depth:
         best_rc ← (end=endRC, posS=SA[kR], depth=ℓ)
 
     ─── Step B: Compute TRUE match lengths ───
+    fwd_len ← 0
     if best_fwd ≠ ∅:
       fwd_len ← min(LCP(i, best_fwd.start), i - best_fwd.start)
+      fwd_start ← best_fwd.start
+    if partial ≠ ∅ and partial.len > fwd_len:
+      fwd_len ← partial.len                    // strictly longer only, so the
+      fwd_start ← partial.start                // earlier start wins ties
     if best_rc ≠ ∅:
       rc_len ← LCP(i, best_rc.posS)
 
     ─── Step C: Select winner ───
-    if best_fwd ≠ ∅ and fwd_len ≥ 1:
+    if fwd_len ≥ 1:
       if best_rc ≠ ∅ and rc_len > fwd_len:
         use RC match                           // RC strictly longer
       else:
@@ -160,7 +168,7 @@ RC-noLZSS(S, start_pos):
 
     ─── Step D: Emit factor and advance ───
     if using forward:
-      emit (i, fwd_len, best_fwd.start)
+      emit (i, fwd_len, fwd_start)
       advance i by fwd_len
     else if using RC:
       rc_start ← best_rc.end - rc_len + 1
@@ -185,13 +193,22 @@ Each emitted factor is a triple `(position, length, reference)`:
 - To decode: `is_rc(ref) = (ref & RC_MASK) ≠ 0`; `clean_ref(ref) = ref & ~RC_MASK`
 - The clean reference for an RC factor is a **start position** in `T`: the substring `T[ref..ref+ℓ-1]` when reverse-complemented matches `T[position..position+ℓ-1]`
 
+### The Forward Partial-Edge Candidate
+
+The non-overlap test for a forward candidate depends on the node's string depth `ℓ`: the earliest occurrence `jF` of the node's string fits only if `jF + ℓ - 1 < i`. Consider the first node `c` on the walk where this fails although `jF < i`. Every leaf below `c` shares at least `ℓ > i - jF` characters with the suffix at `i`, so the prefix `T[jF..i-1]` of that occurrence still matches `T[i..]` for `i - jF` characters and ends right before `i`. This match lies on the edge between the last fully fitting ancestor and `c`, and it can be **longer** than the depth of that ancestor whenever the ancestor's own earliest occurrence sits in a different child subtree. The base algorithm handles exactly this case (`ℓ = min(LCP(i, j), i - j)` on the failing node), so the RC-aware walk records the candidate once, at the first failing node; deeper nodes only have larger minimal starts and therefore shorter prefixes.
+
+Reverse-complement candidates need no such treatment: their non-overlap test (`endRC < i`) does not depend on the match length, so the deepest usable node already yields the longest RC match.
+
+Example: in `GCGCACTCTCG` at `i = 7` (suffix `CTCG`), the node `C` has earliest start 1 and fits, the next node on the path is `CTC` with earliest start 5, which overlaps `i`. Without the partial-edge candidate the factor would be `(7, 1, 1)`; with it, `T[5..6] = CT` gives `(7, 2, 5)`, the same factor the base algorithm emits.
+
 ### Tie-Breaking Rules
 
 When both a forward and an RC candidate exist:
 
 1. **Forward preferred at equal length**: If `fwd_len = rc_len`, the forward match is chosen. This avoids unnecessary RC annotations when a same-strand match is equally good.
 2. **RC wins only if strictly longer**: The RC match is selected only when `rc_len > fwd_len`, meaning the reverse complement provides a genuinely longer match.
-3. **Among same-type candidates**: The candidate with the earliest non-overlapping position wins (smallest `start` for forward, smallest `end` for RC).
+3. **Among same-type candidates**: The candidate with the earliest non-overlapping position wins (smallest `start` for forward, smallest `end` for RC). In particular, when the partial-edge candidate ties with the node-aligned forward candidate, the node-aligned one is kept because its start is never later.
+4. **RC needs length ≥ 2**: a single-nucleotide RC "match" is never used; a literal is emitted instead.
 
 ## Complexity Analysis
 
@@ -282,7 +299,7 @@ The factorization loop within each position also follows a winner-selection flow
 flowchart LR
     subgraph Candidate Tracking
         direction TB
-        FWD["FWD candidate\n(earliest start, longest depth)"]
+        FWD["FWD candidate\n(earliest start, longest depth;\nplus partial-edge prefix)"]
         RC["RC candidate\n(earliest end, longest depth)"]
     end
 
